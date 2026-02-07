@@ -66,7 +66,7 @@ const Servicios = () => {
     <>
       <Helmet>
         <title>Servicios de Reparación - NicTech | Lima, Perú</title>
-        <meta name="description" content="Servicios profesionales de reparación: smartphones, laptops, tablets, recuperación de datos. Técnicos certificados con garantía." />
+        <meta name="description" content="Servicios profesionales de reparación: smartphones, laptops, tablets, recuperación de datos. Soporte certificado con garantía." />
       </Helmet>
       <Layout>
         {/* Header */}

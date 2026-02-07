@@ -118,7 +118,7 @@ export const Footer = () => {
         <div className="mt-12 pt-8 border-t border-secondary-foreground/10">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-sm text-secondary-foreground/60">
-              © 2024 NicTech. Todos los derechos reservados.
+              © 2026 NicTech. Todos los derechos reservados.
             </p>
             <div className="flex gap-6">
               <Link

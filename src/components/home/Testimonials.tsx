@@ -62,7 +62,7 @@ export const Testimonials = () => {
             {/* Testimonial Card */}
             <div className="bg-card rounded-2xl p-8 lg:p-12 border border-border shadow-card">
               <Quote className="h-12 w-12 text-primary/20 mb-6" />
-              
+
               {/* Stars */}
               <div className="flex gap-1 mb-6">
                 {[...Array(testimonials[currentIndex].rating)].map((_, i) => (
@@ -108,11 +108,10 @@ export const Testimonials = () => {
                   <button
                     key={index}
                     onClick={() => setCurrentIndex(index)}
-                    className={`h-2 rounded-full transition-all duration-300 ${
-                      index === currentIndex
-                        ? 'w-8 bg-primary'
-                        : 'w-2 bg-muted-foreground/30 hover:bg-muted-foreground/50'
-                    }`}
+                    className={`h-2 rounded-full transition-all duration-300 ${index === currentIndex
+                      ? 'w-8 bg-primary'
+                      : 'w-2 bg-muted-foreground/30 hover:bg-muted-foreground/50'
+                      }`}
                   />
                 ))}
               </div>

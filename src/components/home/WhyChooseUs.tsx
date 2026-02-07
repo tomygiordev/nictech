@@ -4,7 +4,7 @@ const features = [
   {
     icon: Shield,
     title: 'Garantía Total',
-    description: 'Todos nuestros servicios incluyen garantía. Tu inversión está protegida.',
+    description: 'Todos los servicios incluyen garantía. Tu inversión está protegida.',
   },
   {
     icon: Zap,
@@ -14,7 +14,7 @@ const features = [
   {
     icon: Award,
     title: 'Profesionalismo',
-    description: 'Técnicos certificados con más de 10 años de experiencia.',
+    description: 'Soporte técnico certificado apasionado por la tecnología.',
   },
 ];
 

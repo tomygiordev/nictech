@@ -27,7 +27,7 @@ const Checkout = () => {
 
   // Handle payment status from redirect
   const paymentStatus = searchParams.get('payment');
-  
+
   useEffect(() => {
     if (paymentStatus === 'success') {
       clearCart();
@@ -143,7 +143,7 @@ const Checkout = () => {
       }
     } catch (error) {
       console.error('Checkout error:', error);
-      toast.error('Error al procesar el pago. Intenta nuevamente.');
+      toast.error(error instanceof Error ? error.message : 'Error al procesar el pago. Intenta nuevamente.');
     } finally {
       setLoading(false);
     }
@@ -172,7 +172,7 @@ const Checkout = () => {
               {/* Order Summary */}
               <div className="bg-muted/30 rounded-2xl p-6 h-fit">
                 <h2 className="text-xl font-bold mb-6">Resumen del Pedido</h2>
-                
+
                 <div className="space-y-4 mb-6">
                   {items.map((item) => (
                     <div key={item.id} className="flex gap-4">
@@ -265,7 +265,7 @@ const Checkout = () => {
                         </div>
                       </Label>
                     </div>
-                    
+
                     <div className="flex items-center space-x-3 p-4 rounded-xl border border-border hover:border-primary/50 transition-colors cursor-pointer">
                       <RadioGroupItem value="card" id="card" />
                       <Label htmlFor="card" className="flex items-center gap-3 cursor-pointer flex-1">

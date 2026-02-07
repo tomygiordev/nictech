@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Cpu, Package, Wrench, Plus, Loader2, Save, RefreshCcw } from 'lucide-react';
+import { Cpu, Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
@@ -42,6 +42,7 @@ const Admin = () => {
   const [savingRepair, setSavingRepair] = useState<string | null>(null);
   const [savingProduct, setSavingProduct] = useState(false);
   const [editingNotes, setEditingNotes] = useState<{ id: string; notes: string } | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -58,7 +59,7 @@ const Admin = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    
+
     const [repairsRes, productsRes] = await Promise.all([
       supabase.from('repairs').select('*').order('created_at', { ascending: false }),
       supabase.from('products').select('*').order('created_at', { ascending: false }),
@@ -66,13 +67,13 @@ const Admin = () => {
 
     if (repairsRes.data) setRepairs(repairsRes.data as Repair[]);
     if (productsRes.data) setProducts(productsRes.data);
-    
+
     setLoading(false);
   };
 
   const updateRepairStatus = async (id: string, status: RepairStatus) => {
     setSavingRepair(id);
-    
+
     const { error } = await supabase
       .from('repairs')
       .update({ status })
@@ -91,13 +92,13 @@ const Admin = () => {
         description: `La reparación ha sido actualizada a "${status}".`,
       });
     }
-    
+
     setSavingRepair(null);
   };
 
   const updateRepairNotes = async (id: string, notes: string) => {
     setSavingRepair(id);
-    
+
     const { error } = await supabase
       .from('repairs')
       .update({ notes })
@@ -117,7 +118,7 @@ const Admin = () => {
         description: 'Las notas han sido actualizadas.',
       });
     }
-    
+
     setSavingRepair(null);
   };
 
@@ -137,9 +138,10 @@ const Admin = () => {
       });
 
     if (error) {
+      console.error('Error al crear producto:', error);
       toast({
         title: 'Error',
-        description: 'No se pudo agregar el producto.',
+        description: error.message || 'No se pudo agregar el producto.',
         variant: 'destructive',
       });
     } else {
@@ -152,6 +154,40 @@ const Admin = () => {
     }
 
     setSavingProduct(false);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImage(true);
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Math.random()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError, data } = await supabase.storage
+      .from('product_images')
+      .upload(filePath, file);
+
+    if (uploadError) {
+      console.error('Error al subir imagen:', uploadError);
+      toast({
+        title: 'Error al subir imagen',
+        description: uploadError.message || 'Error desconocido al subir el archivo.',
+        variant: 'destructive',
+      });
+    } else {
+      const { data: { publicUrl } } = supabase.storage
+        .from('product_images')
+        .getPublicUrl(filePath);
+
+      setNewProduct({ ...newProduct, image_url: publicUrl });
+      toast({
+        title: 'Imagen subida',
+        description: 'La imagen se ha cargado correctamente.',
+      });
+    }
+    setUploadingImage(false);
   };
 
   const updateProductStock = async (id: string, stock: number) => {
@@ -175,7 +211,7 @@ const Admin = () => {
         <title>Panel de Administración - NicTech</title>
         <meta name="robots" content="noindex, nofollow" />
       </Helmet>
-      
+
       <div className="min-h-screen bg-muted/30">
         {/* Header */}
         <header className="bg-secondary text-secondary-foreground py-4">
@@ -223,7 +259,7 @@ const Admin = () => {
                       {repairs.length} reparaciones registradas
                     </p>
                   </div>
-                  
+
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -358,13 +394,42 @@ const Admin = () => {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="image_url">URL de imagen</Label>
-                        <Input
-                          id="image_url"
-                          type="url"
-                          value={newProduct.image_url}
-                          onChange={(e) => setNewProduct({ ...newProduct, image_url: e.target.value })}
-                        />
+                        <Label htmlFor="image_url">Imagen del Producto</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="image_url"
+                            type="url"
+                            placeholder="URL de la imagen"
+                            value={newProduct.image_url}
+                            onChange={(e) => setNewProduct({ ...newProduct, image_url: e.target.value })}
+                            className="flex-1"
+                          />
+                          <div className="relative">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleImageUpload}
+                              className="hidden"
+                              id="file-upload"
+                              disabled={uploadingImage}
+                            />
+                            <Label
+                              htmlFor="file-upload"
+                              className={`flex h-10 w-10 items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground cursor-pointer ${uploadingImage ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                              {uploadingImage ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Upload className="h-4 w-4" />
+                              )}
+                            </Label>
+                          </div>
+                        </div>
+                        {newProduct.image_url && (
+                          <div className="mt-2 relative aspect-video rounded-lg overflow-hidden border border-border">
+                            <img src={newProduct.image_url} alt="Preview" className="object-cover w-full h-full" />
+                          </div>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="description">Descripción</Label>

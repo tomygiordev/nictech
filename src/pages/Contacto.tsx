@@ -26,7 +26,7 @@ const Contacto = () => {
 
     toast({
       title: '¡Mensaje enviado!',
-      description: 'Te contactaremos pronto. Gracias por escribirnos.',
+      description: 'Pronto recibirás una respuesta. Gracias por el mensaje.',
     });
 
     setFormData({ name: '', email: '', phone: '', message: '' });
@@ -51,7 +51,7 @@ const Contacto = () => {
                 Contáctanos
               </h1>
               <p className="text-muted-foreground text-lg">
-                ¿Tienes alguna pregunta? Estamos aquí para ayudarte
+                Soporte y atención a consultas
               </p>
             </div>
           </div>
@@ -66,7 +66,7 @@ const Contacto = () => {
                 <h2 className="text-2xl font-bold text-foreground mb-6">
                   Información de Contacto
                 </h2>
-                
+
                 <div className="space-y-6 mb-8">
                   <div className="flex items-start gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary flex-shrink-0">
@@ -127,7 +127,7 @@ const Contacto = () => {
                   <h2 className="text-2xl font-bold text-foreground mb-6">
                     Envíanos un Mensaje
                   </h2>
-                  
+
                   <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="space-y-2">
                       <Label htmlFor="name">Nombre completo</Label>
@@ -172,7 +172,7 @@ const Contacto = () => {
                       <Label htmlFor="message">Mensaje</Label>
                       <Textarea
                         id="message"
-                        placeholder="¿En qué podemos ayudarte?"
+                        placeholder="¿Cómo podemos ayudar?"
                         value={formData.message}
                         onChange={(e) => setFormData({ ...formData, message: e.target.value })}
                         required

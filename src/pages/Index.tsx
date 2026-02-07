@@ -9,7 +9,7 @@ const Index = () => {
     <>
       <Helmet>
         <title>NicTech - Reparación de Tecnología y Tienda | Lima, Perú</title>
-        <meta name="description" content="Expertos en reparación de smartphones, laptops y tablets. Tienda de tecnología con garantía. Más de 10 años de experiencia en Lima, Perú." />
+        <meta name="description" content="Especialidad en reparación de smartphones, laptops y tablets. Tienda de tecnología con garantía. Compromiso con la excelencia en Lima, Perú." />
       </Helmet>
       <Layout>
         <HeroSection />
