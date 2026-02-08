@@ -46,10 +46,14 @@ export const HeroSection = () => {
                 size="xl"
                 className="bg-white text-primary hover:bg-white/90"
               >
-                <Link to="/contacto">
+                <a
+                  href="https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <Wrench className="h-5 w-5 mr-2" />
                   Cotizar Reparación
-                </Link>
+                </a>
               </Button>
               <Button
                 asChild

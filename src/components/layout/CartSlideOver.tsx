@@ -62,7 +62,7 @@ export const CartSlideOver = () => {
                     <div className="flex-1 min-w-0">
                       <h4 className="font-medium text-sm truncate">{item.name}</h4>
                       <p className="text-primary font-semibold mt-1">
-                        S/ {item.price.toFixed(2)}
+                        $ {item.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                       <div className="flex items-center gap-2 mt-2">
                         <Button
@@ -109,8 +109,8 @@ export const CartSlideOver = () => {
                   $ {totalPrice.toLocaleString('es-AR')}
                 </span>
               </div>
-              <Button 
-                className="w-full" 
+              <Button
+                className="w-full"
                 size="lg"
                 onClick={() => {
                   closeCart();

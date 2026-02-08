@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { RepairLogs } from '@/components/tracking/RepairLogs';
 
 interface Repair {
   id: string;
@@ -17,18 +18,28 @@ interface Repair {
   device_brand: string | null;
   status: string;
   notes: string | null;
+  problem_description: string | null;
   created_at: string;
+}
+
+interface RepairLog {
+  id: string;
+  created_at: string;
+  content: string;
+  is_public: boolean;
 }
 
 const Seguimiento = () => {
   const [searchValue, setSearchValue] = useState('');
-  const [repair, setRepair] = useState<Repair | null>(null);
+  const [repairs, setRepairs] = useState<Repair[]>([]);
+  const [selectedRepair, setSelectedRepair] = useState<Repair | null>(null);
+  const [logs, setLogs] = useState<RepairLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!searchValue.trim()) {
       toast({
         title: 'Campo requerido',
@@ -40,12 +51,14 @@ const Seguimiento = () => {
 
     setLoading(true);
     setSearched(true);
+    setSelectedRepair(null);
+    setLogs([]);
 
     const { data, error } = await supabase
       .from('repairs')
       .select('*')
       .or(`client_dni.eq.${searchValue},tracking_code.ilike.%${searchValue}%`)
-      .maybeSingle();
+      .order('created_at', { ascending: false });
 
     if (error) {
       toast({
@@ -53,10 +66,34 @@ const Seguimiento = () => {
         description: 'Ocurrió un error al buscar. Intenta de nuevo.',
         variant: 'destructive',
       });
-    }
+      setRepairs([]);
+    } else if (data) {
+      const foundRepairs = data as unknown as Repair[];
+      setRepairs(foundRepairs);
 
-    setRepair(data);
+      // If only one result, select it automatically
+      if (foundRepairs.length === 1) {
+        selectRepair(foundRepairs[0]);
+      }
+    } else {
+      setRepairs([]);
+    }
     setLoading(false);
+  };
+
+  const selectRepair = async (repair: Repair) => {
+    setSelectedRepair(repair);
+    // Fetch logs for the selected repair
+    const { data: logsData } = await supabase
+      .from('repair_logs' as any)
+      .select('*')
+      .eq('repair_id', repair.id)
+      .eq('is_public', true) // Only public logs
+      .order('created_at', { ascending: false });
+
+    if (logsData) {
+      setLogs(logsData as unknown as RepairLog[]);
+    }
   };
 
   return (
@@ -111,7 +148,7 @@ const Seguimiento = () => {
               <div className="flex items-center justify-center py-20">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
-            ) : searched && !repair ? (
+            ) : searched && repairs.length === 0 ? (
               <div className="max-w-md mx-auto text-center py-12">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 mx-auto mb-4">
                   <AlertCircle className="h-8 w-8 text-destructive" />
@@ -123,22 +160,74 @@ const Seguimiento = () => {
                   Verifica que el DNI o código de reparación sea correcto e intenta de nuevo.
                 </p>
               </div>
-            ) : repair ? (
+            ) : !selectedRepair && repairs.length > 1 ? (
               <div className="max-w-3xl mx-auto animate-fade-in">
+                <h2 className="text-2xl font-bold text-center mb-8">
+                  Encontramos {repairs.length} reparaciones
+                </h2>
+                <div className="grid gap-4">
+                  {repairs.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => selectRepair(item)}
+                      className="bg-card p-6 rounded-xl border border-border cursor-pointer hover:border-primary/50 transition-colors shadow-sm hover:shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 group"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-mono text-sm bg-muted px-2 py-1 rounded">
+                            {item.tracking_code}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(item.created_at).toLocaleDateString('es-PE')}
+                          </span>
+                        </div>
+                        <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
+                          {item.device_brand} {item.device_model}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                          {item.problem_description || 'Sin descripción'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-4 w-full sm:w-auto mt-2 sm:mt-0">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${item.status === 'Finalizado'
+                            ? 'bg-success/10 text-success'
+                            : 'bg-primary/10 text-primary'
+                          }`}>
+                          {item.status}
+                        </span>
+                        <Button variant="ghost" size="sm" className="hidden sm:flex">
+                          Ver detalles
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : selectedRepair ? (
+              <div className="max-w-3xl mx-auto animate-fade-in">
+                {repairs.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => setSelectedRepair(null)}
+                    className="mb-6 pl-0 hover:bg-transparent hover:text-primary"
+                  >
+                    ← Volver a la lista
+                  </Button>
+                )}
+
                 {/* Repair Info Card */}
                 <div className="bg-card rounded-2xl border border-border p-6 lg:p-8 mb-8 shadow-card">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                     <div>
                       <p className="text-sm text-muted-foreground mb-1">Código de seguimiento</p>
-                      <h2 className="text-2xl font-bold text-primary">{repair.tracking_code}</h2>
+                      <h2 className="text-2xl font-bold text-primary">{selectedRepair.tracking_code}</h2>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`px-4 py-2 rounded-full text-sm font-medium ${
-                        repair.status === 'Finalizado'
-                          ? 'bg-success/10 text-success'
-                          : 'bg-primary/10 text-primary'
-                      }`}>
-                        {repair.status}
+                      <span className={`px-4 py-2 rounded-full text-sm font-medium ${selectedRepair.status === 'Finalizado'
+                        ? 'bg-success/10 text-success'
+                        : 'bg-primary/10 text-primary'
+                        }`}>
+                        {selectedRepair.status}
                       </span>
                     </div>
                   </div>
@@ -149,7 +238,7 @@ const Seguimiento = () => {
                       <div>
                         <p className="text-sm text-muted-foreground">Dispositivo</p>
                         <p className="font-medium text-foreground">
-                          {repair.device_brand} {repair.device_model}
+                          {selectedRepair.device_brand} {selectedRepair.device_model}
                         </p>
                       </div>
                     </div>
@@ -158,7 +247,7 @@ const Seguimiento = () => {
                       <div>
                         <p className="text-sm text-muted-foreground">Fecha de ingreso</p>
                         <p className="font-medium text-foreground">
-                          {new Date(repair.created_at).toLocaleDateString('es-PE', {
+                          {new Date(selectedRepair.created_at).toLocaleDateString('es-PE', {
                             day: '2-digit',
                             month: 'long',
                             year: 'numeric',
@@ -170,15 +259,22 @@ const Seguimiento = () => {
                       <FileText className="h-5 w-5 text-primary mt-0.5" />
                       <div>
                         <p className="text-sm text-muted-foreground">Cliente</p>
-                        <p className="font-medium text-foreground">{repair.client_name || 'N/A'}</p>
+                        <p className="font-medium text-foreground">{selectedRepair.client_name || 'N/A'}</p>
                       </div>
                     </div>
                   </div>
 
-                  {repair.notes && (
-                    <div className="mt-6 p-4 rounded-xl bg-muted/50">
-                      <p className="text-sm text-muted-foreground mb-1">Notas</p>
-                      <p className="text-foreground">{repair.notes}</p>
+                  {selectedRepair.problem_description && (
+                    <div className="mt-6 p-4 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                      <p className="text-sm text-orange-700 dark:text-orange-400 mb-1 font-medium">Problema Reportado</p>
+                      <p className="text-foreground">{selectedRepair.problem_description}</p>
+                    </div>
+                  )}
+
+                  {selectedRepair.notes && (
+                    <div className="mt-4 p-4 rounded-xl bg-muted/50">
+                      <p className="text-sm text-muted-foreground mb-1">Notas del Técnico</p>
+                      <p className="text-foreground">{selectedRepair.notes}</p>
                     </div>
                   )}
                 </div>
@@ -186,10 +282,18 @@ const Seguimiento = () => {
                 {/* Timeline */}
                 <div className="bg-card rounded-2xl border border-border p-6 lg:p-8 shadow-card">
                   <h3 className="text-lg font-semibold text-foreground mb-8">Estado de la Reparación</h3>
-                  <RepairTimeline currentStatus={repair.status} />
+                  <RepairTimeline currentStatus={selectedRepair.status} />
+
+                  {logs.length > 0 && (
+                    <div className="mt-8 pt-6 border-t border-border">
+                      <h4 className="text-md font-semibold text-foreground mb-4">Observaciones</h4>
+                      <RepairLogs logs={logs} />
+                    </div>
+                  )}
                 </div>
               </div>
             ) : null}
+
           </div>
         </section>
       </Layout>

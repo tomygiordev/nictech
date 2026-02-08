@@ -47,7 +47,7 @@ export const ProductCard = ({
             <Package className="h-16 w-16 text-muted-foreground/30" />
           </div>
         )}
-        
+
         {/* Category badge */}
         <div className="absolute top-3 left-3">
           <span className="px-3 py-1 rounded-full bg-background/90 backdrop-blur-sm text-xs font-medium text-foreground">
@@ -82,17 +82,17 @@ export const ProductCard = ({
             {description}
           </p>
         )}
-        
+
         <div className="flex items-center justify-between">
           <div>
             <span className="text-2xl font-bold text-primary">
-              S/ {price.toFixed(2)}
+              $ {price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <p className="text-xs text-muted-foreground mt-1">
               {stock > 0 ? `${stock} disponibles` : 'Sin stock'}
             </p>
           </div>
-          
+
           <Button
             variant="default"
             size="icon"

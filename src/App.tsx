@@ -12,6 +12,7 @@ import Seguimiento from "./pages/Seguimiento";
 import Blog from "./pages/Blog";
 import Contacto from "./pages/Contacto";
 import Admin from "./pages/Admin";
+import Login from "./pages/Login";
 import Checkout from "./pages/Checkout";
 import NotFound from "./pages/NotFound";
 
@@ -33,6 +34,7 @@ const App = () => (
               <Route path="/seguimiento" element={<Seguimiento />} />
               <Route path="/blog" element={<Blog />} />
               <Route path="/contacto" element={<Contacto />} />
+              <Route path="/login" element={<Login />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

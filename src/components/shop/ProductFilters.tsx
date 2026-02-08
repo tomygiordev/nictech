@@ -3,8 +3,13 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
 
+interface Category {
+  id: string;
+  name: string;
+}
+
 interface ProductFiltersProps {
-  categories: string[];
+  categories: Category[];
   selectedCategory: string | null;
   onCategoryChange: (category: string | null) => void;
   priceRange: [number, number];
@@ -93,16 +98,16 @@ export const ProductFilters = ({
               </button>
               {categories.map((category) => (
                 <button
-                  key={category}
-                  onClick={() => onCategoryChange(category)}
+                  key={category.id}
+                  onClick={() => onCategoryChange(category.id)}
                   className={cn(
                     "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                    selectedCategory === category
+                    selectedCategory === category.id
                       ? "bg-primary/10 text-primary font-medium"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
-                  {category}
+                  {category.name}
                 </button>
               ))}
             </div>
@@ -122,10 +127,10 @@ export const ProductFilters = ({
               />
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  S/ {priceRange[0]}
+                  $ {priceRange[0].toLocaleString('es-AR')}
                 </span>
-                <span className="text-muted-foreground">
-                  S/ {priceRange[1]}
+                <span className="text-sm font-medium">
+                  $ {priceRange[1].toLocaleString('es-AR')}
                 </span>
               </div>
             </div>

@@ -8,58 +8,59 @@ const services = [
     icon: Smartphone,
     title: 'Reparación de Smartphones',
     description: 'Cambio de pantalla, batería, carga, botones y más para todas las marcas.',
-    price: 'Desde S/ 80',
+    price: 'Desde $ 80',
     popular: true,
   },
   {
     icon: Laptop,
     title: 'Reparación de Laptops',
     description: 'Diagnóstico, cambio de disco, RAM, teclado, pantalla y mantenimiento general.',
-    price: 'Desde S/ 100',
+    price: 'Desde $ 100',
     popular: false,
   },
   {
     icon: Tablet,
     title: 'Reparación de Tablets',
     description: 'Servicio especializado para iPad, Samsung Galaxy Tab y otras marcas.',
-    price: 'Desde S/ 90',
+    price: 'Desde $ 90',
     popular: false,
   },
   {
     icon: HardDrive,
     title: 'Recuperación de Datos',
     description: 'Recuperamos tus archivos de discos duros, USB, memorias SD y dispositivos dañados.',
-    price: 'Desde S/ 150',
+    price: 'Desde $ 150',
     popular: true,
   },
   {
     icon: Battery,
     title: 'Cambio de Batería',
     description: 'Baterías originales y compatibles con garantía para smartphones y laptops.',
-    price: 'Desde S/ 60',
+    price: 'Desde $ 60',
     popular: false,
   },
   {
     icon: Monitor,
     title: 'Cambio de Pantalla',
     description: 'Pantallas LCD y OLED originales con instalación profesional.',
-    price: 'Desde S/ 120',
+    price: 'Desde $ 120',
     popular: false,
   },
   {
     icon: Wrench,
     title: 'Mantenimiento Preventivo',
     description: 'Limpieza interna, cambio de pasta térmica y optimización de rendimiento.',
-    price: 'Desde S/ 50',
+    price: 'Desde $ 50',
     popular: false,
   },
 ];
 
 const Servicios = () => {
-  const phoneNumber = '51999888777';
+  /* const phoneNumber = '51999888777'; */
   const getWhatsAppUrl = (service: string) => {
-    const message = encodeURIComponent(`Hola, me interesa el servicio de: ${service}. ¿Podrían darme más información?`);
-    return `https://wa.me/${phoneNumber}?text=${message}`;
+    /* const message = encodeURIComponent(`Hola, me interesa el servicio de: ${service}. ¿Podrían darme más información?`); */
+    /* return `https://wa.me/${phoneNumber}?text=${message}`; */
+    return "https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0";
   };
 
   return (
@@ -150,7 +151,7 @@ const Servicios = () => {
               </p>
               <Button asChild size="lg">
                 <a
-                  href={`https://wa.me/${phoneNumber}?text=${encodeURIComponent('Hola, necesito ayuda con un problema técnico.')}`}
+                  href="https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

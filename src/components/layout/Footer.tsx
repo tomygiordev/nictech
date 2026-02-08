@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Cpu, MapPin, Phone, Mail, Clock, Facebook, Instagram, Twitter } from 'lucide-react';
+import { Cpu, MapPin, Phone, Mail, Clock, Facebook, Instagram, Youtube } from 'lucide-react';
 
 export const Footer = () => {
   return (
@@ -15,26 +15,32 @@ export const Footer = () => {
               <span className="text-xl font-bold">NicTech</span>
             </Link>
             <p className="text-secondary-foreground/80 text-sm leading-relaxed">
-              Expertos en reparación y venta de tecnología. Más de 10 años brindando soluciones confiables.
+              Expertos en reparación y venta de tecnología. Brindando soluciones confiables.
             </p>
             <div className="flex gap-3">
               <a
-                href="#"
+                href="https://www.facebook.com/profile.php?id=61563599450690&sk=about"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
               >
                 <Facebook className="h-4 w-4" />
               </a>
               <a
-                href="#"
+                href="https://www.instagram.com/nictech.ar/"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
               >
                 <Instagram className="h-4 w-4" />
               </a>
               <a
-                href="#"
+                href="https://www.youtube.com/@nictech.repara"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
               >
-                <Twitter className="h-4 w-4" />
+                <Youtube className="h-4 w-4" />
               </a>
             </div>
           </div>
@@ -89,21 +95,27 @@ export const Footer = () => {
               <li className="flex items-start gap-3">
                 <MapPin className="h-4 w-4 mt-0.5 text-primary" />
                 <span className="text-sm text-secondary-foreground/80">
-                  Av. Tecnología 123, Lima, Perú
+                  Urdinarrain y Gilbert, Entre Ríos, Argentina
                 </span>
               </li>
               <li className="flex items-center gap-3">
                 <Phone className="h-4 w-4 text-primary" />
-                <span className="text-sm text-secondary-foreground/80">
-                  +51 999 888 777
-                </span>
+                <a
+                  href="https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-secondary-foreground/80 hover:text-white transition-colors"
+                >
+                  +54 9 3446 35-3769
+                </a>
               </li>
               <li className="flex items-center gap-3">
                 <Mail className="h-4 w-4 text-primary" />
                 <span className="text-sm text-secondary-foreground/80">
-                  info@nictech.pe
+                  nictech.urdi@gmail.com
                 </span>
               </li>
+              {/* 
               <li className="flex items-start gap-3">
                 <Clock className="h-4 w-4 mt-0.5 text-primary" />
                 <div className="text-sm text-secondary-foreground/80">
@@ -111,6 +123,7 @@ export const Footer = () => {
                   <p>Sáb: 9:00 - 14:00</p>
                 </div>
               </li>
+              */}
             </ul>
           </div>
         </div>
