@@ -6,6 +6,7 @@ export interface CartItem {
   price: number;
   quantity: number;
   image_url?: string;
+  maxStock: number;
 }
 
 interface CartContextType {
@@ -38,8 +39,19 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setItems(prev => {
       const existingItem = prev.find(i => i.id === item.id);
       if (existingItem) {
+        if (existingItem.quantity >= item.maxStock) {
+          /* toast({
+           title: "Stock límite alcanzado",
+           description: "No puedes agregar más unidades de este producto.",
+           variant: "destructive"
+          }); */
+          // Note: We can't use toast hook inside callback easily without refactoring or passing it in.
+          // For now, simpler to just return valid state. Warning to be handled by caller or state effect?
+          // Actually, let's just not add it.
+          return prev; // Do nothing if full
+        }
         return prev.map(i =>
-          i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i
+          i.id === item.id ? { ...i, quantity: Math.min(i.quantity + 1, item.maxStock) } : i
         );
       }
       return [...prev, { ...item, quantity: 1 }];
@@ -56,7 +68,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     setItems(prev =>
-      prev.map(item => (item.id === id ? { ...item, quantity } : item))
+      prev.map(item => {
+        if (item.id === id) {
+          return { ...item, quantity: Math.min(quantity, item.maxStock) };
+        }
+        return item;
+      })
     );
   }, [removeFromCart]);
 

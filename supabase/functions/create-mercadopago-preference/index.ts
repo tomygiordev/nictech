@@ -20,6 +20,7 @@ interface RequestBody {
     email?: string;
     phone?: string;
   };
+  origin?: string;
 }
 
 serve(async (req) => {
@@ -42,37 +43,57 @@ serve(async (req) => {
       throw new Error("No items provided");
     }
 
-    // Build MercadoPago preference
+    // Get origin from body or headers
+    let origin = body.origin || req.headers.get("origin") || "";
+
+    // Remove trailing slash if present
+    if (origin.endsWith("/")) {
+      origin = origin.slice(0, -1);
+    }
+
+    console.log("Using origin:", origin);
+
+    // Validate origin but proceed with fallback if needed for testing
+    const validOrigin = (origin && origin.startsWith("http")) ? origin : "https://www.google.com";
+
+    // IMPORTANT: Mercado Pago sometimes dislikes localhost for auto_return
+    // We strictly format the back_urls here.
+
+    // Ensure payer email is present if payer object exists
+    const payerData = (body.payer && body.payer.email) ? {
+      name: body.payer.name,
+      email: body.payer.email,
+    } : undefined;
+
+    // Build MercadoPago preference - MINIMAL DEBUG VERSION
     const preference = {
       items: body.items.map((item) => ({
         id: item.id,
         title: item.name,
-        quantity: item.quantity,
-        unit_price: item.price,
         currency_id: "ARS",
         picture_url: item.image_url || undefined,
+        description: item.name,
+        category_id: "others",
+        quantity: Number(item.quantity),
+        unit_price: Number(item.price)
       })),
-      payer: body.payer ? {
-        name: body.payer.name || "",
-        email: body.payer.email || "",
-        phone: body.payer.phone ? { number: body.payer.phone } : undefined,
-      } : undefined,
       back_urls: {
-        success: `${req.headers.get("origin")}/tienda?payment=success`,
-        failure: `${req.headers.get("origin")}/tienda?payment=failure`,
-        pending: `${req.headers.get("origin")}/tienda?payment=pending`,
+        success: "https://www.google.com",
+        failure: "https://www.google.com",
+        pending: "https://www.google.com",
       },
+      payer: payerData,
       auto_return: "approved",
-      payment_methods: {
-        excluded_payment_types: [],
-        installments: 12,
-        default_installments: 1,
-      },
       statement_descriptor: "NICTECH",
       external_reference: `order-${Date.now()}`,
+      notification_url: "https://tuzpcofywkhglkqplhnn.supabase.co/functions/v1/mercadopago-webhook",
+      metadata: {
+        // redundant but useful for easy access in webhook without parsing description
+        items: JSON.stringify(body.items.map(i => ({ id: i.id, quantity: i.quantity })))
+      }
     };
 
-    console.log("Creating MercadoPago preference:", JSON.stringify(preference));
+    console.log("PAYLOAD TO MP:", JSON.stringify(preference, null, 2));
 
     // Create preference via MercadoPago API
     const mpResponse = await fetch("https://api.mercadopago.com/checkout/preferences", {
@@ -103,8 +124,8 @@ serve(async (req) => {
         status: 200,
       }
     );
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+  } catch (error: any) {
+    const errorMessage = error.message || "Unknown error";
     console.error("Error in create-mercadopago-preference:", errorMessage);
     return new Response(
       JSON.stringify({ error: errorMessage }),

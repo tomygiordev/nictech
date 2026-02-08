@@ -8,49 +8,42 @@ const services = [
     icon: Smartphone,
     title: 'Reparación de Smartphones',
     description: 'Cambio de pantalla, batería, carga, botones y más para todas las marcas.',
-    price: 'Desde $ 80',
     popular: true,
   },
   {
     icon: Laptop,
     title: 'Reparación de Laptops',
     description: 'Diagnóstico, cambio de disco, RAM, teclado, pantalla y mantenimiento general.',
-    price: 'Desde $ 100',
     popular: false,
   },
   {
     icon: Tablet,
     title: 'Reparación de Tablets',
     description: 'Servicio especializado para iPad, Samsung Galaxy Tab y otras marcas.',
-    price: 'Desde $ 90',
     popular: false,
   },
   {
     icon: HardDrive,
     title: 'Recuperación de Datos',
     description: 'Recuperamos tus archivos de discos duros, USB, memorias SD y dispositivos dañados.',
-    price: 'Desde $ 150',
     popular: true,
   },
   {
     icon: Battery,
     title: 'Cambio de Batería',
     description: 'Baterías originales y compatibles con garantía para smartphones y laptops.',
-    price: 'Desde $ 60',
     popular: false,
   },
   {
     icon: Monitor,
     title: 'Cambio de Pantalla',
     description: 'Pantallas LCD y OLED originales con instalación profesional.',
-    price: 'Desde $ 120',
     popular: false,
   },
   {
     icon: Wrench,
     title: 'Mantenimiento Preventivo',
     description: 'Limpieza interna, cambio de pasta térmica y optimización de rendimiento.',
-    price: 'Desde $ 50',
     popular: false,
   },
 ];
@@ -114,13 +107,11 @@ const Servicios = () => {
                     {service.description}
                   </p>
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-bold text-primary">
-                      {service.price}
-                    </span>
+                  <div className="flex justify-end pt-4">
                     <Button
                       variant="outline"
                       size="sm"
+                      className="w-full sm:w-auto"
                       asChild
                     >
                       <a
@@ -129,7 +120,7 @@ const Servicios = () => {
                         rel="noopener noreferrer"
                       >
                         <MessageCircle className="h-4 w-4 mr-2" />
-                        Cotizar
+                        Consultar
                       </a>
                     </Button>
                   </div>

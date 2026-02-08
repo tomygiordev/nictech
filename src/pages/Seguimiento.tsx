@@ -17,6 +17,7 @@ interface Repair {
   device_model: string;
   device_brand: string | null;
   status: string;
+  locality: string | null;
   notes: string | null;
   problem_description: string | null;
   created_at: string;
@@ -190,8 +191,8 @@ const Seguimiento = () => {
                       </div>
                       <div className="flex items-center gap-4 w-full sm:w-auto mt-2 sm:mt-0">
                         <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${item.status === 'Finalizado'
-                            ? 'bg-success/10 text-success'
-                            : 'bg-primary/10 text-primary'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-primary/10 text-primary'
                           }`}>
                           {item.status}
                         </span>
@@ -223,6 +224,9 @@ const Seguimiento = () => {
                       <h2 className="text-2xl font-bold text-primary">{selectedRepair.tracking_code}</h2>
                     </div>
                     <div className="flex items-center gap-2">
+                      <span className="px-3 py-1 rounded-full bg-secondary/50 text-secondary-foreground text-sm font-medium border border-border">
+                        {selectedRepair.locality || 'Urdinarrain'}
+                      </span>
                       <span className={`px-4 py-2 rounded-full text-sm font-medium ${selectedRepair.status === 'Finalizado'
                         ? 'bg-success/10 text-success'
                         : 'bg-primary/10 text-primary'

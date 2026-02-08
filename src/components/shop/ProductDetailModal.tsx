@@ -45,6 +45,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
             name: product.name,
             price: product.price,
             image_url: product.image_url || undefined,
+            maxStock: product.stock,
         });
         toast({
             title: 'Producto agregado',

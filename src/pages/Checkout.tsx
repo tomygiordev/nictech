@@ -128,6 +128,7 @@ const Checkout = () => {
             image_url: item.image_url,
           })),
           payer: payerInfo,
+          origin: window.location.origin,
         },
       });
 
@@ -141,9 +142,30 @@ const Checkout = () => {
       } else {
         throw new Error('No se recibió URL de pago');
       }
-    } catch (error) {
-      console.error('Checkout error:', error);
-      toast.error(error instanceof Error ? error.message : 'Error al procesar el pago. Intenta nuevamente.');
+    } catch (error: any) {
+      console.error('Checkout error object:', error);
+
+      let errorMessage = 'Error al procesar el pago. Intenta nuevamente.';
+
+      // Attempt to extract more info
+      if (typeof error === 'object' && error !== null) {
+        if (error.message) errorMessage = error.message;
+
+        // Check for response details in the error object (common in Supabase SDK)
+        // Tries to read the body if available
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const body = await error.context.json();
+            console.error('Checkout error body:', body);
+            if (body.error) errorMessage = body.error;
+            if (body.message) errorMessage = body.message;
+          }
+        } catch (e) {
+          console.error('Error parsing error context:', e);
+        }
+      }
+
+      toast.error(`Error: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -253,27 +275,14 @@ const Checkout = () => {
                     onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
                     className="space-y-3"
                   >
-                    <div className="flex items-center space-x-3 p-4 rounded-xl border border-border hover:border-primary/50 transition-colors cursor-pointer">
+                    <div className="flex items-center space-x-3 p-4 rounded-xl border border-primary/50 bg-primary/5 transition-colors cursor-pointer">
                       <RadioGroupItem value="mercadopago" id="mercadopago" />
                       <Label htmlFor="mercadopago" className="flex items-center gap-3 cursor-pointer flex-1">
                         <Wallet className="h-5 w-5 text-[#009ee3]" />
                         <div>
-                          <p className="font-medium">MercadoPago</p>
+                          <p className="font-medium">Mercado Pago</p>
                           <p className="text-sm text-muted-foreground">
-                            Paga con tu cuenta de MercadoPago o dinero en efectivo
-                          </p>
-                        </div>
-                      </Label>
-                    </div>
-
-                    <div className="flex items-center space-x-3 p-4 rounded-xl border border-border hover:border-primary/50 transition-colors cursor-pointer">
-                      <RadioGroupItem value="card" id="card" />
-                      <Label htmlFor="card" className="flex items-center gap-3 cursor-pointer flex-1">
-                        <CreditCard className="h-5 w-5 text-primary" />
-                        <div>
-                          <p className="font-medium">Tarjeta de Crédito o Débito</p>
-                          <p className="text-sm text-muted-foreground">
-                            Visa, Mastercard, American Express y más
+                            Se generará un link con todos los métodos de pago (Tarjetas, Efectivo, etc.)
                           </p>
                         </div>
                       </Label>

@@ -25,7 +25,7 @@ export const ProductCard = ({
   const { addToCart } = useCart();
 
   const handleAddToCart = () => {
-    addToCart({ id, name, price, image_url });
+    addToCart({ id, name, price, image_url, maxStock: stock });
     toast({
       title: 'Producto agregado',
       description: `${name} se ha añadido al carrito.`,

@@ -49,6 +49,7 @@ interface Product {
   price: number;
   stock: number;
   image_url: string | null;
+  additional_images: string[] | null;
   description: string | null;
   category?: Category; // Join result
 }
@@ -59,6 +60,16 @@ interface RepairLog {
   content: string;
   created_at: string;
   is_public: boolean;
+}
+
+interface Order {
+  id: string;
+  payment_id: string;
+  status: string;
+  total: number;
+  items: any[];
+  payer: any;
+  created_at: string;
 }
 
 const RepairLogsDialog = ({ repairId, trackingCode }: { repairId: string; trackingCode: string }) => {
@@ -202,14 +213,18 @@ const Admin = () => {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [savingCategory, setSavingCategory] = useState(false);
 
+  const [orders, setOrders] = useState<Order[]>([]);
+
   const [newProduct, setNewProduct] = useState({
     name: '',
     category_id: '',
     price: '',
     stock: '',
     description: '',
-    image_url: '',
-    additional_images: [] as string[],
+    image_url: '' as string, // URL for preview (existing or new object URL)
+    image_file: null as File | null, // File object for new upload
+    additional_images: [] as string[], // URLs for preview (existing or new object URL)
+    additional_image_files: [] as File[], // File objects for new uploads
   });
 
   const [newRepair, setNewRepair] = useState({
@@ -219,6 +234,7 @@ const Admin = () => {
     device_brand: '',
     device_model: '',
     problem_description: '',
+    locality: 'Urdinarrain',
   });
   const [savingNewRepair, setSavingNewRepair] = useState(false);
 
@@ -244,10 +260,11 @@ const Admin = () => {
   const fetchData = async () => {
     setLoading(true);
 
-    const [repairsRes, productsRes, categoriesRes] = await Promise.all([
+    const [repairsRes, productsRes, categoriesRes, ordersRes] = await Promise.all([
       supabase.from('repairs').select('*').order('created_at', { ascending: false }),
       supabase.from('products').select('*, category:categories(*)').order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('*').order('name', { ascending: true }),
+      supabase.from('orders').select('*').order('created_at', { ascending: false }),
     ]);
 
     if (repairsRes.data) setRepairs(repairsRes.data as unknown as Repair[]);
@@ -260,12 +277,15 @@ const Admin = () => {
         price: item.price,
         stock: item.stock,
         image_url: item.image_url,
+        additional_images: item.additional_images || [],
         description: item.description,
         category: item.category // This comes from the join
       }));
       setProducts(formattedProducts);
+      setProducts(formattedProducts);
     }
     if (categoriesRes.data) setCategories(categoriesRes.data as unknown as Category[]);
+    if (ordersRes.data) setOrders(ordersRes.data as unknown as Order[]);
 
     setLoading(false);
   };
@@ -285,6 +305,7 @@ const Admin = () => {
       device_model: newRepair.device_model,
       problem_description: newRepair.problem_description || null,
       status: 'Recibido', // Default status
+      locality: newRepair.locality,
     });
 
     if (error) {
@@ -305,6 +326,7 @@ const Admin = () => {
         device_brand: '',
         device_model: '',
         problem_description: '',
+        locality: 'Urdinarrain',
       });
       fetchData();
     }
@@ -362,87 +384,48 @@ const Admin = () => {
     setSavingRepair(null);
   };
 
-  const addProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingProduct(true);
 
-    const { error } = await supabase
-      .from('products' as any)
-      .insert({
-        name: newProduct.name,
-        category_id: newProduct.category_id,
-        price: parseFloat(newProduct.price),
-        stock: parseInt(newProduct.stock),
-        description: newProduct.description || null,
-        image_url: newProduct.image_url || null,
-        additional_images: newProduct.additional_images || [],
-      });
 
-    if (error) {
-      console.error('Error al crear producto:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'No se pudo agregar el producto.',
-        variant: 'destructive',
-      });
-    } else {
-      toast({
-        title: 'Producto agregado',
-        description: `${newProduct.name} ha sido agregado exitosamente.`,
-      });
-      setNewProduct({ name: '', category_id: '', price: '', stock: '', description: '', image_url: '' });
-      fetchData();
-    }
-
-    setSavingProduct(false);
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, isAdditional = false) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isAdditional = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploadingImage(true);
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random()}.${fileExt}`;
-    const filePath = `${fileName}`;
+    const previewUrl = URL.createObjectURL(file);
 
-    const { error: uploadError, data } = await supabase.storage
-      .from('product_images')
-      .upload(filePath, file);
-
-    if (uploadError) {
-      console.error('Error al subir imagen:', uploadError);
-      toast({
-        title: 'Error al subir imagen',
-        description: uploadError.message || 'Error desconocido al subir el archivo.',
-        variant: 'destructive',
+    if (isAdditional) {
+      setNewProduct({
+        ...newProduct,
+        additional_images: [...(newProduct.additional_images || []), previewUrl],
+        additional_image_files: [...(newProduct.additional_image_files || []), file]
       });
     } else {
-      const { data: { publicUrl } } = supabase.storage
-        .from('product_images')
-        .getPublicUrl(filePath);
-
-      if (isAdditional) {
-        setNewProduct({
-          ...newProduct,
-          additional_images: [...(newProduct.additional_images || []), publicUrl]
-        });
-      } else {
-        setNewProduct({ ...newProduct, image_url: publicUrl });
-      }
-
-      toast({
-        title: 'Imagen subida',
-        description: 'La imagen se ha cargado correctamente.',
+      setNewProduct({
+        ...newProduct,
+        image_url: previewUrl,
+        image_file: file
       });
     }
-    setUploadingImage(false);
   };
 
   const removeAdditionalImage = (indexToRemove: number) => {
+    const isBlob = newProduct.additional_images[indexToRemove].startsWith('blob:');
+
+    let newFiles = [...newProduct.additional_image_files];
+    if (isBlob) {
+      // Count how many blobs are before this index to find the correct file index
+      let blobIndex = 0;
+      for (let i = 0; i < indexToRemove; i++) {
+        if (newProduct.additional_images[i].startsWith('blob:')) {
+          blobIndex++;
+        }
+      }
+      newFiles = newFiles.filter((_, i) => i !== blobIndex);
+    }
+
     setNewProduct({
       ...newProduct,
-      additional_images: newProduct.additional_images.filter((_, index) => index !== indexToRemove)
+      additional_images: newProduct.additional_images.filter((_, index) => index !== indexToRemove),
+      additional_image_files: newFiles
     });
   };
 
@@ -457,7 +440,9 @@ const Admin = () => {
       stock: product.stock.toString(),
       description: product.description || '',
       image_url: product.image_url || '',
+      image_file: null,
       additional_images: product.additional_images || [],
+      additional_image_files: []
     });
   };
 
@@ -470,7 +455,9 @@ const Admin = () => {
       stock: '',
       description: '',
       image_url: '',
-      additional_images: []
+      image_file: null,
+      additional_images: [],
+      additional_image_files: []
     });
   };
 
@@ -497,61 +484,105 @@ const Admin = () => {
     }
   };
 
+  const uploadFile = async (file: File) => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Math.random()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('product_images')
+      .upload(filePath, file);
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('product_images')
+      .getPublicUrl(filePath);
+
+    return publicUrl;
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingProduct(true);
 
-    const productData = {
-      name: newProduct.name,
-      category_id: newProduct.category_id,
-      price: parseFloat(newProduct.price),
-      stock: parseInt(newProduct.stock),
-      description: newProduct.description || null,
-      image_url: newProduct.image_url || null,
-      additional_images: newProduct.additional_images || [],
-    };
+    try {
+      let finalImageUrl = newProduct.image_url;
+      if (newProduct.image_file) {
+        finalImageUrl = await uploadFile(newProduct.image_file);
+      }
 
-    if (editingProductId) {
-      // Update existing product
-      const { error } = await supabase
-        .from('products' as any)
-        .update(productData)
-        .eq('id', editingProductId);
+      const finalAdditionalImages = [...newProduct.additional_images];
 
-      if (error) {
-        toast({
-          title: 'Error',
-          description: error.message || 'No se pudo actualizar el producto.',
-          variant: 'destructive',
-        });
-      } else {
+      // Calculate how many existing images are there (URLs that are not blob:)
+      // Actually we just need to replace the blob URLs with real URLs
+      // But preserving order is tricky if we mix them.
+      // Strategy: 
+      // 1. We have additional_images (mix of real URLs and blob URLs)
+      // 2. We have additional_image_files (files corresponding to the blob URLs)
+      // The additional_image_files array aligns with the *newly added* images.
+      // But if we delete an image from the middle, syncing is hard.
+      // Simplified approach: Upload all files in additional_image_files, and append them to the existing *real* URLs.
+      // BUT current verify logic: `additional_images` has previews. 
+      // Let's filter `additional_images` for real URLs (not starting with blob:).
+      // Then upload all `additional_image_files` and add their new URLs.
+
+      const existingUrls = newProduct.additional_images.filter(url => !url.startsWith('blob:'));
+
+      const newImageUrls = await Promise.all(
+        newProduct.additional_image_files.map(file => uploadFile(file))
+      );
+
+      const allAdditionalImages = [...existingUrls, ...newImageUrls];
+
+      const productData = {
+        name: newProduct.name,
+        category_id: newProduct.category_id,
+        price: parseFloat(newProduct.price),
+        stock: parseInt(newProduct.stock),
+        description: newProduct.description || null,
+        image_url: finalImageUrl || null,
+        additional_images: allAdditionalImages,
+      };
+
+      if (editingProductId) {
+        // Update existing product
+        const { error } = await supabase
+          .from('products' as any)
+          .update(productData)
+          .eq('id', editingProductId);
+
+        if (error) throw error;
+
         toast({
           title: 'Producto actualizado',
           description: `${newProduct.name} ha sido actualizado exitosamente.`,
         });
-        cancelEditingProduct();
-        fetchData();
-      }
-    } else {
-      // Create new product
-      const { error } = await supabase
-        .from('products' as any)
-        .insert(productData);
-
-      if (error) {
-        toast({
-          title: 'Error',
-          description: error.message || 'No se pudo agregar el producto.',
-          variant: 'destructive',
-        });
       } else {
+        // Create new product
+        const { error } = await supabase
+          .from('products' as any)
+          .insert(productData);
+
+        if (error) throw error;
+
         toast({
           title: 'Producto agregado',
           description: `${newProduct.name} ha sido agregado exitosamente.`,
         });
-        cancelEditingProduct(); // Clear form
-        fetchData();
       }
+
+      cancelEditingProduct();
+      fetchData();
+    } catch (error: any) {
+      console.error('Error al guardar producto:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo guardar el producto.',
+        variant: 'destructive',
+      });
     }
 
     setSavingProduct(false);
@@ -599,7 +630,7 @@ const Admin = () => {
             </div>
           ) : (
             <Tabs defaultValue="repairs" className="space-y-6">
-              <TabsList className="grid w-full max-w-md grid-cols-3">
+              <TabsList className="grid w-full max-w-2xl grid-cols-4">
                 <TabsTrigger value="repairs" className="flex items-center gap-2">
                   <Wrench className="h-4 w-4" />
                   Reparaciones
@@ -611,6 +642,10 @@ const Admin = () => {
                 <TabsTrigger value="categories" className="flex items-center gap-2">
                   <Package className="h-4 w-4" />
                   Categorías
+                </TabsTrigger>
+                <TabsTrigger value="orders" className="flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  Ventas Online
                 </TabsTrigger>
               </TabsList>
 
@@ -683,6 +718,23 @@ const Admin = () => {
                           rows={3}
                         />
                       </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="locality">Localidad</Label>
+                        <Select
+                          value={newRepair.locality}
+                          onValueChange={(value) => setNewRepair({ ...newRepair, locality: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar localidad" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Urdinarrain">Urdinarrain</SelectItem>
+                            <SelectItem value="Gilbert">Gilbert</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
                       <Button type="submit" className="w-full" disabled={savingNewRepair}>
                         {savingNewRepair ? (
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -709,6 +761,7 @@ const Admin = () => {
                           <TableRow>
                             <TableHead>Código</TableHead>
                             <TableHead>Dispositivo</TableHead>
+                            <TableHead>Localidad</TableHead>
                             <TableHead>Descripción</TableHead>
                             <TableHead>Estado</TableHead>
                             <TableHead>Acciones</TableHead>
@@ -730,6 +783,11 @@ const Admin = () => {
                               </TableCell>
                               <TableCell>
                                 {repair.device_brand} {repair.device_model}
+                              </TableCell>
+                              <TableCell>
+                                <span className={`px-2 py-1 rounded text-xs font-medium border ${repair.locality === 'Gilbert' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-green-100 text-green-800 border-green-200'}`}>
+                                  {repair.locality || 'Urdinarrain'}
+                                </span>
                               </TableCell>
                               <TableCell className="max-w-[150px] truncate" title={repair.problem_description || repair.notes || ''}>
                                 {repair.problem_description || repair.notes || '-'}
@@ -846,7 +904,7 @@ const Admin = () => {
                             <input
                               type="file"
                               accept="image/*"
-                              onChange={handleImageUpload}
+                              onChange={(e) => handleImageUpload(e, false)}
                               className="hidden"
                               id="file-upload"
                               disabled={uploadingImage}
@@ -868,6 +926,43 @@ const Admin = () => {
                             <img src={newProduct.image_url} alt="Preview" className="object-cover w-full h-full" />
                           </div>
                         )}
+                      </div>
+
+                      {/* Additional Images Section */}
+                      <div className="space-y-2">
+                        <Label>Imágenes Adicionales</Label>
+                        <div className="grid grid-cols-4 gap-4">
+                          {newProduct.additional_images?.map((img, index) => (
+                            <div key={index} className="relative group aspect-square rounded-lg overflow-hidden border bg-background">
+                              <img src={img} alt={`Adicional ${index}`} className="w-full h-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => removeAdditionalImage(index)}
+                                className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+
+                          <div className="relative aspect-square flex items-center justify-center border-2 border-dashed rounded-lg hover:bg-accent/50 transition-colors cursor-pointer">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleImageUpload(e, true)}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                              disabled={uploadingImage}
+                            />
+                            {uploadingImage ? (
+                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            ) : (
+                              <div className="text-center">
+                                <Plus className="h-6 w-6 mx-auto text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">Agregar</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="description">Descripción</Label>
@@ -902,6 +997,7 @@ const Admin = () => {
                             <TableHead>Producto</TableHead>
                             <TableHead>Categoría</TableHead>
                             <TableHead>Precio</TableHead>
+                            <TableHead>Stock</TableHead>
                             <TableHead>Acciones</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -929,6 +1025,9 @@ const Admin = () => {
                               <TableCell>{product.category?.name || 'Sin categoría'}</TableCell>
                               <TableCell className="font-medium text-primary">
                                 $ {product.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </TableCell>
+                              <TableCell className={product.stock < 5 ? "text-red-500 font-bold" : ""}>
+                                {product.stock}
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
@@ -1030,6 +1129,69 @@ const Admin = () => {
                         </TableBody>
                       </Table>
                     </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Orders Tab */}
+              <TabsContent value="orders">
+                <div className="bg-card rounded-2xl border border-border overflow-hidden">
+                  <div className="p-6 border-b border-border">
+                    <h3 className="text-lg font-semibold">Historial de Ventas Online</h3>
+                    <p className="text-muted-foreground text-sm">{orders.length} órdenes registradas</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>ID Pago / Ref</TableHead>
+                          <TableHead>Cliente</TableHead>
+                          <TableHead>Items</TableHead>
+                          <TableHead>Total</TableHead>
+                          <TableHead>Estado</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {orders.map((order) => (
+                          <TableRow key={order.id}>
+                            <TableCell className="whitespace-nowrap">
+                              {new Date(order.created_at).toLocaleString('es-PE')}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {order.payment_id}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{order.payer?.email || '-'}</span>
+                                <span className="text-xs text-muted-foreground">{order.payer?.first_name} {order.payer?.last_name}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1 text-sm">
+                                {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
+                                  <div key={idx} className="flex gap-2">
+                                    <span className="font-bold">{item.quantity}x</span>
+                                    <span>{item.title || item.name || 'Producto'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-bold">
+                              $ {Number(order.total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell>
+                              <span className={`px-2 py-1 rounded text-xs font-medium border capitalize ${order.status === 'approved' ? 'bg-green-100 text-green-800 border-green-200' :
+                                order.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                  'bg-red-100 text-red-800 border-red-200'
+                                }`}>
+                                {order.status === 'approved' ? 'Aprobado' : order.status}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               </TabsContent>
