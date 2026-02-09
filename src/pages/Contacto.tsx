@@ -70,7 +70,7 @@ const Contacto = () => {
             </div>
 
             {/* Map */}
-            <div className="rounded-2xl overflow-hidden bg-muted border border-border shadow-sm h-[450px]">
+            <div className="rounded-2xl overflow-hidden bg-muted border border-border shadow-sm h-[300px] lg:h-[450px]">
               <iframe
                 src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d342.5160463048138!2d-58.92949946250626!3d-32.5342748362853!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x95b0532973e3c1a7%3A0xb85a3859280c0f1a!2sDespensa%20de%20Juan%20Carlos%20orsinger!5e1!3m2!1sen!2sar!4v1770589996889!5m2!1sen!2sar"
                 width="100%"
