@@ -1,7 +1,7 @@
-
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'; // Added imports
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ShoppingCart, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from '@/components/ui/carousel';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';

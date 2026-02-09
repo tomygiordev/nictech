@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Cpu, MapPin, Phone, Mail, Clock, Facebook, Instagram, Youtube } from 'lucide-react';
+import { MapPin, Phone, Mail, Clock, Facebook, Instagram, Youtube } from 'lucide-react';
 
 export const Footer = () => {
   return (
@@ -9,9 +9,11 @@ export const Footer = () => {
           {/* Brand */}
           <div className="space-y-4">
             <Link to="/" className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-md">
-                <Cpu className="h-5 w-5 text-primary-foreground" />
-              </div>
+              <img
+                src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo%20solo%20isotipo%20(solo%20icono%20sin%20texto).png"
+                alt="Nictech Logo"
+                className="h-10 w-10 object-contain"
+              />
               <span className="text-xl font-bold">Nictech</span>
             </Link>
             <p className="text-secondary-foreground/80 text-sm leading-relaxed">

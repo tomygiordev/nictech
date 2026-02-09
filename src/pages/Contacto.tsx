@@ -39,7 +39,9 @@ const Contacto = () => {
                 <h4 className="font-medium text-foreground mb-2">Dirección</h4>
                 <p className="text-muted-foreground">
                   Calle 19 y 5 (Esquina)<br />
-                  Urdinarrain y Gilbert, Entre Ríos
+                  Gilbert <br />
+                  Urdinarrain <br />
+                  Entre Ríos
                 </p>
               </div>
 

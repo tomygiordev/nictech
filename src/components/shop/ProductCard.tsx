@@ -24,7 +24,8 @@ export const ProductCard = ({
 }: ProductCardProps) => {
   const { addToCart } = useCart();
 
-  const handleAddToCart = () => {
+  const handleAddToCart = (e: React.MouseEvent) => {
+    e.stopPropagation();
     addToCart({ id, name, price, image_url, maxStock: stock });
     toast({
       title: 'Producto agregado',

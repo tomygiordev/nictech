@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Cpu, Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X } from 'lucide-react';
+import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { generateTrackingCode } from '@/utils/generateTrackingCode';
@@ -600,9 +600,11 @@ const Admin = () => {
         <header className="bg-secondary text-secondary-foreground py-4">
           <div className="container-main flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
-                <Cpu className="h-5 w-5 text-primary-foreground" />
-              </div>
+              <img
+                src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo%20solo%20isotipo%20(solo%20icono%20sin%20texto).png"
+                alt="Nictech Logo"
+                className="h-10 w-10 object-contain"
+              />
               <div>
                 <h1 className="font-bold text-lg">Nictech Admin</h1>
                 <p className="text-secondary-foreground/70 text-sm">Panel de Administración</p>
@@ -630,20 +632,20 @@ const Admin = () => {
             </div>
           ) : (
             <Tabs defaultValue="repairs" className="space-y-6">
-              <TabsList className="grid w-full max-w-2xl grid-cols-4">
-                <TabsTrigger value="repairs" className="flex items-center gap-2">
+              <TabsList className="w-full justify-start overflow-x-auto flex-nowrap md:grid md:justify-center md:max-w-2xl md:grid-cols-4 bg-muted/50 p-1">
+                <TabsTrigger value="repairs" className="flex items-center gap-2 min-w-[120px] md:min-w-0">
                   <Wrench className="h-4 w-4" />
                   Reparaciones
                 </TabsTrigger>
-                <TabsTrigger value="products" className="flex items-center gap-2">
+                <TabsTrigger value="products" className="flex items-center gap-2 min-w-[120px] md:min-w-0">
                   <Package className="h-4 w-4" />
                   Productos
                 </TabsTrigger>
-                <TabsTrigger value="categories" className="flex items-center gap-2">
+                <TabsTrigger value="categories" className="flex items-center gap-2 min-w-[120px] md:min-w-0">
                   <Package className="h-4 w-4" />
                   Categorías
                 </TabsTrigger>
-                <TabsTrigger value="orders" className="flex items-center gap-2">
+                <TabsTrigger value="orders" className="flex items-center gap-2 min-w-[120px] md:min-w-0">
                   <Package className="h-4 w-4" />
                   Ventas Online
                 </TabsTrigger>

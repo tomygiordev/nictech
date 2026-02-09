@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, ShoppingCart, Cpu, Key } from 'lucide-react';
+import { Menu, X, ShoppingCart, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { cn } from '@/lib/utils';
@@ -24,12 +24,14 @@ export const Navbar = () => {
       <div className="container-main">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-md group-hover:shadow-lg transition-shadow">
-              <Cpu className="h-5 w-5 text-primary-foreground" />
-            </div>
+          <Link to="/" className="flex items-center gap-0.5 group">
+            <img
+              src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo%20solo%20isotipo%20(solo%20icono%20sin%20texto).png"
+              alt="Nictech Logo"
+              className="h-10 w-10 object-contain group-hover:scale-110 transition-transform"
+            />
             <span className="text-xl font-bold text-foreground">
-              Nic<span className="text-primary">tech</span>
+              ic<span className="text-primary">tech</span>
             </span>
           </Link>
 
@@ -55,7 +57,7 @@ export const Navbar = () => {
           <div className="flex items-center gap-2">
             {/* Admin Shortcut (Desktop) - Subtle */}
             <Link to="/login" className="hidden md:block">
-              <Button variant="ghost" size="icon" className="opacity-10 hover:opacity-100 transition-opacity duration-300">
+              <Button variant="ghost" size="icon" className="opacity-30 hover:opacity-100 transition-opacity duration-300">
                 <Key className="h-5 w-5" />
                 <span className="sr-only">Admin</span>
               </Button>
