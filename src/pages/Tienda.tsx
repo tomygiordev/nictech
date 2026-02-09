@@ -30,6 +30,7 @@ interface Product {
   additional_images: string[] | null;
   description: string | null;
   category?: Category;
+  tags: string[] | null;
 }
 
 const Tienda = () => {
@@ -63,7 +64,8 @@ const Tienda = () => {
         image_url: item.image_url,
         additional_images: item.additional_images || [],
         description: item.description,
-        category: item.category // This comes from the join
+        category: item.category, // This comes from the join
+        tags: item.tags || []
       }));
       setProducts(formattedProducts);
 
@@ -87,7 +89,8 @@ const Tienda = () => {
   const filteredProducts = useMemo(() => {
     const result = products.filter(product => {
       const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.description?.toLowerCase().includes(searchQuery.toLowerCase());
+        product.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        product.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesCategory = !selectedCategory || product.category_id === selectedCategory;
       const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
       return matchesSearch && matchesCategory && matchesPrice;

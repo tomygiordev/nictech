@@ -11,6 +11,7 @@ interface ProductCardProps {
   image_url?: string;
   description?: string;
   category: string;
+  tags?: string[] | null;
 }
 
 export const ProductCard = ({
@@ -21,6 +22,7 @@ export const ProductCard = ({
   image_url,
   description,
   category,
+  tags,
 }: ProductCardProps) => {
   const { addToCart } = useCart();
 
@@ -36,12 +38,12 @@ export const ProductCard = ({
   return (
     <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover">
       {/* Image */}
-      <div className="relative aspect-square bg-muted overflow-hidden">
+      <div className="relative aspect-square bg-white overflow-hidden p-2">
         {image_url ? (
           <img
             src={image_url}
             alt={name}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+            className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
           <div className="h-full w-full flex items-center justify-center">
@@ -82,6 +84,20 @@ export const ProductCard = ({
           <p className="text-muted-foreground text-sm line-clamp-2 mb-4">
             {description}
           </p>
+        )}
+
+        {/* Tags */}
+        {tags && tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-4">
+            {tags.slice(0, 3).map((tag, index) => (
+              <span key={index} className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider bg-secondary/50 text-secondary-foreground border border-secondary">
+                {tag}
+              </span>
+            ))}
+            {tags.length > 3 && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] text-muted-foreground">+{tags.length - 3}</span>
+            )}
+          </div>
         )}
 
         <div className="flex items-center justify-between">

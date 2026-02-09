@@ -52,6 +52,7 @@ interface Product {
   additional_images: string[] | null;
   description: string | null;
   category?: Category; // Join result
+  tags: string[] | null;
 }
 
 interface RepairLog {
@@ -225,6 +226,8 @@ const Admin = () => {
     image_file: null as File | null, // File object for new upload
     additional_images: [] as string[], // URLs for preview (existing or new object URL)
     additional_image_files: [] as File[], // File objects for new uploads
+    tags: [] as string[],
+    newTagInput: '',
   });
 
   const [newRepair, setNewRepair] = useState({
@@ -279,7 +282,8 @@ const Admin = () => {
         image_url: item.image_url,
         additional_images: item.additional_images || [],
         description: item.description,
-        category: item.category // This comes from the join
+        category: item.category, // This comes from the join
+        tags: item.tags || []
       }));
       setProducts(formattedProducts);
       setProducts(formattedProducts);
@@ -442,7 +446,9 @@ const Admin = () => {
       image_url: product.image_url || '',
       image_file: null,
       additional_images: product.additional_images || [],
-      additional_image_files: []
+      additional_image_files: [],
+      tags: product.tags || [],
+      newTagInput: ''
     });
   };
 
@@ -457,7 +463,9 @@ const Admin = () => {
       image_url: '',
       image_file: null,
       additional_images: [],
-      additional_image_files: []
+      additional_image_files: [],
+      tags: [],
+      newTagInput: ''
     });
   };
 
@@ -545,6 +553,7 @@ const Admin = () => {
         description: newProduct.description || null,
         image_url: finalImageUrl || null,
         additional_images: allAdditionalImages,
+        tags: newProduct.tags
       };
 
       if (editingProductId) {
@@ -966,6 +975,64 @@ const Admin = () => {
                           </div>
                         </div>
                       </div>
+
+                      <div className="space-y-2">
+                        <Label>Etiquetas</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={newProduct.newTagInput}
+                            onChange={(e) => setNewProduct({ ...newProduct, newTagInput: e.target.value })}
+                            placeholder="Ej: Oferta, Nuevo, Gaming..."
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (newProduct.newTagInput.trim()) {
+                                  setNewProduct({
+                                    ...newProduct,
+                                    tags: [...newProduct.tags, newProduct.newTagInput.trim()],
+                                    newTagInput: ''
+                                  });
+                                }
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              if (newProduct.newTagInput.trim()) {
+                                setNewProduct({
+                                  ...newProduct,
+                                  tags: [...newProduct.tags, newProduct.newTagInput.trim()],
+                                  newTagInput: ''
+                                });
+                              }
+                            }}
+                            variant="outline"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {newProduct.tags.map((tag, index) => (
+                            <span key={index} className="bg-secondary text-secondary-foreground px-2 py-1 rounded-md text-sm flex items-center gap-1">
+                              {tag}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setNewProduct({
+                                    ...newProduct,
+                                    tags: newProduct.tags.filter((_, i) => i !== index)
+                                  });
+                                }}
+                                className="hover:text-destructive"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
                       <div className="space-y-2">
                         <Label htmlFor="description">Descripción</Label>
                         <Textarea
