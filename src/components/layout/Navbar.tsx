@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, ShoppingCart, Cpu } from 'lucide-react';
+import { Menu, X, ShoppingCart, Cpu, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { cn } from '@/lib/utils';
@@ -29,7 +29,7 @@ export const Navbar = () => {
               <Cpu className="h-5 w-5 text-primary-foreground" />
             </div>
             <span className="text-xl font-bold text-foreground">
-              Nic<span className="text-primary">Tech</span>
+              Nic<span className="text-primary">tech</span>
             </span>
           </Link>
 
@@ -53,6 +53,14 @@ export const Navbar = () => {
 
           {/* Cart & Mobile Menu */}
           <div className="flex items-center gap-2">
+            {/* Admin Shortcut (Desktop) - Subtle */}
+            <Link to="/login" className="hidden md:block">
+              <Button variant="ghost" size="icon" className="opacity-10 hover:opacity-100 transition-opacity duration-300">
+                <Key className="h-5 w-5" />
+                <span className="sr-only">Admin</span>
+              </Button>
+            </Link>
+
             <Button
               variant="ghost"
               size="icon"
@@ -97,6 +105,16 @@ export const Navbar = () => {
                   {link.label}
                 </Link>
               ))}
+
+              {/* Admin Link (Mobile Only) */}
+              <Link
+                to="/login"
+                onClick={() => setIsOpen(false)}
+                className="px-4 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-2 mt-2 border-t border-border/50"
+              >
+                <Key className="h-4 w-4" />
+                Admin Panel
+              </Link>
             </div>
           </div>
         )}

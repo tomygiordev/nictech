@@ -44,7 +44,7 @@ const Checkout = () => {
     return (
       <>
         <Helmet>
-          <title>Resultado del Pago - NicTech</title>
+          <title>Resultado del Pago - Nictech</title>
         </Helmet>
         <Layout>
           <div className="min-h-[60vh] flex items-center justify-center">
@@ -91,7 +91,7 @@ const Checkout = () => {
     return (
       <>
         <Helmet>
-          <title>Checkout - NicTech</title>
+          <title>Checkout - Nictech</title>
         </Helmet>
         <Layout>
           <div className="min-h-[60vh] flex items-center justify-center">
@@ -174,7 +174,7 @@ const Checkout = () => {
   return (
     <>
       <Helmet>
-        <title>Checkout - NicTech</title>
+        <title>Checkout - Nictech</title>
         <meta name="description" content="Finaliza tu compra de forma segura" />
       </Helmet>
       <Layout>

@@ -100,7 +100,7 @@ const Seguimiento = () => {
   return (
     <>
       <Helmet>
-        <title>Seguimiento de Reparación - NicTech</title>
+        <title>Seguimiento de Reparación - Nictech</title>
         <meta name="description" content="Consulta el estado de tu reparación en tiempo real. Ingresa tu DNI o código de seguimiento." />
       </Helmet>
       <Layout>

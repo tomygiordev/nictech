@@ -59,7 +59,7 @@ const Servicios = () => {
   return (
     <>
       <Helmet>
-        <title>Servicios de Reparación - NicTech | Lima, Perú</title>
+        <title>Servicios de Reparación - Nictech | Lima, Perú</title>
         <meta name="description" content="Servicios profesionales de reparación: smartphones, laptops, tablets, recuperación de datos. Soporte certificado con garantía." />
       </Helmet>
       <Layout>

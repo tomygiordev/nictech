@@ -12,7 +12,7 @@ export const Footer = () => {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-md">
                 <Cpu className="h-5 w-5 text-primary-foreground" />
               </div>
-              <span className="text-xl font-bold">NicTech</span>
+              <span className="text-xl font-bold">Nictech</span>
             </Link>
             <p className="text-secondary-foreground/80 text-sm leading-relaxed">
               Expertos en reparación y venta de tecnología. Brindando soluciones confiables.
@@ -131,7 +131,7 @@ export const Footer = () => {
         <div className="mt-12 pt-8 border-t border-secondary-foreground/10">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-sm text-secondary-foreground/60">
-              © 2026 NicTech. Todos los derechos reservados.
+              © 2026 Nictech. Todos los derechos reservados.
             </p>
             <div className="flex gap-6">
               <Link

@@ -6,7 +6,7 @@ const Contacto = () => {
   return (
     <>
       <Helmet>
-        <title>Contacto - NicTech | Atención al Cliente</title>
+        <title>Contacto - Nictech | Atención al Cliente</title>
         <meta name="description" content="Contáctanos para cotizaciones, consultas o soporte técnico. Estamos aquí para ayudarte con tus dispositivos en Urdinarrain y Gilbert." />
       </Helmet>
       <Layout>
@@ -39,7 +39,7 @@ const Contacto = () => {
                 <h4 className="font-medium text-foreground mb-2">Dirección</h4>
                 <p className="text-muted-foreground">
                   Calle 19 y 5 (Esquina)<br />
-                  Gilbert, Entre Ríos
+                  Urdinarrain y Gilbert, Entre Ríos
                 </p>
               </div>
 
@@ -79,7 +79,7 @@ const Contacto = () => {
                 allowFullScreen={true}
                 loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
-                title="Ubicación NicTech - Gilbert"
+                title="Ubicación Nictech - Gilbert"
               ></iframe>
             </div>
 

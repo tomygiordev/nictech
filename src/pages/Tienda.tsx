@@ -91,7 +91,7 @@ const Tienda = () => {
   return (
     <>
       <Helmet>
-        <title>Tienda - NicTech | Tecnología con Garantía</title>
+        <title>Tienda - Nictech | Tecnología con Garantía</title>
         <meta name="description" content="Compra smartphones, laptops, tablets y accesorios con garantía. Las mejores marcas al mejor precio en Lima, Perú." />
       </Helmet>
       <Layout>

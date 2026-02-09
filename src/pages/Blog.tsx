@@ -34,13 +34,13 @@ const blogPosts = [
       <h3>5. El táctil no responde bien</h3>
       <p>Si tenés que apretar cinco veces para que te tome una letra, el digitalizador está pidiendo pista. Un cambio rápido de módulo y queda como nuevo.</p>
 
-      <p><strong>En NicTech diagnosticamos tu equipo sin cargo. ¡Traelo y lo revisamos en un toque!</strong></p>
+      <p><strong>En Nictech diagnosticamos tu equipo sin cargo. ¡Traelo y lo revisamos en un toque!</strong></p>
     `,
     image: 'https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800',
     date: '2026-01-15',
     readTime: '5 min',
     category: 'Consejos',
-    author: 'Nico de NicTech'
+    author: 'Nico de Nictech'
   },
   {
     id: 2,
@@ -61,13 +61,13 @@ const blogPosts = [
       <h3>Actualizá a un SSD</h3>
       <p>Si tu laptop tiene unos años y anda lenta, no la tires. Cambiar el disco viejo por un SSD le da una vida nueva. Es impresionante la diferencia de velocidad.</p>
 
-      <p><strong>¿Tu laptop hace ruido de avión o calienta mucho? Traela a NicTech para un mantenimiento preventivo.</strong></p>
+      <p><strong>¿Tu laptop hace ruido de avión o calienta mucho? Traela a Nictech para un mantenimiento preventivo.</strong></p>
     `,
     image: 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=800',
     date: '2026-01-10',
     readTime: '7 min',
     category: 'Mantenimiento',
-    author: 'Nico de NicTech'
+    author: 'Nico de Nictech'
   },
   {
     id: 3,
@@ -85,13 +85,13 @@ const blogPosts = [
       <h3>Seguridad de tus datos</h3>
       <p>En un mantenimiento preventivo revisamos la salud de tu disco. Avisarte que tu disco está por morir te da tiempo de salvar tus fotos y archivos antes de que sea tarde.</p>
 
-      <p>En NicTech creemos que la prevención es la mejor herramienta. ¡Consultanos por packs locales de mantenimiento!</p>
+      <p>En Nictech creemos que la prevención es la mejor herramienta. ¡Consultanos por packs locales de mantenimiento!</p>
     `,
     image: 'https://images.unsplash.com/photo-1581092921461-eab62e97a780?w=800',
     date: '2026-01-05',
     readTime: '4 min',
     category: 'Educación',
-    author: 'Nico de NicTech'
+    author: 'Nico de Nictech'
   },
   {
     id: 4,
@@ -109,13 +109,13 @@ const blogPosts = [
       <h3>Carga ultra rápida estándar</h3>
       <p>Cargar el celu en 15 minutos ya es una realidad en la gama media y alta. Se acabaron las preocupaciones por salir de casa con poca batería.</p>
 
-      <p>Mantenete conectado con NicTech para enterarte de todas las novedades y conseguir lo último en tecnología.</p>
+      <p>Mantenete conectado con Nictech para enterarte de todas las novedades y conseguir lo último en tecnología.</p>
     `,
     image: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800',
     date: '2026-01-01',
     readTime: '6 min',
     category: 'Tendencias',
-    author: 'Nico de NicTech'
+    author: 'Nico de Nictech'
   },
 ];
 
@@ -125,7 +125,7 @@ const Blog = () => {
   return (
     <>
       <Helmet>
-        <title>Blog - NicTech | Consejos y Noticias de Tecnología</title>
+        <title>Blog - Nictech | Consejos y Noticias de Tecnología</title>
         <meta name="description" content="Consejos de reparación, mantenimiento y las últimas noticias del mundo tecnológico. Aprende a cuidar tus dispositivos." />
       </Helmet>
       <Layout>

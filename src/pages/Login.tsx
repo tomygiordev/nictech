@@ -47,7 +47,7 @@ const Login = () => {
     return (
         <>
             <Helmet>
-                <title>Iniciar Sesión - NicTech</title>
+                <title>Iniciar Sesión - Nictech</title>
             </Helmet>
             <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
                 <div className="w-full max-w-md space-y-8 bg-card p-8 rounded-2xl border border-border shadow-lg">

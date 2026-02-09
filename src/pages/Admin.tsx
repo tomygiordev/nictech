@@ -591,7 +591,7 @@ const Admin = () => {
   return (
     <>
       <Helmet>
-        <title>Panel de Administración - NicTech</title>
+        <title>Panel de Administración - Nictech</title>
         <meta name="robots" content="noindex, nofollow" />
       </Helmet>
 
@@ -604,7 +604,7 @@ const Admin = () => {
                 <Cpu className="h-5 w-5 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="font-bold text-lg">NicTech Admin</h1>
+                <h1 className="font-bold text-lg">Nictech Admin</h1>
                 <p className="text-secondary-foreground/70 text-sm">Panel de Administración</p>
               </div>
             </div>
