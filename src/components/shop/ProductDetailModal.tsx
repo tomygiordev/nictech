@@ -26,19 +26,10 @@ interface ProductDetailModalProps {
 
 export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailModalProps) => {
     const { addToCart } = useCart();
-    const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
     if (!product) return null;
 
     const images = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
-
-    const handleNextImage = () => {
-        setCurrentImageIndex((prev) => (prev + 1) % images.length);
-    };
-
-    const handlePrevImage = () => {
-        setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
-    };
 
     const handleAddToCart = () => {
         addToCart({
@@ -77,49 +68,27 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                         </Button>
 
                         {images.length > 0 ? (
-                            <div className="relative h-full w-full flex items-center justify-center">
-                                <img
-                                    src={images[currentImageIndex]}
-                                    alt={product.name}
-                                    className="max-h-full max-w-full object-contain mix-blend-multiply transition-opacity duration-300"
-                                />
-
+                            <Carousel className="w-full h-full flex items-center justify-center">
+                                <CarouselContent>
+                                    {images.map((image, index) => (
+                                        <CarouselItem key={index} className="flex h-full items-center justify-center">
+                                            <div className="relative w-full h-full flex items-center justify-center">
+                                                <img
+                                                    src={image}
+                                                    alt={`${product.name} - Imagen ${index + 1}`}
+                                                    className="max-h-full max-w-full object-contain mix-blend-multiply"
+                                                />
+                                            </div>
+                                        </CarouselItem>
+                                    ))}
+                                </CarouselContent>
                                 {images.length > 1 && (
                                     <>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
-                                            onClick={handlePrevImage}
-                                        >
-                                            <ChevronLeft className="h-5 w-5" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
-                                            onClick={handleNextImage}
-                                        >
-                                            <ChevronRight className="h-5 w-5" />
-                                        </Button>
-
-                                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                                            {images.map((_, index) => (
-                                                <button
-                                                    key={index}
-                                                    className={cn(
-                                                        "w-2 h-2 rounded-full transition-all",
-                                                        index === currentImageIndex
-                                                            ? "bg-primary w-4"
-                                                            : "bg-primary/30 hover:bg-primary/50"
-                                                    )}
-                                                    onClick={() => setCurrentImageIndex(index)}
-                                                />
-                                            ))}
-                                        </div>
+                                        <CarouselPrevious className="left-2" />
+                                        <CarouselNext className="right-2" />
                                     </>
                                 )}
-                            </div>
+                            </Carousel>
                         ) : (
                             <div className="flex flex-col items-center gap-2 text-muted-foreground">
                                 <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center">
