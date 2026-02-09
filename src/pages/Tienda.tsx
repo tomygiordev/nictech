@@ -6,6 +6,13 @@ import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { ProductCard } from '@/components/shop/ProductCard';
 import { ProductFilters } from '@/components/shop/ProductFilters';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supabase } from '@/integrations/supabase/client';
 
 interface Category {
@@ -33,6 +40,7 @@ const Tienda = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 0]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default'>('default');
 
   useEffect(() => {
     fetchProducts();
@@ -77,14 +85,20 @@ const Tienda = () => {
   }, [products]);
 
   const filteredProducts = useMemo(() => {
-    return products.filter(product => {
+    const result = products.filter(product => {
       const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.description?.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = !selectedCategory || product.category_id === selectedCategory;
       const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
       return matchesSearch && matchesCategory && matchesPrice;
     });
-  }, [products, searchQuery, selectedCategory, priceRange]);
+
+    return result.sort((a, b) => {
+      if (sortOrder === 'asc') return a.price - b.price;
+      if (sortOrder === 'desc') return b.price - a.price;
+      return 0;
+    });
+  }, [products, searchQuery, selectedCategory, priceRange, sortOrder]);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -125,20 +139,39 @@ const Tienda = () => {
         <section className="py-12">
           <div className="container-main">
             <div className="flex flex-col lg:flex-row gap-8">
-              {/* Filters */}
-              <ProductFilters
-                categories={categories}
-                selectedCategory={selectedCategory}
-                onCategoryChange={setSelectedCategory}
-                priceRange={priceRange}
-                maxPrice={maxPrice}
-                onPriceChange={setPriceRange}
-                isOpen={filtersOpen}
-                onToggle={() => setFiltersOpen(!filtersOpen)}
-              />
+              {/* Filters & Sorting */}
+              <div className="flex flex-col gap-4">
+                <ProductFilters
+                  categories={categories}
+                  selectedCategory={selectedCategory}
+                  onCategoryChange={setSelectedCategory}
+                  priceRange={priceRange}
+                  maxPrice={maxPrice}
+                  onPriceChange={setPriceRange}
+                  isOpen={filtersOpen}
+                  onToggle={() => setFiltersOpen(!filtersOpen)}
+                />
+              </div>
 
               {/* Products Grid */}
               <div className="flex-1">
+                <div className="flex justify-between items-center mb-6">
+                  <p className="text-muted-foreground">
+                    {filteredProducts.length} producto{filteredProducts.length !== 1 && 's'} encontrado{filteredProducts.length !== 1 && 's'}
+                  </p>
+
+                  <Select value={sortOrder} onValueChange={(value: any) => setSortOrder(value)}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Ordenar por" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Relevancia</SelectItem>
+                      <SelectItem value="asc">Menor precio</SelectItem>
+                      <SelectItem value="desc">Mayor precio</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {loading ? (
                   <div className="flex items-center justify-center py-20">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
