@@ -1,0 +1,20 @@
+{
+    "short_name": "Nictech",
+    "name": "Nictech - Servicio Técnico",
+    "icons": [
+        {
+            "src": "https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo%20solo%20isotipo%20(solo%20icono%20sin%20texto).png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo%20solo%20isotipo%20(solo%20icono%20sin%20texto).png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ],
+    "start_url": ".",
+    "display": "standalone",
+    "theme_color": "#000000",
+    "background_color": "#ffffff"
+}
