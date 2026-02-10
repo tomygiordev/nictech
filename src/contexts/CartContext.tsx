@@ -7,6 +7,11 @@ export interface CartItem {
   quantity: number;
   image_url?: string;
   maxStock: number;
+  variant?: {
+    id: string;
+    color: string;
+    image_url?: string;
+  };
 }
 
 interface CartContextType {
@@ -37,22 +42,24 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addToCart = useCallback((item: Omit<CartItem, 'quantity'>) => {
     setItems(prev => {
-      const existingItem = prev.find(i => i.id === item.id);
-      if (existingItem) {
+      // Find if item with same ID AND same variant exists
+      const existingItemIndex = prev.findIndex(i =>
+        i.id === item.id &&
+        (i.variant?.id === item.variant?.id) // Match variant ID if present, or both undefined
+      );
+
+      if (existingItemIndex > -1) {
+        const existingItem = prev[existingItemIndex];
         if (existingItem.quantity >= item.maxStock) {
-          /* toast({
-           title: "Stock límite alcanzado",
-           description: "No puedes agregar más unidades de este producto.",
-           variant: "destructive"
-          }); */
-          // Note: We can't use toast hook inside callback easily without refactoring or passing it in.
-          // For now, simpler to just return valid state. Warning to be handled by caller or state effect?
-          // Actually, let's just not add it.
-          return prev; // Do nothing if full
+          return prev;
         }
-        return prev.map(i =>
-          i.id === item.id ? { ...i, quantity: Math.min(i.quantity + 1, item.maxStock) } : i
-        );
+
+        const newItems = [...prev];
+        newItems[existingItemIndex] = {
+          ...existingItem,
+          quantity: Math.min(existingItem.quantity + 1, item.maxStock)
+        };
+        return newItems;
       }
       return [...prev, { ...item, quantity: 1 }];
     });

@@ -8,10 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X } from 'lucide-react';
+import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone } from 'lucide-react';
+import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { supabase } from '@/integrations/supabase/client';
+import { CreatableAttributeSelector } from '@/components/admin/CreatableAttributeSelector';
 import { toast } from '@/hooks/use-toast';
 import { generateTrackingCode } from '@/utils/generateTrackingCode';
+import { CaseManagement } from '@/components/admin/CaseManagement';
+import { SmartphoneManagement } from '@/components/admin/SmartphoneManagement';
 import {
   Dialog,
   DialogContent,
@@ -435,8 +439,27 @@ const Admin = () => {
 
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
 
+  // Helper to check if category is smartphone
+  const isSmartphoneCategory = (categoryId: string) => {
+    const category = categories.find(c => c.id === categoryId);
+    return category && (
+      category.name.toLowerCase().includes('celular') ||
+      category.name.toLowerCase().includes('smartphone') ||
+      category.name.toLowerCase().includes('iphone') ||
+      category.name.toLowerCase().includes('samsung')
+    );
+  };
+
+  const [smartphoneDetails, setSmartphoneDetails] = useState({
+    brand: '',
+    model: '',
+    capacity: '',
+    color: ''
+  });
+
   const startEditingProduct = (product: Product) => {
     setEditingProductId(product.id);
+    // Try to parse smartphone details from tags or name if possible, or just leave blank for now as it's complex to reverse engineer
     setNewProduct({
       name: product.name,
       category_id: product.category_id,
@@ -450,6 +473,7 @@ const Admin = () => {
       tags: product.tags || [],
       newTagInput: ''
     });
+    setSmartphoneDetails({ brand: '', model: '', capacity: '', color: '' }); // Reset specific fields on edit for now
   };
 
   const cancelEditingProduct = () => {
@@ -467,6 +491,7 @@ const Admin = () => {
       tags: [],
       newTagInput: ''
     });
+    setSmartphoneDetails({ brand: '', model: '', capacity: '', color: '' });
   };
 
   const deleteProduct = async (id: string) => {
@@ -522,21 +547,6 @@ const Admin = () => {
         finalImageUrl = await uploadFile(newProduct.image_file);
       }
 
-      const finalAdditionalImages = [...newProduct.additional_images];
-
-      // Calculate how many existing images are there (URLs that are not blob:)
-      // Actually we just need to replace the blob URLs with real URLs
-      // But preserving order is tricky if we mix them.
-      // Strategy: 
-      // 1. We have additional_images (mix of real URLs and blob URLs)
-      // 2. We have additional_image_files (files corresponding to the blob URLs)
-      // The additional_image_files array aligns with the *newly added* images.
-      // But if we delete an image from the middle, syncing is hard.
-      // Simplified approach: Upload all files in additional_image_files, and append them to the existing *real* URLs.
-      // BUT current verify logic: `additional_images` has previews. 
-      // Let's filter `additional_images` for real URLs (not starting with blob:).
-      // Then upload all `additional_image_files` and add their new URLs.
-
       const existingUrls = newProduct.additional_images.filter(url => !url.startsWith('blob:'));
 
       const newImageUrls = await Promise.all(
@@ -545,15 +555,34 @@ const Admin = () => {
 
       const allAdditionalImages = [...existingUrls, ...newImageUrls];
 
+      // Logic for Smartphone Name and Tags
+      let finalName = newProduct.name;
+      let finalTags = [...newProduct.tags];
+
+      if (isSmartphoneCategory(newProduct.category_id)) {
+        if (smartphoneDetails.brand && smartphoneDetails.model) {
+          // Construct name automatically
+          finalName = `${smartphoneDetails.brand} ${smartphoneDetails.model}`;
+          if (smartphoneDetails.capacity) finalName += ` ${smartphoneDetails.capacity}`;
+          if (smartphoneDetails.color) finalName += ` ${smartphoneDetails.color}`;
+
+          // Add details to tags
+          if (smartphoneDetails.brand) finalTags.push(smartphoneDetails.brand);
+          if (smartphoneDetails.model) finalTags.push(smartphoneDetails.model);
+          if (smartphoneDetails.capacity) finalTags.push(smartphoneDetails.capacity);
+          if (smartphoneDetails.color) finalTags.push(smartphoneDetails.color);
+        }
+      }
+
       const productData = {
-        name: newProduct.name,
+        name: finalName,
         category_id: newProduct.category_id,
         price: parseFloat(newProduct.price),
         stock: parseInt(newProduct.stock),
         description: newProduct.description || null,
         image_url: finalImageUrl || null,
         additional_images: allAdditionalImages,
-        tags: newProduct.tags
+        tags: Array.from(new Set(finalTags)) // Remove duplicates
       };
 
       if (editingProductId) {
@@ -567,7 +596,7 @@ const Admin = () => {
 
         toast({
           title: 'Producto actualizado',
-          description: `${newProduct.name} ha sido actualizado exitosamente.`,
+          description: `${finalName} ha sido actualizado exitosamente.`,
         });
       } else {
         // Create new product
@@ -579,7 +608,7 @@ const Admin = () => {
 
         toast({
           title: 'Producto agregado',
-          description: `${newProduct.name} ha sido agregado exitosamente.`,
+          description: `${finalName} ha sido agregado exitosamente.`,
         });
       }
 
@@ -641,20 +670,28 @@ const Admin = () => {
             </div>
           ) : (
             <Tabs defaultValue="repairs" className="space-y-6">
-              <TabsList className="w-full justify-start overflow-x-auto flex-nowrap md:grid md:justify-center md:max-w-2xl md:grid-cols-4 bg-muted/50 p-1">
-                <TabsTrigger value="repairs" className="flex items-center gap-2 min-w-[120px] md:min-w-0">
+              <TabsList className="flex flex-wrap justify-center md:justify-start gap-2 bg-transparent p-0 mb-6 h-auto w-full">
+                <TabsTrigger value="repairs" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Wrench className="h-4 w-4" />
                   Reparaciones
                 </TabsTrigger>
-                <TabsTrigger value="products" className="flex items-center gap-2 min-w-[120px] md:min-w-0">
+                <TabsTrigger value="products" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Package className="h-4 w-4" />
                   Productos
                 </TabsTrigger>
-                <TabsTrigger value="categories" className="flex items-center gap-2 min-w-[120px] md:min-w-0">
+                <TabsTrigger value="smartphones" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
+                  <Smartphone className="h-4 w-4" />
+                  Celulares
+                </TabsTrigger>
+                <TabsTrigger value="categories" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Package className="h-4 w-4" />
                   Categorías
                 </TabsTrigger>
-                <TabsTrigger value="orders" className="flex items-center gap-2 min-w-[120px] md:min-w-0">
+                <TabsTrigger value="cases" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
+                  <Smartphone className="h-4 w-4" />
+                  Fundas
+                </TabsTrigger>
+                <TabsTrigger value="orders" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Package className="h-4 w-4" />
                   Ventas Online
                 </TabsTrigger>
@@ -832,6 +869,11 @@ const Admin = () => {
                 </div>
               </TabsContent>
 
+              {/* Smartphones Tab */}
+              <TabsContent value="smartphones">
+                <SmartphoneManagement />
+              </TabsContent>
+
               {/* Products Tab */}
               <TabsContent value="products">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -850,16 +892,6 @@ const Admin = () => {
                     </div>
                     <form onSubmit={handleSaveProduct} className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="name">Nombre</Label>
-                        <Input
-                          id="name"
-                          value={newProduct.name}
-                          onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
                         <Label htmlFor="category">Categoría</Label>
                         <Select
                           value={newProduct.category_id}
@@ -869,14 +901,36 @@ const Admin = () => {
                             <SelectValue placeholder="Seleccionar categoría" />
                           </SelectTrigger>
                           <SelectContent>
-                            {categories.map((cat) => (
-                              <SelectItem key={cat.id} value={cat.id}>
-                                {cat.name}
-                              </SelectItem>
-                            ))}
+                            {/* Filter out smartphone categories from this list if you want to force them to use the other tab, or keep them but show alert */}
+                            {categories
+                              .filter(c => {
+                                const name = c.name.toLowerCase();
+                                return !name.includes('celular') &&
+                                  !name.includes('smartphone') &&
+                                  !name.includes('iphone') &&
+                                  !name.includes('samsung') &&
+                                  !name.includes('funda') &&
+                                  !name.includes('case');
+                              })
+                              .map((cat) => (
+                                <SelectItem key={cat.id} value={cat.id}>
+                                  {cat.name}
+                                </SelectItem>
+                              ))}
                           </SelectContent>
                         </Select>
                       </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="name">Nombre</Label>
+                        <Input
+                          id="name"
+                          value={newProduct.name}
+                          onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                          required
+                        />
+                      </div>
+
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="price">Precio ($)</Label>
@@ -1071,45 +1125,55 @@ const Admin = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {products.map((product) => (
-                            <TableRow key={product.id}>
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 rounded-lg bg-muted overflow-hidden">
-                                    {product.image_url ? (
-                                      <img
-                                        src={product.image_url}
-                                        alt={product.name}
-                                        className="h-full w-full object-cover"
-                                      />
-                                    ) : (
-                                      <div className="h-full w-full flex items-center justify-center">
-                                        <Package className="h-4 w-4 text-muted-foreground" />
-                                      </div>
-                                    )}
+                          {products
+                            .filter(product => {
+                              const catName = product.category?.name?.toLowerCase() || '';
+                              return !catName.includes('celular') &&
+                                !catName.includes('smartphone') &&
+                                !catName.includes('iphone') &&
+                                !catName.includes('samsung') &&
+                                !catName.includes('funda') &&
+                                !catName.includes('case');
+                            })
+                            .map((product) => (
+                              <TableRow key={product.id}>
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <div className="h-10 w-10 rounded-lg bg-muted overflow-hidden">
+                                      {product.image_url ? (
+                                        <img
+                                          src={product.image_url}
+                                          alt={product.name}
+                                          className="h-full w-full object-cover"
+                                        />
+                                      ) : (
+                                        <div className="h-full w-full flex items-center justify-center">
+                                          <Package className="h-4 w-4 text-muted-foreground" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <span className="font-medium">{product.name}</span>
                                   </div>
-                                  <span className="font-medium">{product.name}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>{product.category?.name || 'Sin categoría'}</TableCell>
-                              <TableCell className="font-medium text-primary">
-                                $ {product.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </TableCell>
-                              <TableCell className={product.stock < 5 ? "text-red-500 font-bold" : ""}>
-                                {product.stock}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <Button variant="outline" size="sm" onClick={() => startEditingProduct(product)}>
-                                    <Wrench className="h-4 w-4" />
-                                  </Button>
-                                  <Button variant="destructive" size="sm" onClick={() => deleteProduct(product.id)}>
-                                    <X className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                </TableCell>
+                                <TableCell>{product.category?.name || 'Sin categoría'}</TableCell>
+                                <TableCell className="font-medium text-primary">
+                                  $ {product.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </TableCell>
+                                <TableCell className={product.stock < 5 ? "text-red-500 font-bold" : ""}>
+                                  {product.stock}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => startEditingProduct(product)}>
+                                      <Wrench className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="destructive" size="sm" onClick={() => deleteProduct(product.id)}>
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
                         </TableBody>
                       </Table>
                     </div>
@@ -1203,6 +1267,10 @@ const Admin = () => {
               </TabsContent>
 
               {/* Orders Tab */}
+              <TabsContent value="cases">
+                <CaseManagement />
+              </TabsContent>
+
               <TabsContent value="orders">
                 <div className="bg-card rounded-2xl border border-border overflow-hidden">
                   <div className="p-6 border-b border-border">

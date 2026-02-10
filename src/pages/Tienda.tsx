@@ -31,6 +31,12 @@ interface Product {
   description: string | null;
   category?: Category;
   tags: string[] | null;
+  model_id?: string;
+}
+
+interface SmartphoneModel {
+  id: string;
+  name: string;
 }
 
 const Tienda = () => {
@@ -43,14 +49,19 @@ const Tienda = () => {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default'>('default');
 
+  // Model Filter State
+  const [models, setModels] = useState<SmartphoneModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+
   useEffect(() => {
     fetchProducts();
   }, []);
 
   const fetchProducts = async () => {
-    const [productsRes, categoriesRes] = await Promise.all([
-      supabase.from('products').select('*, category:categories(*)').order('created_at', { ascending: false }),
+    const [productsRes, categoriesRes, modelsRes] = await Promise.all([
+      supabase.from('products').select('*, category:categories(*)').gt('stock', 0).order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('*').order('name', { ascending: true }),
+      supabase.from('models' as any).select('*, brand:brands(*)'),
     ]);
 
     if (productsRes.data) {
@@ -65,7 +76,8 @@ const Tienda = () => {
         additional_images: item.additional_images || [],
         description: item.description,
         category: item.category, // This comes from the join
-        tags: item.tags || []
+        tags: item.tags || [],
+        model_id: item.model_id
       }));
       setProducts(formattedProducts);
 
@@ -76,6 +88,15 @@ const Tienda = () => {
       }
     }
     if (categoriesRes.data) setCategories(categoriesRes.data as unknown as Category[]);
+
+    if (modelsRes.data) {
+      const formattedModels = (modelsRes.data as any[]).map((m: any) => ({
+        id: m.id,
+        name: `${m.brand?.name} ${m.name}`
+      })).sort((a, b) => a.name.localeCompare(b.name));
+      setModels(formattedModels);
+    }
+
     setLoading(false);
   };
 
@@ -92,8 +113,9 @@ const Tienda = () => {
         product.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesCategory = !selectedCategory || product.category_id === selectedCategory;
+      const matchesModel = !selectedModel || product.model_id === selectedModel;
       const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
-      return matchesSearch && matchesCategory && matchesPrice;
+      return matchesSearch && matchesCategory && matchesPrice && matchesModel;
     });
 
     return result.sort((a, b) => {
@@ -101,7 +123,7 @@ const Tienda = () => {
       if (sortOrder === 'desc') return b.price - a.price;
       return 0;
     });
-  }, [products, searchQuery, selectedCategory, priceRange, sortOrder]);
+  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel]);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -153,6 +175,11 @@ const Tienda = () => {
                   onPriceChange={setPriceRange}
                   isOpen={filtersOpen}
                   onToggle={() => setFiltersOpen(!filtersOpen)}
+
+                  // Pass models only if category is 'Fundas' (or similar)
+                  models={categories.find(c => c.id === selectedCategory)?.name.toLowerCase().includes('funda') ? models : []}
+                  selectedModel={selectedModel}
+                  onModelChange={setSelectedModel}
                 />
               </div>
 

@@ -15,6 +15,9 @@ interface ProductFiltersProps {
   priceRange: [number, number];
   maxPrice: number;
   onPriceChange: (range: [number, number]) => void;
+  models?: { id: string; name: string }[];
+  selectedModel?: string | null;
+  onModelChange?: (modelId: string | null) => void;
   isOpen: boolean;
   onToggle: () => void;
 }
@@ -26,11 +29,15 @@ export const ProductFilters = ({
   priceRange,
   maxPrice,
   onPriceChange,
+  models = [],
+  selectedModel,
+  onModelChange,
   isOpen,
   onToggle,
 }: ProductFiltersProps) => {
   const clearFilters = () => {
     onCategoryChange(null);
+    if (onModelChange) onModelChange(null);
     onPriceChange([0, maxPrice]);
   };
 
@@ -68,7 +75,7 @@ export const ProductFilters = ({
               <SlidersHorizontal className="h-4 w-4" />
               Filtros
             </h3>
-            {(selectedCategory || priceRange[0] > 0 || priceRange[1] < maxPrice) && (
+            {(selectedCategory || priceRange[0] > 0 || priceRange[1] < maxPrice || selectedModel) && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -112,6 +119,42 @@ export const ProductFilters = ({
               ))}
             </div>
           </div>
+
+          {/* Model Filter - Only if models are available (implies Fundas category or similar) */}
+          {models.length > 0 && onModelChange && (
+            <div className="mb-8">
+              <h4 className="text-sm font-medium text-foreground mb-3">Modelo</h4>
+              <div className="space-y-2">
+                <button
+                  onClick={() => onModelChange(null)}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                    !selectedModel
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  Todos los modelos
+                </button>
+                <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-1">
+                  {models.map((model) => (
+                    <button
+                      key={model.id}
+                      onClick={() => onModelChange(model.id)}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                        selectedModel === model.id
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      {model.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Price Range */}
           <div>

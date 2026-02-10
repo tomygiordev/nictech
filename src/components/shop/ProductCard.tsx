@@ -36,7 +36,7 @@ export const ProductCard = ({
   };
 
   return (
-    <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover">
+    <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover h-full flex flex-col">
       {/* Image */}
       <div className="relative aspect-square bg-white overflow-hidden p-2">
         {image_url ? (
@@ -76,7 +76,7 @@ export const ProductCard = ({
       </div>
 
       {/* Content */}
-      <div className="p-5">
+      <div className="p-5 flex flex-col flex-1">
         <h3 className="font-semibold text-foreground text-lg mb-1 line-clamp-1 group-hover:text-primary transition-colors">
           {name}
         </h3>
@@ -100,7 +100,7 @@ export const ProductCard = ({
           </div>
         )}
 
-        <div className="flex items-center justify-between">
+        <div className="mt-auto flex items-center justify-between pt-4 border-t border-border/50">
           <div>
             <span className="text-2xl font-bold text-primary">
               $ {price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -113,7 +113,7 @@ export const ProductCard = ({
           <Button
             variant="default"
             size="icon"
-            className="rounded-full h-11 w-11"
+            className="rounded-full h-11 w-11 shrink-0 ml-4"
             disabled={stock === 0}
             onClick={handleAddToCart}
           >
