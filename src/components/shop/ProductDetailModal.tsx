@@ -68,13 +68,22 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
     // Update images/lightbox when variant is selected
     useEffect(() => {
+        const initialImages = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
+
         if (selectedVariant && selectedVariant.image_url) {
-            // Prepend variant image to images list
-            const initialImages = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
-            setImages([selectedVariant.image_url, ...initialImages]);
-            setCurrentImageIndex(0); // Jump to variant image
-        } else if (!selectedVariant) {
-            const initialImages = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
+            // Check if invariant image is already in initialImages to avoid duplicates
+            if (!initialImages.includes(selectedVariant.image_url)) {
+                setImages([selectedVariant.image_url, ...initialImages]);
+            } else {
+                // Even if it exists, we might want to rotate it to first? 
+                // For now, just setting it as the list if it's not there, or keeping list if it is.
+                // Actually, if it is there, we should probably just make sure it's selected or first.
+                // Let's justdeduplicate.
+                const uniqueImages = Array.from(new Set([selectedVariant.image_url, ...initialImages]));
+                setImages(uniqueImages);
+            }
+            setCurrentImageIndex(0); // Jump to variant image (which is now first)
+        } else {
             setImages(initialImages);
         }
     }, [selectedVariant, product]);

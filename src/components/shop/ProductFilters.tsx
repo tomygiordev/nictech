@@ -18,6 +18,11 @@ interface ProductFiltersProps {
   models?: { id: string; name: string }[];
   selectedModel?: string | null;
   onModelChange?: (modelId: string | null) => void;
+  brands?: { id: string; name: string }[];
+  selectedBrand?: string | null;
+  onBrandChange?: (brandId: string | null) => void;
+  selectedCondition?: string | null;
+  onConditionChange?: (condition: string | null) => void;
   isOpen: boolean;
   onToggle: () => void;
 }
@@ -32,12 +37,19 @@ export const ProductFilters = ({
   models = [],
   selectedModel,
   onModelChange,
+  brands = [],
+  selectedBrand,
+  onBrandChange,
+  selectedCondition,
+  onConditionChange,
   isOpen,
   onToggle,
 }: ProductFiltersProps) => {
   const clearFilters = () => {
     onCategoryChange(null);
     if (onModelChange) onModelChange(null);
+    if (onBrandChange) onBrandChange(null);
+    if (onConditionChange) onConditionChange(null);
     onPriceChange([0, maxPrice]);
   };
 
@@ -75,7 +87,7 @@ export const ProductFilters = ({
               <SlidersHorizontal className="h-4 w-4" />
               Filtros
             </h3>
-            {(selectedCategory || priceRange[0] > 0 || priceRange[1] < maxPrice || selectedModel) && (
+            {(selectedCategory || priceRange[0] > 0 || priceRange[1] < maxPrice || selectedModel || selectedBrand || selectedCondition) && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -152,6 +164,77 @@ export const ProductFilters = ({
                     </button>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+
+          {/* Brand Filter */}
+          {brands && brands.length > 0 && onBrandChange && (
+            <div className="mb-8">
+              <h4 className="text-sm font-medium text-foreground mb-3">Marca</h4>
+              <div className="space-y-2">
+                <button
+                  onClick={() => onBrandChange(null)}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                    !selectedBrand
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  Todas las marcas
+                </button>
+                <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-1">
+                  {brands.map((brand) => (
+                    <button
+                      key={brand.id}
+                      onClick={() => onBrandChange(brand.id)}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                        selectedBrand === brand.id
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      {brand.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Condition Filter */}
+          {onConditionChange && (
+            <div className="mb-8">
+              <h4 className="text-sm font-medium text-foreground mb-3">Estado</h4>
+              <div className="space-y-2">
+                <button
+                  onClick={() => onConditionChange(null)}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                    !selectedCondition
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  Todos los estados
+                </button>
+                {['Nuevo', 'Usado', 'Reacondicionado'].map((condition) => (
+                  <button
+                    key={condition}
+                    onClick={() => onConditionChange(condition)}
+                    className={cn(
+                      "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                      selectedCondition === condition
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {condition}
+                  </button>
+                ))}
               </div>
             </div>
           )}

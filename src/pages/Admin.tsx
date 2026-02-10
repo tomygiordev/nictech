@@ -9,13 +9,15 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone } from 'lucide-react';
+import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { supabase } from '@/integrations/supabase/client';
-import { CreatableAttributeSelector } from '@/components/admin/CreatableAttributeSelector';
 import { toast } from '@/hooks/use-toast';
 import { generateTrackingCode } from '@/utils/generateTrackingCode';
 import { CaseManagement } from '@/components/admin/CaseManagement';
 import { SmartphoneManagement } from '@/components/admin/SmartphoneManagement';
+
+
 import {
   Dialog,
   DialogContent,
@@ -39,6 +41,7 @@ interface Repair {
   notes: string | null;
   problem_description: string | null;
   created_at: string;
+  locality?: string;
 }
 
 interface Category {
@@ -271,7 +274,7 @@ const Admin = () => {
       supabase.from('repairs').select('*').order('created_at', { ascending: false }),
       supabase.from('products').select('*, category:categories(*)').order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('*').order('name', { ascending: true }),
-      supabase.from('orders').select('*').order('created_at', { ascending: false }),
+      supabase.from('orders' as any).select('*').order('created_at', { ascending: false }),
     ]);
 
     if (repairsRes.data) setRepairs(repairsRes.data as unknown as Repair[]);
@@ -683,10 +686,6 @@ const Admin = () => {
                   <Smartphone className="h-4 w-4" />
                   Celulares
                 </TabsTrigger>
-                <TabsTrigger value="categories" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <Package className="h-4 w-4" />
-                  Categorías
-                </TabsTrigger>
                 <TabsTrigger value="cases" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Smartphone className="h-4 w-4" />
                   Fundas
@@ -891,35 +890,22 @@ const Admin = () => {
                       )}
                     </div>
                     <form onSubmit={handleSaveProduct} className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="category">Categoría</Label>
-                        <Select
-                          value={newProduct.category_id}
-                          onValueChange={(value) => setNewProduct({ ...newProduct, category_id: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Seleccionar categoría" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {/* Filter out smartphone categories from this list if you want to force them to use the other tab, or keep them but show alert */}
-                            {categories
-                              .filter(c => {
-                                const name = c.name.toLowerCase();
-                                return !name.includes('celular') &&
-                                  !name.includes('smartphone') &&
-                                  !name.includes('iphone') &&
-                                  !name.includes('samsung') &&
-                                  !name.includes('funda') &&
-                                  !name.includes('case');
-                              })
-                              .map((cat) => (
-                                <SelectItem key={cat.id} value={cat.id}>
-                                  {cat.name}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                      <CreatableResourceSelector
+                        tableName="categories"
+                        label="Categoría"
+                        placeholder="Seleccionar o crear categoría"
+                        value={newProduct.category_id}
+                        onValueChange={(val) => setNewProduct({ ...newProduct, category_id: val })}
+                        filter={(item) => {
+                          const name = item.name.toLowerCase();
+                          return !name.includes('celular') &&
+                            !name.includes('smartphone') &&
+                            !name.includes('iphone') &&
+                            !name.includes('samsung') &&
+                            !name.includes('funda') &&
+                            !name.includes('case');
+                        }}
+                      />
 
                       <div className="space-y-2">
                         <Label htmlFor="name">Nombre</Label>
@@ -1111,7 +1097,17 @@ const Admin = () => {
                   <div className="lg:col-span-2 bg-card rounded-2xl border border-border overflow-hidden">
                     <div className="p-6 border-b border-border">
                       <h3 className="text-lg font-semibold">Inventario de Productos</h3>
-                      <p className="text-muted-foreground text-sm">{products.length} productos</p>
+                      <p className="text-muted-foreground text-sm">
+                        {products.filter(product => {
+                          const catName = product.category?.name?.toLowerCase() || '';
+                          return !catName.includes('celular') &&
+                            !catName.includes('smartphone') &&
+                            !catName.includes('iphone') &&
+                            !catName.includes('samsung') &&
+                            !catName.includes('funda') &&
+                            !catName.includes('case');
+                        }).length} productos (excluye celulares y fundas)
+                      </p>
                     </div>
                     <div className="overflow-x-auto">
                       <Table>
@@ -1181,90 +1177,7 @@ const Admin = () => {
                 </div>
               </TabsContent>
 
-              {/* Categories Tab */}
-              <TabsContent value="categories">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Add Category Form */}
-                  <div className="bg-card rounded-2xl border border-border p-6 h-fit">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                      <Plus className="h-5 w-5" />
-                      Nueva Categoría
-                    </h3>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="catName">Nombre</Label>
-                        <Input
-                          id="catName"
-                          value={newCategoryName}
-                          onChange={(e) => setNewCategoryName(e.target.value)}
-                          placeholder="Ej: Tablets"
-                        />
-                      </div>
-                      <Button
-                        onClick={async () => {
-                          if (!newCategoryName.trim()) return;
-                          setSavingCategory(true);
-                          const { error } = await supabase.from('categories' as any).insert({ name: newCategoryName });
 
-                          if (error) {
-                            console.error(error);
-                            toast({ title: 'Error', description: error.message, variant: 'destructive' });
-                          } else {
-                            toast({ title: 'Categoría creada', description: 'Se ha agregado la nueva categoría.' });
-                            setNewCategoryName('');
-                            fetchData();
-                          }
-                          setSavingCategory(false);
-                        }}
-                        className="w-full"
-                        disabled={savingCategory || !newCategoryName.trim()}
-                      >
-                        {savingCategory ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                        Crear Categoría
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Categories List */}
-                  <div className="lg:col-span-2 bg-card rounded-2xl border border-border overflow-hidden">
-                    <div className="p-6 border-b border-border">
-                      <h3 className="text-lg font-semibold">Categorías Existentes</h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Nombre</TableHead>
-                            <TableHead className="text-right">Acciones</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {categories.map((cat) => (
-                            <TableRow key={cat.id}>
-                              <TableCell className="font-medium">{cat.name}</TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  onClick={async () => {
-                                    if (confirm('¿Estás seguro? Esto podría afectar productos asociados.')) {
-                                      const { error } = await supabase.from('categories' as any).delete().eq('id', cat.id);
-                                      if (!error) fetchData();
-                                    }
-                                  }}
-                                >
-                                  Eliminar
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                </div>
-              </TabsContent>
 
               {/* Orders Tab */}
               <TabsContent value="cases">

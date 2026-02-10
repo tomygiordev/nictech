@@ -32,9 +32,17 @@ interface Product {
   category?: Category;
   tags: string[] | null;
   model_id?: string;
+  brand_id?: string;
+  condition?: string;
 }
 
 interface SmartphoneModel {
+  id: string;
+  name: string;
+}
+
+
+interface Brand {
   id: string;
   name: string;
 }
@@ -49,19 +57,32 @@ const Tienda = () => {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default'>('default');
 
-  // Model Filter State
+  // filter State
   const [models, setModels] = useState<SmartphoneModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
+  const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
+
+  // Check if selected category is smartphone related
+  const isSmartphoneCategory = useMemo(() => {
+    if (!selectedCategory) return false;
+    const cat = categories.find(c => c.id === selectedCategory);
+    if (!cat) return false;
+    const name = cat.name.toLowerCase();
+    return name.includes('celular') || name.includes('smartphone') || name.includes('iphone');
+  }, [selectedCategory, categories]);
 
   useEffect(() => {
     fetchProducts();
   }, []);
 
   const fetchProducts = async () => {
-    const [productsRes, categoriesRes, modelsRes] = await Promise.all([
+    const [productsRes, categoriesRes, modelsRes, brandsRes] = await Promise.all([
       supabase.from('products').select('*, category:categories(*)').gt('stock', 0).order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('*').order('name', { ascending: true }),
       supabase.from('models' as any).select('*, brand:brands(*)'),
+      supabase.from('brands' as any).select('*').order('name', { ascending: true }),
     ]);
 
     if (productsRes.data) {
@@ -77,7 +98,11 @@ const Tienda = () => {
         description: item.description,
         category: item.category, // This comes from the join
         tags: item.tags || [],
-        model_id: item.model_id
+        model_id: item.model_id,
+        // @ts-ignore
+        brand_id: item.brand_id,
+        // @ts-ignore
+        condition: item.condition
       }));
       setProducts(formattedProducts);
 
@@ -87,7 +112,19 @@ const Tienda = () => {
         setPriceRange([0, max]);
       }
     }
-    if (categoriesRes.data) setCategories(categoriesRes.data as unknown as Category[]);
+
+    if (categoriesRes.data) {
+      let cats = categoriesRes.data as unknown as Category[];
+      // Sort so Smartphone/Celular is first
+      cats.sort((a, b) => {
+        const aIsPhone = a.name.toLowerCase().includes('celular') || a.name.toLowerCase().includes('smartphone') || a.name.toLowerCase().includes('iphone');
+        const bIsPhone = b.name.toLowerCase().includes('celular') || b.name.toLowerCase().includes('smartphone') || b.name.toLowerCase().includes('iphone');
+        if (aIsPhone && !bIsPhone) return -1;
+        if (!aIsPhone && bIsPhone) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      setCategories(cats);
+    }
 
     if (modelsRes.data) {
       const formattedModels = (modelsRes.data as any[]).map((m: any) => ({
@@ -95,6 +132,10 @@ const Tienda = () => {
         name: `${m.brand?.name} ${m.name}`
       })).sort((a, b) => a.name.localeCompare(b.name));
       setModels(formattedModels);
+    }
+
+    if (brandsRes.data) {
+      setBrands(brandsRes.data as unknown as Brand[]);
     }
 
     setLoading(false);
@@ -107,15 +148,38 @@ const Tienda = () => {
     return Math.max(...products.map(p => p.price));
   }, [products]);
 
+  const normalizeText = (text: string) => {
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  };
+
   const filteredProducts = useMemo(() => {
+    const normalizedQuery = normalizeText(searchQuery);
+    const searchTerms = normalizedQuery.split(/\s+/).filter(Boolean);
+
     const result = products.filter(product => {
-      const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+      const normalizedName = normalizeText(product.name);
+      const normalizedDescription = normalizeText(product.description || '');
+      const normalizedTags = (product.tags || []).map(tag => normalizeText(tag));
+
+      const matchesSearch = searchTerms.every(term =>
+        normalizedName.includes(term) ||
+        normalizedDescription.includes(term) ||
+        normalizedTags.some(tag => tag.includes(term))
+      );
+
       const matchesCategory = !selectedCategory || product.category_id === selectedCategory;
       const matchesModel = !selectedModel || product.model_id === selectedModel;
+      // @ts-ignore
+      const matchesBrand = !selectedBrand || product.brand_id === selectedBrand;
+      // @ts-ignore
+      const matchesCondition = !selectedCondition || product.condition === selectedCondition;
+
       const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
-      return matchesSearch && matchesCategory && matchesPrice && matchesModel;
+
+      return matchesSearch && matchesCategory && matchesPrice && matchesModel && matchesBrand && matchesCondition;
     });
 
     return result.sort((a, b) => {
@@ -123,7 +187,7 @@ const Tienda = () => {
       if (sortOrder === 'desc') return b.price - a.price;
       return 0;
     });
-  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel]);
+  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition]);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -176,10 +240,21 @@ const Tienda = () => {
                   isOpen={filtersOpen}
                   onToggle={() => setFiltersOpen(!filtersOpen)}
 
-                  // Pass models only if category is 'Fundas' (or similar)
+                  // Pass models only if category is 'Funda' (or similar) or Smartphone (requested logic: por smartphone se puede filtrar por estado y tambien por marca)
+                  // Actually, user said: "la categoria smartphone va antes que fundas, por smartphone se puede filtrar por estado y tambien por marca!"
+                  // Implicitly, fundas might also have models.
+                  // Models are useful for both. Brand/Condition mainly for smartphones.
                   models={categories.find(c => c.id === selectedCategory)?.name.toLowerCase().includes('funda') ? models : []}
                   selectedModel={selectedModel}
                   onModelChange={setSelectedModel}
+
+                  // New Props
+                  brands={isSmartphoneCategory ? brands : []}
+                  selectedBrand={selectedBrand}
+                  onBrandChange={setSelectedBrand}
+
+                  selectedCondition={selectedCondition}
+                  onConditionChange={isSmartphoneCategory ? setSelectedCondition : undefined}
                 />
               </div>
 
@@ -218,9 +293,6 @@ const Tienda = () => {
                   </div>
                 ) : (
                   <>
-                    <p className="text-muted-foreground mb-6">
-                      {filteredProducts.length} producto{filteredProducts.length !== 1 && 's'} encontrado{filteredProducts.length !== 1 && 's'}
-                    </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
                       {filteredProducts.map((product) => (
                         <div key={product.id} onClick={() => setSelectedProduct(product)} className="cursor-pointer">
