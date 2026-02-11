@@ -6,7 +6,7 @@ const steps = [
   { id: 'Diagnóstico', label: 'Diagnóstico', icon: Search, description: 'Evaluando el problema' },
   { id: 'Repuestos', label: 'Repuestos', icon: Clock, description: 'Esperando piezas necesarias' },
   { id: 'Reparación', label: 'Reparación', icon: Wrench, description: 'En proceso de reparación' },
-  { id: 'Finalizado', label: 'Finalizado', icon: CheckCircle2, description: 'Listo para recoger' },
+  { id: 'Finalizado', label: 'Finalizado', icon: CheckCircle2, description: 'Listo para retirar' },
 ];
 
 interface RepairTimelineProps {

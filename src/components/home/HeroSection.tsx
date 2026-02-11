@@ -35,7 +35,7 @@ export const HeroSection = () => {
 
             {/* Subtitle */}
             <p className="text-lg sm:text-xl text-white/80 mb-8 animate-slide-up delay-100">
-              Soluciones rápidas en tecnología. Reparamos smartphones, laptops, tablets y más con garantía total y servicio profesional.
+              Servicio técnico especializado en celulares, laptops y PCs. Venta de accesorios y equipos nuevos. Calidad y garantía en cada reparación.
             </p>
 
             {/* CTA Buttons */}

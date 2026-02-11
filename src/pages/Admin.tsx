@@ -16,6 +16,7 @@ import { toast } from '@/hooks/use-toast';
 import { generateTrackingCode } from '@/utils/generateTrackingCode';
 import { CaseManagement } from '@/components/admin/CaseManagement';
 import { SmartphoneManagement } from '@/components/admin/SmartphoneManagement';
+import { BlogManagement } from '@/components/admin/BlogManagement';
 
 
 import {
@@ -694,6 +695,10 @@ const Admin = () => {
                   <Package className="h-4 w-4" />
                   Ventas Online
                 </TabsTrigger>
+                <TabsTrigger value="blog" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
+                  <MessageSquare className="h-4 w-4" />
+                  Blog
+                </TabsTrigger>
               </TabsList>
 
               {/* Repairs Tab */}
@@ -1244,6 +1249,10 @@ const Admin = () => {
                     </Table>
                   </div>
                 </div>
+              </TabsContent>
+
+              <TabsContent value="blog">
+                <BlogManagement />
               </TabsContent>
             </Tabs>
           )}

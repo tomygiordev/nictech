@@ -1,49 +1,73 @@
 import { Helmet } from 'react-helmet-async';
-import { Smartphone, Laptop, Tablet, HardDrive, Battery, Monitor, Wrench, MessageCircle } from 'lucide-react';
+import { Smartphone, Battery, CircuitBoard, Unlock, Laptop, Monitor, Tablet, HardDrive, Sparkles, Building2, ShieldCheck, MessageCircle } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 
 const services = [
   {
     icon: Smartphone,
-    title: 'Reparación de Smartphones',
-    description: 'Cambio de pantalla, batería, carga, botones y más para todas las marcas.',
-    popular: true,
-  },
-  {
-    icon: Laptop,
-    title: 'Reparación de Laptops',
-    description: 'Diagnóstico, cambio de disco, RAM, teclado, pantalla y mantenimiento general.',
-    popular: false,
-  },
-  {
-    icon: Tablet,
-    title: 'Reparación de Tablets',
-    description: 'Servicio especializado para iPad, Samsung Galaxy Tab y otras marcas.',
-    popular: false,
-  },
-  {
-    icon: HardDrive,
-    title: 'Recuperación de Datos',
-    description: 'Recuperamos tus archivos de discos duros, USB, memorias SD y dispositivos dañados.',
+    title: 'Cambio de Pantalla',
+    description: 'Pantallas nuevas con instalación profesional y garantía.',
     popular: true,
   },
   {
     icon: Battery,
     title: 'Cambio de Batería',
-    description: 'Baterías originales y compatibles con garantía para smartphones y laptops.',
+    description: 'Baterías nuevas para mejorar rendimiento y autonomía.',
+    popular: true,
+  },
+  {
+    icon: CircuitBoard,
+    title: 'Reparación de Celulares (Hardware y Software)',
+    description: 'Solución de fallas electrónicas, placa, carga, audio, señal y sistema.',
+    popular: true,
+  },
+  {
+    icon: Unlock,
+    title: 'Desbloqueos y Liberaciones',
+    description: 'Netbooks del gobierno, FRP (cuenta Google) e iPhone.',
+    popular: false,
+  },
+  {
+    icon: Laptop,
+    title: 'Reparación de Computadoras y Notebooks',
+    description: 'Diagnóstico, reparación, optimización y mantenimiento integral.',
     popular: false,
   },
   {
     icon: Monitor,
-    title: 'Cambio de Pantalla',
-    description: 'Pantallas LCD y OLED originales con instalación profesional.',
+    title: 'Armado de Computadoras a Medida',
+    description: 'PCs personalizadas según tu uso: oficina, estudio o gaming.',
     popular: false,
   },
   {
-    icon: Wrench,
-    title: 'Mantenimiento Preventivo',
-    description: 'Limpieza interna, cambio de pasta térmica y optimización de rendimiento.',
+    icon: Tablet,
+    title: 'Reparación de Tablets',
+    description: 'Pantallas, baterías, software y reparaciones electrónicas.',
+    popular: false,
+  },
+  {
+    icon: HardDrive,
+    title: 'Recuperación de Datos',
+    description: 'Rescatamos tu información de dispositivos dañados.',
+    popular: false,
+  },
+  {
+    icon: Sparkles,
+    title: 'Mantenimiento Preventivo (Particulares)',
+    description: 'Limpieza interna, cambio de pasta térmica y optimización.',
+    popular: false,
+  },
+  {
+    icon: Building2,
+    title: 'Servicio Técnico para Empresas y Comercios',
+    description: 'Mantenimiento preventivo, soporte técnico y asistencia integral para oficinas, comercios y pymes.',
+    popular: false,
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Sistemas de Seguridad y Videovigilancia',
+    description: 'Instalación, configuración y mantenimiento de cámaras de seguridad para hogares, comercios y empresas.',
     popular: false,
   },
 ];

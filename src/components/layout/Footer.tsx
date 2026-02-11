@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { MapPin, Phone, Mail, Clock, Facebook, Instagram, Youtube } from 'lucide-react';
+import { MapPin, Phone, Mail, Clock, Facebook, Instagram, Youtube, Video } from 'lucide-react';
 
 export const Footer = () => {
   return (
@@ -43,6 +43,15 @@ export const Footer = () => {
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
               >
                 <Youtube className="h-4 w-4" />
+              </a>
+              <a
+                href="https://www.tiktok.com/@nictech.ar?_t=ZS-93n1Y2l53h3"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
+                title="TikTok"
+              >
+                <Video className="h-4 w-4" />
               </a>
             </div>
           </div>
