@@ -1,4 +1,4 @@
-import { ShoppingCart, Package } from 'lucide-react';
+import { ShoppingCart, Package, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from '@/hooks/use-toast';
@@ -28,11 +28,10 @@ export const ProductCard = ({
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
-    addToCart({ id, name, price, image_url, maxStock: stock });
-    toast({
-      title: 'Producto agregado',
-      description: `${name} se ha añadido al carrito.`,
-    });
+    const phoneNumber = '5493446353769';
+    const message = encodeURIComponent(`Hola! Me interesa este producto: *${name}* - $${price.toLocaleString('es-AR')}`);
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${message}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   return (
@@ -113,11 +112,12 @@ export const ProductCard = ({
           <Button
             variant="default"
             size="icon"
-            className="rounded-full h-11 w-11 shrink-0 ml-4"
+            className="rounded-full h-11 w-11 shrink-0 ml-4 bg-[#25D366] hover:bg-[#20ba5a] text-white"
             disabled={stock === 0}
             onClick={handleAddToCart}
+            title="Consultar por WhatsApp"
           >
-            <ShoppingCart className="h-5 w-5" />
+            <MessageCircle className="h-5 w-5" />
           </Button>
         </div>
       </div>

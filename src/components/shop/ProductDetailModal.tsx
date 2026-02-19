@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ShoppingCart, ChevronLeft, ChevronRight, X, MessageCircle } from 'lucide-react';
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from '@/components/ui/carousel';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from '@/hooks/use-toast';
@@ -134,22 +134,11 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
             return;
         }
 
-        addToCart({
-            id: product.id,
-            name: variants.length > 0 && selectedVariant ? `${product.name} - ${selectedVariant.color}` : product.name,
-            price: product.price,
-            image_url: (selectedVariant?.image_url || product.image_url) || undefined,
-            maxStock: selectedVariant ? selectedVariant.stock : product.stock,
-            variant: selectedVariant ? {
-                id: selectedVariant.id,
-                color: selectedVariant.color,
-                image_url: selectedVariant.image_url || undefined
-            } : undefined
-        });
-        toast({
-            title: 'Producto agregado',
-            description: `${product.name} se ha añadido al carrito.`,
-        });
+        const productName = variants.length > 0 && selectedVariant ? `${product.name} - ${selectedVariant.color}` : product.name;
+        const phoneNumber = '5493446353769';
+        const message = encodeURIComponent(`Hola! Me interesa este producto: *${productName}* - $${product.price.toLocaleString('es-AR')}`);
+        const whatsappUrl = `https://wa.me/${phoneNumber}?text=${message}`;
+        window.open(whatsappUrl, '_blank');
         onClose();
     };
 
@@ -316,15 +305,15 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                 </div>
 
                                 <Button
-                                    className="w-full h-12 text-lg rounded-xl shadow-lg shadow-primary/20"
+                                    className="w-full h-12 text-lg rounded-xl shadow-lg shadow-primary/20 bg-[#25D366] hover:bg-[#20ba5a] text-white"
                                     size="lg"
                                     disabled={variants.length > 0 ? (!selectedVariant || selectedVariant.stock === 0) : product.stock === 0}
                                     onClick={handleAddToCart}
                                 >
-                                    <ShoppingCart className="h-5 w-5 mr-2" />
+                                    <MessageCircle className="h-5 w-5 mr-2" />
                                     {variants.length > 0
-                                        ? (!selectedVariant ? 'Seleccionar Color' : selectedVariant.stock > 0 ? 'Agregar al Carrito' : 'Sin Stock')
-                                        : (product.stock > 0 ? 'Agregar al Carrito' : 'Sin Stock')
+                                        ? (!selectedVariant ? 'Seleccionar Color' : selectedVariant.stock > 0 ? 'Consultar por WhatsApp' : 'Sin Stock')
+                                        : (product.stock > 0 ? 'Consultar por WhatsApp' : 'Sin Stock')
                                     }
                                 </Button>
                             </div>
