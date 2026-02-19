@@ -112,7 +112,7 @@ export const Footer = () => {
               <li className="flex items-center gap-3">
                 <Phone className="h-4 w-4 text-primary" />
                 <a
-                  href="https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0"
+                  href="https://wa.me/5493446353769"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-secondary-foreground/80 hover:text-white transition-colors"

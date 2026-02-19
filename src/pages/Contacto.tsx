@@ -51,7 +51,7 @@ const Contacto = () => {
                 </div>
                 <h4 className="font-medium text-foreground mb-2">WhatsApp / Teléfono</h4>
                 <a
-                  href="https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0"
+                  href="https://wa.me/5493446353769"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-muted-foreground hover:text-primary transition-colors"

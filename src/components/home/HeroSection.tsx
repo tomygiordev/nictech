@@ -47,7 +47,7 @@ export const HeroSection = () => {
                 className="bg-white text-primary hover:bg-white/90"
               >
                 <a
-                  href="https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0"
+                  href="https://wa.me/5493446353769?text=Hola!%20Me%20interesa%20cotizar%20una%20reparaci%C3%B3n."
                   target="_blank"
                   rel="noopener noreferrer"
                 >

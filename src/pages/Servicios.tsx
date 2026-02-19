@@ -73,11 +73,10 @@ const services = [
 ];
 
 const Servicios = () => {
-  /* const phoneNumber = '51999888777'; */
   const getWhatsAppUrl = (service: string) => {
-    /* const message = encodeURIComponent(`Hola, me interesa el servicio de: ${service}. ¿Podrían darme más información?`); */
-    /* return `https://wa.me/${phoneNumber}?text=${message}`; */
-    return "https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0";
+    const phoneNumber = '5493446353769';
+    const message = encodeURIComponent(`Hola! Me interesa obtener más información sobre el servicio de: *${service}*`);
+    return `https://wa.me/${phoneNumber}?text=${message}`;
   };
 
   return (
@@ -166,7 +165,7 @@ const Servicios = () => {
               </p>
               <Button asChild size="lg">
                 <a
-                  href="https://api.whatsapp.com/message/2KHIZHSIAZETK1?autoload=1&app_absent=0"
+                  href="https://wa.me/5493446353769"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
