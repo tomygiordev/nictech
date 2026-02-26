@@ -667,8 +667,8 @@ export const CaseManagement = () => {
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 className={`transition-all ${cases.find(c => c.id === expandedCaseId)?.image_url === v.image_url
-                                                                        ? 'text-yellow-500 opacity-100 hover:bg-yellow-100/50'
-                                                                        : 'text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-yellow-400 hover:bg-yellow-50/50'
+                                                                    ? 'text-yellow-500 opacity-100 hover:bg-yellow-100/50'
+                                                                    : 'text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-yellow-400 hover:bg-yellow-50/50'
                                                                     }`}
                                                                 onClick={(e) => handleSetMainImage(v.image_url, e)}
                                                                 title={cases.find(c => c.id === expandedCaseId)?.image_url === v.image_url ? "Imagen Principal Actual" : "Usar como imagen principal"}
