@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
 import {
     Dialog,
     DialogContent,
@@ -283,122 +285,25 @@ export const BlogManagement = () => {
 
                             <div className="grid gap-2">
                                 <Label htmlFor="content">Contenido</Label>
-                                <div className="border rounded-md overflow-hidden bg-card">
-                                    <div className="flex flex-wrap gap-1 p-2 bg-muted/50 border-b">
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0"
-                                            title="Negrita"
-                                            onClick={() => {
-                                                const textarea = document.getElementById('content') as HTMLTextAreaElement;
-                                                const start = textarea.selectionStart;
-                                                const end = textarea.selectionEnd;
-                                                const text = textarea.value;
-                                                const before = text.substring(0, start);
-                                                const selection = text.substring(start, end);
-                                                const after = text.substring(end);
-                                                const newText = `${before}<b>${selection || 'texto'}</b>${after}`;
-                                                setNewPost({ ...newPost, content: newText });
-                                            }}
-                                        >
-                                            <span className="font-bold">B</span>
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0"
-                                            title="Cursiva"
-                                            onClick={() => {
-                                                const textarea = document.getElementById('content') as HTMLTextAreaElement;
-                                                const start = textarea.selectionStart;
-                                                const end = textarea.selectionEnd;
-                                                const text = textarea.value;
-                                                const before = text.substring(0, start);
-                                                const selection = text.substring(start, end);
-                                                const after = text.substring(end);
-                                                const newText = `${before}<i>${selection || 'texto'}</i>${after}`;
-                                                setNewPost({ ...newPost, content: newText });
-                                            }}
-                                        >
-                                            <span className="italic font-serif">I</span>
-                                        </Button>
-                                        <div className="w-px h-6 bg-border mx-1 my-auto" />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 px-2 text-xs font-semibold"
-                                            title="Subtítulo"
-                                            onClick={() => {
-                                                const textarea = document.getElementById('content') as HTMLTextAreaElement;
-                                                const start = textarea.selectionStart;
-                                                const end = textarea.selectionEnd;
-                                                const text = textarea.value;
-                                                const before = text.substring(0, start);
-                                                const selection = text.substring(start, end);
-                                                const after = text.substring(end);
-                                                const newText = `${before}<h3>${selection || 'Título'}</h3>\n${after}`;
-                                                setNewPost({ ...newPost, content: newText });
-                                            }}
-                                        >
-                                            H3
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 px-2 text-xs"
-                                            title="Párrafo"
-                                            onClick={() => {
-                                                const textarea = document.getElementById('content') as HTMLTextAreaElement;
-                                                const start = textarea.selectionStart;
-                                                const end = textarea.selectionEnd;
-                                                const text = textarea.value;
-                                                const before = text.substring(0, start);
-                                                const selection = text.substring(start, end);
-                                                const after = text.substring(end);
-                                                const newText = `${before}<p>${selection || 'párrafo'}</p>\n${after}`;
-                                                setNewPost({ ...newPost, content: newText });
-                                            }}
-                                        >
-                                            P
-                                        </Button>
-                                        <div className="w-px h-6 bg-border mx-1 my-auto" />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 px-2 text-xs"
-                                            title="Lista"
-                                            onClick={() => {
-                                                const textarea = document.getElementById('content') as HTMLTextAreaElement;
-                                                const start = textarea.selectionStart;
-                                                const end = textarea.selectionEnd;
-                                                const text = textarea.value;
-                                                const before = text.substring(0, start);
-                                                const selection = text.substring(start, end);
-                                                const after = text.substring(end);
-                                                const newText = `${before}<ul>\n  <li>${selection || 'item'}</li>\n  <li>item</li>\n</ul>${after}`;
-                                                setNewPost({ ...newPost, content: newText });
-                                            }}
-                                        >
-                                            Lista
-                                        </Button>
-                                    </div>
-                                    <Textarea
-                                        id="content"
+                                <div className="rounded-md overflow-hidden bg-background">
+                                    <ReactQuill
+                                        theme="snow"
                                         value={newPost.content}
-                                        onChange={(e) => setNewPost({ ...newPost, content: e.target.value })}
+                                        onChange={(content) => setNewPost({ ...newPost, content })}
                                         placeholder="Escribe aquí el contenido..."
-                                        className="font-mono text-sm border-0 rounded-none focus-visible:ring-0 resize-y min-h-[200px]"
+                                        style={{ height: "300px", marginBottom: "42px" }}
+                                        modules={{
+                                            toolbar: [
+                                                [{ 'header': [1, 2, 3, false] }],
+                                                ['bold', 'italic', 'underline', 'strike'],
+                                                [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                                                ['link'],
+                                                [{ 'align': [] }],
+                                                ['clean']
+                                            ],
+                                        }}
                                     />
                                 </div>
-                                <p className="text-xs text-muted-foreground">
-                                    Usa los botones para dar formato. Se insertarán las etiquetas HTML correspondientes.
-                                </p>
                             </div>
 
                             <div className="grid gap-2">

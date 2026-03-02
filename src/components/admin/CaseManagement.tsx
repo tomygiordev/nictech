@@ -559,18 +559,13 @@ export const CaseManagement = () => {
                                     </h4>
                                     <div className="flex flex-col md:flex-row gap-4 items-end">
                                         <div className="space-y-1.5 flex-1 w-full">
-                                            <Label className="text-xs text-muted-foreground">Color / Diseño</Label>
-                                            <Select
-                                                value={newVariant.color}
+                                            <CreatableAttributeSelector
+                                                tableName="colors"
+                                                label="Color / Diseño"
+                                                selectedValue={newVariant.color}
                                                 onValueChange={(val) => setNewVariant({ ...newVariant, color: val })}
-                                            >
-                                                <SelectTrigger className="bg-background">
-                                                    <SelectValue placeholder="Seleccionar..." />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {FIXED_COLORS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
+                                                placeholder="Seleccionar..."
+                                            />
                                         </div>
                                         <div className="space-y-1.5 w-full md:w-32">
                                             <Label className="text-xs text-muted-foreground">Stock</Label>
@@ -757,13 +752,13 @@ export const CaseManagement = () => {
                     {editingVariant && (
                         <div className="space-y-4 py-4">
                             <div className="space-y-2">
-                                <Label>Color</Label>
-                                <Select disabled value={editingVariant.color} onValueChange={(val) => setEditingVariant({ ...editingVariant, color: val })}>
-                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        {FIXED_COLORS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                                    </SelectContent>
-                                </Select>
+                                <CreatableAttributeSelector
+                                    tableName="colors"
+                                    label="Color"
+                                    selectedValue={editingVariant.color}
+                                    onValueChange={(val) => setEditingVariant({ ...editingVariant, color: val })}
+                                    disabled={true}
+                                />
                             </div>
                             <div className="space-y-2">
                                 <Label>Stock</Label>

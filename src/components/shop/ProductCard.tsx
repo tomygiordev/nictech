@@ -28,10 +28,17 @@ export const ProductCard = ({
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const phoneNumber = '5493446353769';
-    const message = encodeURIComponent(`Hola! Me interesa este producto: *${name}* - $${price.toLocaleString('es-AR')}`);
-    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${message}`;
-    window.open(whatsappUrl, '_blank');
+    addToCart({
+      id,
+      name,
+      price,
+      maxStock: stock,
+      image_url: image_url || null,
+    });
+    toast({
+      title: 'Producto añadido',
+      description: `${name} se agregó a tu carrito.`,
+    });
   };
 
   return (
@@ -42,7 +49,7 @@ export const ProductCard = ({
           <img
             src={image_url}
             alt={name}
-            className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
           <div className="h-full w-full flex items-center justify-center">
@@ -60,7 +67,7 @@ export const ProductCard = ({
         {/* Stock indicator */}
         {stock <= 5 && stock > 0 && (
           <div className="absolute top-3 right-3">
-            <span className="px-3 py-1 rounded-full bg-warning text-warning-foreground text-xs font-medium">
+            <span className="px-3 py-1 rounded-full bg-red-600 text-white animate-pulse shadow-sm text-xs font-bold">
               ¡Últimas unidades!
             </span>
           </div>
@@ -112,12 +119,12 @@ export const ProductCard = ({
           <Button
             variant="default"
             size="icon"
-            className="rounded-full h-11 w-11 shrink-0 ml-4 bg-[#25D366] hover:bg-[#20ba5a] text-white"
+            className="rounded-full h-11 w-11 shrink-0 ml-4 hover:bg-primary/90 shadow-sm"
             disabled={stock === 0}
             onClick={handleAddToCart}
-            title="Consultar por WhatsApp"
+            title="Añadir a carrito"
           >
-            <MessageCircle className="h-5 w-5" />
+            <ShoppingCart className="h-5 w-5" />
           </Button>
         </div>
       </div>

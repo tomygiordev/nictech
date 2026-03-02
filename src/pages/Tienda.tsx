@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Search, Loader2, Package } from 'lucide-react';
+import { Search, SlidersHorizontal, Loader2, Package } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { ProductCard } from '@/components/shop/ProductCard';
 import { ProductFilters } from '@/components/shop/ProductFilters';
 import { Input } from '@/components/ui/input';
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -227,8 +228,32 @@ const Tienda = () => {
         {/* Content */}
         <section className="py-12">
           <div className="container-main">
+
+            {/* Horizontal Categories Row */}
+            <div className="w-full overflow-x-auto pb-4 mb-6 custom-scrollbar-hide border-b border-border">
+              <div className="flex gap-3 w-max px-1">
+                <Button
+                  variant={!selectedCategory ? "default" : "outline"}
+                  className={!selectedCategory ? "bg-primary text-primary-foreground font-medium rounded-full" : "bg-card text-foreground font-medium rounded-full hover:bg-muted"}
+                  onClick={() => setSelectedCategory(null)}
+                >
+                  Todas
+                </Button>
+                {categories.map((category) => (
+                  <Button
+                    key={category.id}
+                    variant={selectedCategory === category.id ? "default" : "outline"}
+                    className={selectedCategory === category.id ? "bg-primary text-primary-foreground font-medium rounded-full" : "bg-card text-foreground font-medium rounded-full hover:bg-muted"}
+                    onClick={() => setSelectedCategory(category.id)}
+                  >
+                    {category.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex flex-col lg:flex-row gap-8">
-              {/* Filters & Sorting */}
+              {/* Filters Sidebar */}
               <div className="flex flex-col gap-4">
                 <ProductFilters
                   categories={categories}
@@ -270,7 +295,7 @@ const Tienda = () => {
                       <SelectValue placeholder="Ordenar por" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="default">Relevancia</SelectItem>
+                      <SelectItem value="default">Más recientes</SelectItem>
                       <SelectItem value="asc">Menor precio</SelectItem>
                       <SelectItem value="desc">Mayor precio</SelectItem>
                     </SelectContent>

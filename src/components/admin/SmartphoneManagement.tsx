@@ -330,20 +330,13 @@ export function SmartphoneManagement() {
                             />
 
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Capacidad</Label>
-                                    <Select
-                                        value={currentProduct.capacity}
-                                        onValueChange={(val) => setCurrentProduct({ ...currentProduct, capacity: val })}
-                                    >
-                                        <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                                        <SelectContent>
-                                            {['16 GB', '32 GB', '64 GB', '128 GB', '256 GB', '512 GB', '1 TB'].map(c => (
-                                                <SelectItem key={c} value={c}>{c}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                                <CreatableAttributeSelector
+                                    tableName="capacities"
+                                    label="Capacidad"
+                                    selectedValue={currentProduct.capacity}
+                                    onValueChange={(val) => setCurrentProduct({ ...currentProduct, capacity: val })}
+                                    placeholder="Seleccionar..."
+                                />
                                 <CreatableAttributeSelector
                                     tableName="colors"
                                     label="Color"
