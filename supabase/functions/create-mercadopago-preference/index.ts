@@ -54,7 +54,7 @@ serve(async (req) => {
     console.log("Using origin:", origin);
 
     // Validate origin but proceed with fallback if needed for testing
-    const validOrigin = (origin && origin.startsWith("http")) ? origin : "https://www.google.com";
+    const validOrigin = (origin && origin.startsWith("http")) ? origin : "https://nictech.vercel.app"; // Fallback to Vercel URL if unknown
 
     // IMPORTANT: Mercado Pago sometimes dislikes localhost for auto_return
     // We strictly format the back_urls here.
@@ -78,9 +78,9 @@ serve(async (req) => {
         unit_price: Number(item.price)
       })),
       back_urls: {
-        success: "https://www.google.com",
-        failure: "https://www.google.com",
-        pending: "https://www.google.com",
+        success: `${validOrigin}/checkout?payment=success`,
+        failure: `${validOrigin}/checkout?payment=failure`,
+        pending: `${validOrigin}/checkout?payment=pending`,
       },
       payer: payerData,
       auto_return: "approved",

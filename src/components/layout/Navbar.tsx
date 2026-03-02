@@ -60,8 +60,7 @@ export const Navbar = () => {
               </Button>
             </Link>
 
-            {/* El carrito se oculta temporalmente por solicitud del usuario para redirección a WhatsApp */}
-            {/* 
+            {/* Cart Button */}
             <Button
               variant="ghost"
               size="icon"
@@ -75,7 +74,6 @@ export const Navbar = () => {
                 </span>
               )}
             </Button>
-*/}
 
             <Button
               variant="ghost"

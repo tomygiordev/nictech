@@ -55,7 +55,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
             if (data && data.length > 0) {
                 // Cast data to match state type
-                const typedData = data as { id: string, color: string, stock: number, image_url: string | null }[];
+                const typedData = data as unknown as { id: string, color: string, stock: number, image_url: string | null }[];
                 setVariants(typedData);
                 // Auto select first variant if stock available
                 const firstAvailable = typedData.find(v => v.stock > 0);
@@ -135,10 +135,21 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         }
 
         const productName = variants.length > 0 && selectedVariant ? `${product.name} - ${selectedVariant.color}` : product.name;
-        const phoneNumber = '5493446353769';
-        const message = encodeURIComponent(`Hola! Me interesa este producto: *${productName}* - $${product.price.toLocaleString('es-AR')}`);
-        const whatsappUrl = `https://wa.me/${phoneNumber}?text=${message}`;
-        window.open(whatsappUrl, '_blank');
+        const mappedImageUrl = selectedVariant && selectedVariant.image_url ? selectedVariant.image_url : (product.image_url || null);
+
+        addToCart({
+            id: product.id,
+            name: productName,
+            price: product.price,
+            maxStock: selectedVariant ? selectedVariant.stock : product.stock,
+            image_url: mappedImageUrl,
+        });
+
+        toast({
+            title: 'Producto añadido',
+            description: `${productName} se agregó a tu carrito.`,
+        });
+
         onClose();
     };
 
@@ -305,15 +316,15 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                 </div>
 
                                 <Button
-                                    className="w-full h-12 text-lg rounded-xl shadow-lg shadow-primary/20 bg-[#25D366] hover:bg-[#20ba5a] text-white"
+                                    className="w-full h-12 text-lg rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90"
                                     size="lg"
                                     disabled={variants.length > 0 ? (!selectedVariant || selectedVariant.stock === 0) : product.stock === 0}
                                     onClick={handleAddToCart}
                                 >
-                                    <MessageCircle className="h-5 w-5 mr-2" />
+                                    <ShoppingCart className="h-5 w-5 mr-2" />
                                     {variants.length > 0
-                                        ? (!selectedVariant ? 'Seleccionar Color' : selectedVariant.stock > 0 ? 'Consultar por WhatsApp' : 'Sin Stock')
-                                        : (product.stock > 0 ? 'Consultar por WhatsApp' : 'Sin Stock')
+                                        ? (!selectedVariant ? 'Seleccionar Color' : selectedVariant.stock > 0 ? 'Añadir a carrito' : 'Sin Stock')
+                                        : (product.stock > 0 ? 'Añadir a carrito' : 'Sin Stock')
                                     }
                                 </Button>
                             </div>

@@ -15,8 +15,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { generateTrackingCode } from '@/utils/generateTrackingCode';
 import { CaseManagement } from '@/components/admin/CaseManagement';
+import { VariantManagement } from '@/components/admin/VariantManagement';
 import { SmartphoneManagement } from '@/components/admin/SmartphoneManagement';
 import { BlogManagement } from '@/components/admin/BlogManagement';
+import { useAuth } from '@/contexts/AuthContext';
 
 
 import {
@@ -210,6 +212,7 @@ const RepairLogsDialog = ({ repairId, trackingCode }: { repairId: string; tracki
 };
 
 const Admin = () => {
+  const [activeTab, setActiveTab] = useState("repairs");
   const [repairs, setRepairs] = useState<Repair[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -249,22 +252,23 @@ const Admin = () => {
   });
   const [savingNewRepair, setSavingNewRepair] = useState(false);
 
+  const { session, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    checkUser();
-    fetchData();
-  }, []);
-
-  const checkUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    if (!authLoading && !session) {
       navigate('/login');
     }
-  };
+  }, [session, authLoading, navigate]);
+
+  useEffect(() => {
+    if (session) {
+      fetchData();
+    }
+  }, [session]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     navigate('/login');
   };
 
@@ -630,6 +634,16 @@ const Admin = () => {
     setSavingProduct(false);
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!session) return null; // Prevent flash of content before redirect
+
   return (
     <>
       <Helmet>
@@ -673,7 +687,7 @@ const Admin = () => {
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : (
-            <Tabs defaultValue="repairs" className="space-y-6">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList className="flex flex-wrap justify-center md:justify-start gap-2 bg-transparent p-0 mb-6 h-auto w-full">
                 <TabsTrigger value="repairs" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Wrench className="h-4 w-4" />
@@ -690,6 +704,10 @@ const Admin = () => {
                 <TabsTrigger value="cases" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Smartphone className="h-4 w-4" />
                   Fundas
+                </TabsTrigger>
+                <TabsTrigger value="variants" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
+                  <Package className="h-4 w-4" />
+                  Variantes
                 </TabsTrigger>
                 <TabsTrigger value="orders" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Package className="h-4 w-4" />
@@ -1187,6 +1205,10 @@ const Admin = () => {
               {/* Orders Tab */}
               <TabsContent value="cases">
                 <CaseManagement />
+              </TabsContent>
+
+              <TabsContent value="variants">
+                <VariantManagement />
               </TabsContent>
 
               <TabsContent value="orders">

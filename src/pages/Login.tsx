@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Lock, ArrowLeft } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
+import { useAuth } from '@/contexts/AuthContext';
+import { useEffect } from 'react';
 
 const Login = () => {
     const [email, setEmail] = useState('');
@@ -15,6 +17,13 @@ const Login = () => {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const { toast } = useToast();
+    const { session, loading: authLoading } = useAuth();
+
+    useEffect(() => {
+        if (session) {
+            navigate('/admin');
+        }
+    }, [session, navigate]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -43,6 +52,14 @@ const Login = () => {
 
         setLoading(false);
     };
+
+    if (authLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
         <>

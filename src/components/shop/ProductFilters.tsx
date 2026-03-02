@@ -100,37 +100,7 @@ export const ProductFilters = ({
             )}
           </div>
 
-          {/* Categories */}
-          <div className="mb-8">
-            <h4 className="text-sm font-medium text-foreground mb-3">Categorías</h4>
-            <div className="space-y-2">
-              <button
-                onClick={() => onCategoryChange(null)}
-                className={cn(
-                  "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                  !selectedCategory
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                Todas las categorías
-              </button>
-              {categories.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => onCategoryChange(category.id)}
-                  className={cn(
-                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                    selectedCategory === category.id
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  {category.name}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Categories removed - now rendered horizontally in Tienda.tsx */}
 
           {/* Model Filter - Only if models are available (implies Fundas category or similar) */}
           {models.length > 0 && onModelChange && (

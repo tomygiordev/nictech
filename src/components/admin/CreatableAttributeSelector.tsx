@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,9 +30,10 @@ interface CreatableAttributeSelectorProps {
     onValueChange: (value: string) => void;
     selectedValue?: string; // Expecting the NAME of the attribute, since we store text in products
     placeholder?: string;
+    disabled?: boolean;
 }
 
-export function CreatableAttributeSelector({ tableName, label, onValueChange, selectedValue, placeholder }: CreatableAttributeSelectorProps) {
+export function CreatableAttributeSelector({ tableName, label, onValueChange, selectedValue, placeholder, disabled }: CreatableAttributeSelectorProps) {
     const [items, setItems] = useState<Item[]>([]);
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -46,7 +47,7 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
         setLoading(true);
         const { data, error } = await supabase.from(tableName as any).select('*').order('name');
         if (error) console.error(`Error fetching ${tableName}:`, error);
-        else setItems(data || []);
+        else setItems(data as unknown as Item[] || []);
         setLoading(false);
     };
 
@@ -66,25 +67,41 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
 
             if (error) throw error;
 
-            setItems(prev => [...prev, data]);
+            setItems(prev => [...prev, data as unknown as Item]);
             onValueChange(data.name); // Return Name
             setOpen(false);
             setSearch("");
-            toast({ title: `${label} creado`, description: formattedName });
+            toast({ title: `${label || 'Ítem'} creado`, description: formattedName });
         } catch (error: any) {
             toast({ title: "Error", description: `No se pudo crear ${label}. ${error.message}`, variant: "destructive" });
         }
     };
 
+    const deleteItem = async (id: string, name: string) => {
+        if (!confirm(`¿Eliminar "${name}" permanentemente?`)) return;
+        try {
+            const { error } = await supabase.from(tableName as any).delete().eq('id', id);
+            if (error) throw error;
+            setItems(prev => prev.filter(i => i.id !== id));
+            if (selectedValue === name) {
+                onValueChange("");
+            }
+            toast({ title: "Eliminado", description: `${name} ha sido eliminado.` });
+        } catch (error: any) {
+            toast({ title: "Error", description: `No se pudo eliminar. Puede estar en uso.`, variant: "destructive" });
+        }
+    };
+
     return (
         <div className="space-y-2">
-            <Label>{label}</Label>
+            {label && <Label>{label}</Label>}
             <Popover open={open} onOpenChange={setOpen}>
                 <PopoverTrigger asChild>
                     <Button
                         variant="outline"
                         role="combobox"
                         aria-expanded={open}
+                        disabled={disabled}
                         className="w-full justify-between"
                     >
                         {selectedValue || placeholder || `Seleccionar ${label.toLowerCase()}...`}
@@ -105,11 +122,12 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
                                     <Plus className="mr-2 h-4 w-4" /> Crear "{search}"
                                 </Button>
                             </CommandEmpty>
-                            <CommandGroup maxHeight="200px" className="overflow-y-auto">
+                            <CommandGroup className="max-h-[200px] overflow-y-auto">
                                 {items.map((item) => (
                                     <CommandItem
                                         key={item.id}
                                         value={item.name}
+                                        className="group"
                                         onSelect={() => {
                                             onValueChange(item.name);
                                             setOpen(false);
@@ -122,7 +140,20 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
                                                 selectedValue === item.name ? "opacity-100" : "opacity-0"
                                             )}
                                         />
-                                        {item.name}
+                                        <span className="flex-1">{item.name}</span>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                deleteItem(item.id, item.name);
+                                            }}
+                                            onPointerDown={(e) => e.stopPropagation()} // Prevent selecting item when clicking delete
+                                            title="Eliminar opción"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
                                     </CommandItem>
                                 ))}
                             </CommandGroup>

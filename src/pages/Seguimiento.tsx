@@ -55,11 +55,14 @@ const Seguimiento = () => {
     setSelectedRepair(null);
     setLogs([]);
 
+    // Security: Only search by tracking code, not by DNI (to avoid data exposure)
+    // Only select fields the client needs to see (no DNI, no phone)
     const { data, error } = await supabase
       .from('repairs')
-      .select('*')
-      .or(`client_dni.eq.${searchValue},tracking_code.ilike.%${searchValue}%`)
-      .order('created_at', { ascending: false });
+      .select('id, tracking_code, client_name, device_model, device_brand, status, locality, notes, problem_description, created_at')
+      .ilike('tracking_code', `%${searchValue.trim()}%`)
+      .order('created_at', { ascending: false })
+      .limit(5);
 
     if (error) {
       toast({
@@ -115,7 +118,7 @@ const Seguimiento = () => {
                 Consulta tu Reparación
               </h1>
               <p className="text-muted-foreground text-lg mb-8">
-                Ingresa tu DNI o código de reparación para ver el estado actual de tu dispositivo
+                Ingresa tu código de reparación para ver el estado actual de tu dispositivo
               </p>
 
               {/* Search Form */}
@@ -124,7 +127,7 @@ const Seguimiento = () => {
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                   <Input
                     type="text"
-                    placeholder="DNI o código (ej: REP-A1B2C3D4)"
+                    placeholder="Código (ej: REP-A1B2C3D4)"
                     value={searchValue}
                     onChange={(e) => setSearchValue(e.target.value)}
                     className="pl-12 h-12 rounded-xl"
