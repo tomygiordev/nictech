@@ -1,7 +1,7 @@
 import { ShoppingCart, Package, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 interface ProductCardProps {
   id: string;
@@ -35,10 +35,7 @@ export const ProductCard = ({
       maxStock: stock,
       image_url: image_url || null,
     });
-    toast({
-      title: 'Producto añadido',
-      description: `${name} se agregó a tu carrito.`,
-    });
+    toast.success(`${name} se agregó a tu carrito`, { duration: 2000 });
   };
 
   return (

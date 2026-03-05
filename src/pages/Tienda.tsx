@@ -1,12 +1,16 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Search, SlidersHorizontal, Loader2, Package } from 'lucide-react';
+import {
+  Search, Loader2, Package, LayoutGrid,
+  Smartphone, Headphones, Cable, BatteryCharging,
+  Gift, Monitor, ShieldCheck, Speaker, Layers,
+  ChevronLeft, ChevronRight
+} from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { ProductCard } from '@/components/shop/ProductCard';
 import { ProductFilters } from '@/components/shop/ProductFilters';
 import { Input } from '@/components/ui/input';
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -42,11 +46,31 @@ interface SmartphoneModel {
   name: string;
 }
 
-
 interface Brand {
   id: string;
   name: string;
 }
+
+// Icon mapping for categories
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  smartphone: <Smartphone className="h-4 w-4" />,
+  celular: <Smartphone className="h-4 w-4" />,
+  iphone: <Smartphone className="h-4 w-4" />,
+  auriculares: <Headphones className="h-4 w-4" />,
+  'cables de datos': <Cable className="h-4 w-4" />,
+  cables: <Cable className="h-4 w-4" />,
+  cargadores: <BatteryCharging className="h-4 w-4" />,
+  combos: <Gift className="h-4 w-4" />,
+  computacion: <Monitor className="h-4 w-4" />,
+  fundas: <ShieldCheck className="h-4 w-4" />,
+  parlantes: <Speaker className="h-4 w-4" />,
+  'vidrios templados': <Layers className="h-4 w-4" />,
+};
+
+const getCategoryIcon = (name: string) => {
+  const lower = name.toLowerCase();
+  return CATEGORY_ICONS[lower] || <Package className="h-4 w-4" />;
+};
 
 const Tienda = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -64,6 +88,61 @@ const Tienda = () => {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
+
+  // Animated indicator state
+  const categoryBarRef = useRef<HTMLDivElement>(null);
+  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
+  const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  const updateIndicator = useCallback(() => {
+    const key = selectedCategory || '__all__';
+    const btn = buttonRefs.current.get(key);
+    const bar = categoryBarRef.current;
+    if (btn && bar) {
+      const barRect = bar.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      setIndicatorStyle({
+        left: btnRect.left - barRect.left + bar.scrollLeft,
+        width: btnRect.width,
+      });
+    }
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    // small delay to allow buttons to render
+    const t = setTimeout(updateIndicator, 50);
+    return () => clearTimeout(t);
+  }, [selectedCategory, categories, updateIndicator]);
+
+  // Scroll arrow visibility
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScrollArrows = useCallback(() => {
+    const el = categoryBarRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 5);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 5);
+  }, []);
+
+  useEffect(() => {
+    checkScrollArrows();
+    const el = categoryBarRef.current;
+    if (el) {
+      el.addEventListener('scroll', checkScrollArrows, { passive: true });
+      window.addEventListener('resize', checkScrollArrows);
+      return () => {
+        el.removeEventListener('scroll', checkScrollArrows);
+        window.removeEventListener('resize', checkScrollArrows);
+      };
+    }
+  }, [categories, checkScrollArrows]);
+
+  const scrollCategories = useCallback((direction: 'left' | 'right') => {
+    const el = categoryBarRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction === 'left' ? -200 : 200, behavior: 'smooth' });
+  }, []);
 
   // Check if selected category is smartphone related
   const isSmartphoneCategory = useMemo(() => {
@@ -87,7 +166,6 @@ const Tienda = () => {
     ]);
 
     if (productsRes.data) {
-      // Manual mapping to match Product interface with joined category
       const formattedProducts: Product[] = productsRes.data.map((item: any) => ({
         id: item.id,
         name: item.name,
@@ -97,7 +175,7 @@ const Tienda = () => {
         image_url: item.image_url,
         additional_images: item.additional_images || [],
         description: item.description,
-        category: item.category, // This comes from the join
+        category: item.category,
         tags: item.tags || [],
         model_id: item.model_id,
         // @ts-ignore
@@ -107,7 +185,6 @@ const Tienda = () => {
       }));
       setProducts(formattedProducts);
 
-      // Dynamic price range
       if (formattedProducts.length > 0) {
         const max = Math.max(...formattedProducts.map(p => p.price));
         setPriceRange([0, max]);
@@ -116,7 +193,6 @@ const Tienda = () => {
 
     if (categoriesRes.data) {
       let cats = categoriesRes.data as unknown as Category[];
-      // Sort so Smartphone/Celular is first
       cats.sort((a, b) => {
         const aIsPhone = a.name.toLowerCase().includes('celular') || a.name.toLowerCase().includes('smartphone') || a.name.toLowerCase().includes('iphone');
         const bIsPhone = b.name.toLowerCase().includes('celular') || b.name.toLowerCase().includes('smartphone') || b.name.toLowerCase().includes('iphone');
@@ -141,8 +217,6 @@ const Tienda = () => {
 
     setLoading(false);
   };
-
-  // Categories are now fetched from DB, so we don't need to derive them from products
 
   const maxPrice = useMemo(() => {
     if (products.length === 0) return 0;
@@ -196,7 +270,7 @@ const Tienda = () => {
     <>
       <Helmet>
         <title>Tienda - Nictech | Tecnología con Garantía</title>
-        <meta name="description" content="Compra smartphones, laptops, tablets y accesorios con garantía. Las mejores marcas al mejor precio en Lima, Perú." />
+        <meta name="description" content="Compra smartphones, laptops, tablets y accesorios con garantía. Las mejores marcas al mejor precio." />
       </Helmet>
       <Layout>
         {/* Header */}
@@ -229,26 +303,93 @@ const Tienda = () => {
         <section className="py-12">
           <div className="container-main">
 
-            {/* Horizontal Categories Row */}
-            <div className="w-full overflow-x-auto pb-4 mb-6 custom-scrollbar-hide border-b border-border">
-              <div className="flex gap-3 w-max px-1">
-                <Button
-                  variant={!selectedCategory ? "default" : "outline"}
-                  className={!selectedCategory ? "bg-primary text-primary-foreground font-medium rounded-full" : "bg-card text-foreground font-medium rounded-full hover:bg-muted"}
-                  onClick={() => setSelectedCategory(null)}
-                >
-                  Todas
-                </Button>
-                {categories.map((category) => (
-                  <Button
-                    key={category.id}
-                    variant={selectedCategory === category.id ? "default" : "outline"}
-                    className={selectedCategory === category.id ? "bg-primary text-primary-foreground font-medium rounded-full" : "bg-card text-foreground font-medium rounded-full hover:bg-muted"}
-                    onClick={() => setSelectedCategory(category.id)}
+            {/* ── Sticky Glassmorphism Category Bar ── */}
+            <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 mb-8">
+              <div className="backdrop-blur-xl bg-background/70 border-b border-border/50 rounded-b-2xl shadow-sm py-3">
+                <div className="relative">
+                  {/* Left Arrow */}
+                  {canScrollLeft && (
+                    <button
+                      onClick={() => scrollCategories('left')}
+                      className="absolute left-0 top-0 bottom-0 z-10 flex items-center pl-1 pr-4 bg-gradient-to-r from-background/90 via-background/60 to-transparent rounded-l-2xl transition-opacity duration-200"
+                      aria-label="Desplazar categorías a la izquierda"
+                    >
+                      <ChevronLeft className="h-5 w-5 text-foreground/70 hover:text-foreground transition-colors" />
+                    </button>
+                  )}
+
+                  {/* Right Arrow */}
+                  {canScrollRight && (
+                    <button
+                      onClick={() => scrollCategories('right')}
+                      className="absolute right-0 top-0 bottom-0 z-10 flex items-center pr-1 pl-4 bg-gradient-to-l from-background/90 via-background/60 to-transparent rounded-r-2xl transition-opacity duration-200"
+                      aria-label="Desplazar categorías a la derecha"
+                    >
+                      <ChevronRight className="h-5 w-5 text-foreground/70 hover:text-foreground transition-colors" />
+                    </button>
+                  )}
+
+                  <div
+                    ref={categoryBarRef}
+                    className="relative overflow-x-auto hide-scrollbar"
                   >
-                    {category.name}
-                  </Button>
-                ))}
+                    {/* Animated sliding indicator */}
+                    <div
+                      className="absolute bottom-0 h-[3px] bg-primary rounded-full transition-all duration-300 ease-out"
+                      style={{
+                        left: indicatorStyle.left,
+                        width: indicatorStyle.width,
+                      }}
+                    />
+
+                    <div className="flex gap-1 sm:gap-2 w-max px-8">
+                      {/* "Todas" Button */}
+                      <button
+                        ref={(el) => {
+                          if (el) buttonRefs.current.set('__all__', el);
+                        }}
+                        onClick={() => setSelectedCategory(null)}
+                        className={`
+                          group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
+                          transition-all duration-200 whitespace-nowrap select-none
+                          ${!selectedCategory
+                            ? 'text-primary bg-primary/10'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                          }
+                        `}
+                      >
+                        <LayoutGrid className={`h-4 w-4 transition-transform duration-200 ${!selectedCategory ? 'scale-110' : 'group-hover:scale-110'}`} />
+                        Todas
+                      </button>
+
+                      {categories.map((category) => {
+                        const isActive = selectedCategory === category.id;
+                        return (
+                          <button
+                            key={category.id}
+                            ref={(el) => {
+                              if (el) buttonRefs.current.set(category.id, el);
+                            }}
+                            onClick={() => setSelectedCategory(category.id)}
+                            className={`
+                              group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
+                              transition-all duration-200 whitespace-nowrap select-none
+                              ${isActive
+                                ? 'text-primary bg-primary/10'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                              }
+                            `}
+                          >
+                            <span className={`transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
+                              {getCategoryIcon(category.name)}
+                            </span>
+                            {category.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -265,15 +406,13 @@ const Tienda = () => {
                   isOpen={filtersOpen}
                   onToggle={() => setFiltersOpen(!filtersOpen)}
 
-                  // Pass models only if category is 'Funda' (or similar) or Smartphone (requested logic: por smartphone se puede filtrar por estado y tambien por marca)
-                  // Actually, user said: "la categoria smartphone va antes que fundas, por smartphone se puede filtrar por estado y tambien por marca!"
-                  // Implicitly, fundas might also have models.
-                  // Models are useful for both. Brand/Condition mainly for smartphones.
-                  models={categories.find(c => c.id === selectedCategory)?.name.toLowerCase().includes('funda') ? models : []}
+                  models={(() => {
+                    const catName = categories.find(c => c.id === selectedCategory)?.name.toLowerCase() || '';
+                    return (catName.includes('funda') || catName.includes('vidrios')) ? models : [];
+                  })()}
                   selectedModel={selectedModel}
                   onModelChange={setSelectedModel}
 
-                  // New Props
                   brands={isSmartphoneCategory ? brands : []}
                   selectedBrand={selectedBrand}
                   onBrandChange={setSelectedBrand}
@@ -317,23 +456,21 @@ const Tienda = () => {
                     </p>
                   </div>
                 ) : (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                      {filteredProducts.map((product) => (
-                        <div key={product.id} onClick={() => setSelectedProduct(product)} className="cursor-pointer">
-                          <ProductCard
-                            id={product.id}
-                            name={product.name}
-                            price={product.price}
-                            stock={product.stock}
-                            image_url={product.image_url || undefined}
-                            description={product.description || undefined}
-                            category={product.category?.name || 'Varios'}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {filteredProducts.map((product) => (
+                      <div key={product.id} onClick={() => setSelectedProduct(product)} className="cursor-pointer">
+                        <ProductCard
+                          id={product.id}
+                          name={product.name}
+                          price={product.price}
+                          stock={product.stock}
+                          image_url={product.image_url || undefined}
+                          description={product.description || undefined}
+                          category={product.category?.name || 'Varios'}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

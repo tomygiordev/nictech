@@ -757,7 +757,7 @@ export const CaseManagement = () => {
                                     label="Color"
                                     selectedValue={editingVariant.color}
                                     onValueChange={(val) => setEditingVariant({ ...editingVariant, color: val })}
-                                    disabled={true}
+
                                 />
                             </div>
                             <div className="space-y-2">

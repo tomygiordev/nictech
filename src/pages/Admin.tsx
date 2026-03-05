@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -212,7 +212,9 @@ const RepairLogsDialog = ({ repairId, trackingCode }: { repairId: string; tracki
 };
 
 const Admin = () => {
-  const [activeTab, setActiveTab] = useState("repairs");
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('admin_active_tab') || "repairs";
+  });
   const [repairs, setRepairs] = useState<Repair[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -261,15 +263,22 @@ const Admin = () => {
     }
   }, [session, authLoading, navigate]);
 
+  const hasFetchedRef = useRef(false);
+
   useEffect(() => {
-    if (session) {
+    if (session && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
       fetchData();
     }
   }, [session]);
 
+  useEffect(() => {
+    localStorage.setItem('admin_active_tab', activeTab);
+  }, [activeTab]);
+
   const handleLogout = async () => {
     await signOut();
-    navigate('/login');
+    navigate('/');
   };
 
   const fetchData = async () => {
@@ -310,24 +319,36 @@ const Admin = () => {
     e.preventDefault();
     setSavingNewRepair(true);
 
+    // Normalize DNI: remove dots and spaces, accept 7 or 8 digits
+    const rawDni = newRepair.client_dni.replace(/[.\s-]/g, '');
+    if (!/^\d{7,8}$/.test(rawDni)) {
+      toast({
+        title: 'DNI inválido',
+        description: 'El DNI debe tener 7 u 8 dígitos numéricos (con o sin puntos).',
+        variant: 'destructive',
+      });
+      setSavingNewRepair(false);
+      return;
+    }
+
     const tracking_code = generateTrackingCode();
 
     const { error } = await supabase.from('repairs' as any).insert({
       tracking_code,
-      client_dni: newRepair.client_dni,
+      client_dni: rawDni,
       client_name: newRepair.client_name,
       client_phone: newRepair.client_phone || null,
       device_brand: newRepair.device_brand || null,
       device_model: newRepair.device_model,
       problem_description: newRepair.problem_description || null,
-      status: 'Recibido', // Default status
+      status: 'Recibido',
       locality: newRepair.locality,
     });
 
     if (error) {
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo registrar la reparación.',
+        description: 'No se pudo registrar la reparación. Verificá los datos e intentá de nuevo.',
         variant: 'destructive',
       });
     } else {
@@ -736,7 +757,8 @@ const Admin = () => {
                           value={newRepair.client_dni}
                           onChange={(e) => setNewRepair({ ...newRepair, client_dni: e.target.value })}
                           required
-                          placeholder="12345678"
+                          maxLength={11}
+                          placeholder="12345678 o 12.345.678"
                         />
                       </div>
                       <div className="space-y-2">

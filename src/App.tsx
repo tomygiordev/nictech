@@ -17,7 +17,14 @@ import Login from "./pages/Login";
 import Checkout from "./pages/Checkout";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    },
+  },
+});
 
 const App = () => (
   <HelmetProvider>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { Helmet } from 'react-helmet-async';
 import { Calendar, ArrowRight, Clock, User, Tag, Loader2, Image as ImageIcon } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
@@ -335,7 +336,7 @@ const Blog = () => {
                     prose-strong:text-foreground prose-h3:text-xl lg:prose-h3:text-2xl 
                     prose-h3:font-bold prose-h3:mt-8 prose-h3:mb-4
                     space-y-4 text-foreground leading-relaxed content-rich-text"
-                    dangerouslySetInnerHTML={{ __html: selectedPost.content }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedPost.content, { USE_PROFILES: { html: true } }) }}
                   />
 
                   <div className="mt-12 pt-8 border-t border-border flex justify-between items-center">

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ShoppingCart, ChevronLeft, ChevronRight, X, MessageCircle } from 'lucide-react';
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from '@/components/ui/carousel';
 import { useCart } from '@/contexts/CartContext';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -126,11 +126,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
     const handleAddToCart = () => {
         // If has variants but none selected
         if (variants.length > 0 && !selectedVariant) {
-            toast({
-                title: 'Selecciona un color',
-                description: 'Por favor elige una variante antes de agregar al carrito.',
-                variant: 'destructive',
-            });
+            toast.error('Por favor elige un color antes de agregar al carrito', { duration: 3000 });
             return;
         }
 
@@ -145,10 +141,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
             image_url: mappedImageUrl,
         });
 
-        toast({
-            title: 'Producto añadido',
-            description: `${productName} se agregó a tu carrito.`,
-        });
+        toast.success(`${productName} se agregó a tu carrito`, { duration: 2000 });
 
         onClose();
     };

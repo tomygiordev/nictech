@@ -1,9 +1,25 @@
-import { X, Plus, Minus, Trash2, ShoppingBag } from 'lucide-react';
+import { useEffect } from 'react';
+import { X, Plus, Minus, Trash2, ShoppingBag, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
+import { toast } from 'sonner';
 
 export const CartSlideOver = () => {
-  const { items, isOpen, closeCart, updateQuantity, removeFromCart, totalPrice, clearCart } = useCart();
+  const { items, isOpen, closeCart, updateQuantity, removeFromCart, totalPrice, clearCart, validateCart, isValidating } = useCart();
+
+  // Validate stock every time the cart is opened
+  useEffect(() => {
+    if (isOpen && items.length > 0) {
+      validateCart().then(({ removedItems, adjustedItems }) => {
+        if (removedItems.length > 0) {
+          toast.error(`Productos sin stock removidos: ${removedItems.join(', ')}`);
+        }
+        if (adjustedItems.length > 0) {
+          toast.info(`Stock ajustado para: ${adjustedItems.join(', ')}`);
+        }
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -29,6 +45,14 @@ export const CartSlideOver = () => {
             </Button>
           </div>
 
+          {/* Validating indicator */}
+          {isValidating && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-primary/5 border-b border-primary/10 text-sm text-primary">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Verificando stock disponible...
+            </div>
+          )}
+
           {/* Cart Items */}
           <div className="flex-1 overflow-y-auto p-4">
             {items.length === 0 ? (
@@ -43,7 +67,7 @@ export const CartSlideOver = () => {
               <div className="space-y-4">
                 {items.map((item) => (
                   <div
-                    key={item.id}
+                    key={`${item.id}-${item.variant?.id || 'base'}`}
                     className="flex gap-4 p-3 rounded-xl bg-muted/50 animate-fade-in"
                   >
                     <div className="h-20 w-20 rounded-lg bg-muted overflow-hidden flex-shrink-0">
@@ -61,9 +85,19 @@ export const CartSlideOver = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="font-medium text-sm truncate">{item.name}</h4>
+                      {item.variant && (
+                        <p className="text-xs text-muted-foreground">Color: {item.variant.color}</p>
+                      )}
                       <p className="text-primary font-semibold mt-1">
                         $ {item.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
+                      {/* Low stock warning */}
+                      {item.maxStock <= 3 && item.maxStock > 0 && (
+                        <p className="text-xs text-amber-600 flex items-center gap-1 mt-0.5">
+                          <AlertTriangle className="h-3 w-3" />
+                          ¡Quedan solo {item.maxStock}!
+                        </p>
+                      )}
                       <div className="flex items-center gap-2 mt-2">
                         <Button
                           variant="outline"
@@ -81,6 +115,7 @@ export const CartSlideOver = () => {
                           size="icon"
                           className="h-7 w-7"
                           onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          disabled={item.quantity >= item.maxStock}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
@@ -112,12 +147,20 @@ export const CartSlideOver = () => {
               <Button
                 className="w-full"
                 size="lg"
+                disabled={isValidating}
                 onClick={() => {
                   closeCart();
                   window.location.href = '/checkout';
                 }}
               >
-                Proceder al Pago
+                {isValidating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Verificando...
+                  </>
+                ) : (
+                  'Proceder al Pago'
+                )}
               </Button>
               <Button
                 variant="outline"

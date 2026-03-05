@@ -16,9 +16,10 @@ type PaymentMethod = 'mercadopago' | 'card';
 const Checkout = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { items, totalPrice, clearCart } = useCart();
+  const { items, totalPrice, clearCart, validateCart, isValidating } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mercadopago');
   const [loading, setLoading] = useState(false);
+  const [initialValidationDone, setInitialValidationDone] = useState(false);
   const [payerInfo, setPayerInfo] = useState({
     name: '',
     email: '',
@@ -38,6 +39,21 @@ const Checkout = () => {
       toast.info('Tu pago está pendiente de confirmación.');
     }
   }, [paymentStatus, clearCart]);
+
+  // Validate cart on checkout page load (catch stale cached items)
+  useEffect(() => {
+    if (!paymentStatus && items.length > 0 && !initialValidationDone) {
+      validateCart().then(({ removedItems, adjustedItems }) => {
+        setInitialValidationDone(true);
+        if (removedItems.length > 0) {
+          toast.error(`Productos sin stock removidos: ${removedItems.join(', ')}`);
+        }
+        if (adjustedItems.length > 0) {
+          toast.info(`Stock ajustado para: ${adjustedItems.join(', ')}`);
+        }
+      });
+    }
+  }, []);
 
   // Show payment result if redirected
   if (paymentStatus) {
@@ -118,6 +134,22 @@ const Checkout = () => {
 
     setLoading(true);
     try {
+      // ── Final stock validation before payment ──
+      const { removedItems, adjustedItems } = await validateCart();
+
+      if (removedItems.length > 0) {
+        toast.error(`Algunos productos se agotaron y fueron removidos: ${removedItems.join(', ')}. Revisa tu carrito.`);
+        setLoading(false);
+        return;
+      }
+
+      if (adjustedItems.length > 0) {
+        toast.info(`Se ajustó la cantidad de: ${adjustedItems.join(', ')}. Revisa antes de pagar.`);
+        setLoading(false);
+        return;
+      }
+
+      // All stock is valid — proceed with payment
       const { data, error } = await supabase.functions.invoke('create-mercadopago-preference', {
         body: {
           items: items.map(item => ({
@@ -147,18 +179,15 @@ const Checkout = () => {
 
       let errorMessage = 'Error al procesar el pago. Intenta nuevamente.';
 
-      // Attempt to extract more info
       if (typeof error === 'object' && error !== null) {
-        if (error.message) errorMessage = error.message;
+        // Avoid exposing raw database or network error messages to the client
+        // if (error.message) errorMessage = error.message;
 
-        // Check for response details in the error object (common in Supabase SDK)
-        // Tries to read the body if available
         try {
           if (error.context && typeof error.context.json === 'function') {
             const body = await error.context.json();
             console.error('Checkout error body:', body);
-            if (body.error) errorMessage = body.error;
-            if (body.message) errorMessage = body.message;
+            // We intentionally do NOT set errorMessage = body.error here to prevent exposing backend/MP logs
           }
         } catch (e) {
           console.error('Error parsing error context:', e);

@@ -8,13 +8,12 @@ export const Footer = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
           {/* Brand */}
           <div className="space-y-4">
-            <Link to="/" className="flex items-center gap-2">
+            <Link to="/" className="inline-block">
               <img
-                src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo%20solo%20isotipo%20(solo%20icono%20sin%20texto).png"
+                src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo_color.png"
                 alt="Nictech Logo"
-                className="h-10 w-10 object-contain"
+                className="h-12 object-contain"
               />
-              <span className="text-xl font-bold">Nictech</span>
             </Link>
             <p className="text-secondary-foreground/80 text-sm leading-relaxed">
               Expertos en reparación y venta de tecnología. Brindando soluciones confiables.

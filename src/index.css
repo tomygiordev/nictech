@@ -274,25 +274,43 @@
 .ql-toolbar.ql-snow {
   @apply border-border bg-muted/50 rounded-t-md font-sans border-b-border;
 }
+
 .ql-container.ql-snow {
   @apply border-border rounded-b-md bg-transparent;
 }
+
 .ql-editor {
   @apply text-foreground font-sans min-h-[300px] text-base;
 }
+
 .ql-editor.ql-blank::before {
   @apply text-muted-foreground font-sans italic;
 }
+
 .dark .ql-snow .ql-stroke {
   stroke: hsl(var(--foreground));
 }
-.dark .ql-snow .ql-fill, .dark .ql-snow .ql-stroke.ql-fill {
+
+.dark .ql-snow .ql-fill,
+.dark .ql-snow .ql-stroke.ql-fill {
   fill: hsl(var(--foreground));
 }
+
 .dark .ql-snow .ql-picker {
   color: hsl(var(--foreground));
 }
+
 .dark .ql-snow .ql-picker-options {
   background-color: hsl(var(--card));
   border-color: hsl(var(--border));
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
