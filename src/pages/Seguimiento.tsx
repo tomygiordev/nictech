@@ -55,12 +55,10 @@ const Seguimiento = () => {
     setSelectedRepair(null);
     setLogs([]);
 
-    // Security: Only search by tracking code, not by DNI (to avoid data exposure)
-    // Only select fields the client needs to see (no DNI, no phone)
+    // Security: Usamos una función RPC (Stored Procedure) segura en la base de datos.
+    // Esto evita exponer la tabla completa 'repairs' al frontend de manera pública.
     const { data, error } = await supabase
-      .from('repairs')
-      .select('id, tracking_code, client_name, device_model, device_brand, status, locality, notes, problem_description, created_at')
-      .ilike('tracking_code', `%${searchValue.trim()}%`)
+      .rpc('get_repair_by_tracking_code', { search_code: searchValue.trim() })
       .order('created_at', { ascending: false })
       .limit(5);
 
