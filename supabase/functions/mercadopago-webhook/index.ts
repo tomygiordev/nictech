@@ -79,6 +79,15 @@ async function processPayment(paymentId: string) {
 
   // 3. Upsert order in Supabase
   // We use payment_id as unique key to avoid duplicates
+  // First, check if order already exists to see if we already decremented stock
+  const { data: existingOrder } = await supabase
+    .from("orders")
+    .select("stock_decremented")
+    .eq("payment_id", String(paymentId))
+    .single();
+
+  const stockAlreadyDecremented = existingOrder?.stock_decremented || false;
+
   const { error: dbError } = await supabase
     .from("orders")
     .upsert({
@@ -87,7 +96,9 @@ async function processPayment(paymentId: string) {
       total: total,
       items: items, // or metadata.items if MP strips it
       payer: payer,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      // only set stock_decremented to true if it already was true, or if we are about to decrement it now
+      stock_decremented: stockAlreadyDecremented || (status === "approved" && !stockAlreadyDecremented),
     }, { onConflict: "payment_id" });
 
   if (dbError) {
@@ -95,8 +106,8 @@ async function processPayment(paymentId: string) {
     throw dbError;
   }
 
-  // 4. Dec Stock if approved
-  if (status === "approved") {
+  // 4. Dec Stock if approved AND we haven't already decremented it for this order
+  if (status === "approved" && !stockAlreadyDecremented) {
     console.log("Payment approved, updating stock...");
 
     // We parse items from metadata if additional_info is empty (sometimes happens)
@@ -112,29 +123,19 @@ async function processPayment(paymentId: string) {
     for (const item of itemsToProcess) {
       // If item has an ID (it should), decrement stock
       if (item.id) {
-        // We use a stored procedure or direct update. 
-        // Direct update is risky for concurrency but fine for this scale.
-        // Better: "rpc" call to decrement specific row, but let's try direct update first checking current stock
+        // ==========================================
+        // SECURITY VALIDATION: Atomic stock update
+        // We use a stored procedure to avoid race conditions
+        // ==========================================
+        const { error: rpcError } = await supabase.rpc('decrement_stock', {
+          row_id: item.id,
+          qty: Number(item.quantity)
+        });
 
-        // Simplest approach: supabase.rpc ideally, but let's do fetch-then-update for now or assume simple decrement
-        // Actually, SQL `update products set stock = stock - quantity where id = ...` is best but Supabase JS client 
-        // doesn't support relative updates easily without RPC.
-
-        // Let's create a simple RPC in the next step if needed, but for now we can fetch and update
-
-        const { data: product } = await supabase
-          .from("products")
-          .select("stock")
-          .eq("id", item.id)
-          .single();
-
-        if (product) {
-          const newStock = Math.max(0, product.stock - Number(item.quantity));
-          await supabase
-            .from("products")
-            .update({ stock: newStock })
-            .eq("id", item.id);
-          console.log(`Updated stock for ${item.id}: ${product.stock} -> ${newStock}`);
+        if (rpcError) {
+          console.error(`Error al descontar stock para el producto ${item.id}:`, rpcError);
+        } else {
+          console.log(`Decremented stock by ${item.quantity} for product ${item.id} atomically.`);
         }
       }
     }

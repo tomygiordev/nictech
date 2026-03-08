@@ -19,6 +19,53 @@ const Login = () => {
     const { toast } = useToast();
     const { session, loading: authLoading } = useAuth();
 
+    // Rate limiting state
+    const [failedAttempts, setFailedAttempts] = useState(0);
+    const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+
+    // Check lockout status on mount and when it changes
+    useEffect(() => {
+        const storedLockout = localStorage.getItem('loginLockoutUntil');
+        if (storedLockout) {
+            const lockoutTime = parseInt(storedLockout, 10);
+            if (Date.now() < lockoutTime) {
+                setLockoutUntil(lockoutTime);
+            } else {
+                localStorage.removeItem('loginLockoutUntil');
+                setFailedAttempts(0);
+            }
+        }
+
+        const storedAttempts = localStorage.getItem('loginFailedAttempts');
+        if (storedAttempts) {
+            setFailedAttempts(parseInt(storedAttempts, 10));
+        }
+    }, []);
+
+    // Timer to clear lockout when it expires
+    useEffect(() => {
+        if (!lockoutUntil) return;
+
+        const timeRemaining = lockoutUntil - Date.now();
+        if (timeRemaining <= 0) {
+            setLockoutUntil(null);
+            setFailedAttempts(0);
+            localStorage.removeItem('loginLockoutUntil');
+            localStorage.removeItem('loginFailedAttempts');
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setLockoutUntil(null);
+            setFailedAttempts(0);
+            localStorage.removeItem('loginLockoutUntil');
+            localStorage.removeItem('loginFailedAttempts');
+        }, timeRemaining);
+
+        return () => clearTimeout(timer);
+    }, [lockoutUntil]);
+
+
     useEffect(() => {
         if (session) {
             navigate('/admin');
@@ -27,6 +74,17 @@ const Login = () => {
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (lockoutUntil && Date.now() < lockoutUntil) {
+            const minutesLeft = Math.ceil((lockoutUntil - Date.now()) / 60000);
+            toast({
+                title: 'Demasiados intentos',
+                description: `Has excedido el límite de intentos. Por favor intenta de nuevo en ${minutesLeft} minutos.`,
+                variant: 'destructive',
+            });
+            return;
+        }
+
         setLoading(true);
 
         const { error } = await supabase.auth.signInWithPassword({
@@ -35,14 +93,35 @@ const Login = () => {
         });
 
         if (error) {
-            toast({
-                title: 'Error de inicio de sesión',
-                description: error.message === 'Invalid login credentials'
-                    ? 'Credenciales inválidas. Por favor verifica tu correo y contraseña.'
-                    : error.message,
-                variant: 'destructive',
-            });
+            const newAttempts = failedAttempts + 1;
+            setFailedAttempts(newAttempts);
+            localStorage.setItem('loginFailedAttempts', newAttempts.toString());
+
+            if (newAttempts >= 5) {
+                const lockoutTime = Date.now() + 5 * 60 * 1000; // 5 minutes
+                setLockoutUntil(lockoutTime);
+                localStorage.setItem('loginLockoutUntil', lockoutTime.toString());
+
+                toast({
+                    title: 'Cuenta bloqueada temporalmente',
+                    description: 'Demasiados intentos fallidos. Por seguridad, espera 5 minutos antes de volver a intentar.',
+                    variant: 'destructive',
+                });
+            } else {
+                toast({
+                    title: 'Error de inicio de sesión',
+                    description: error.message === 'Invalid login credentials'
+                        ? `Credenciales inválidas. Te quedan ${5 - newAttempts} intentos.`
+                        : error.message,
+                    variant: 'destructive',
+                });
+            }
         } else {
+            // Reset on successful login
+            setFailedAttempts(0);
+            setLockoutUntil(null);
+            localStorage.removeItem('loginLockoutUntil');
+            localStorage.removeItem('loginFailedAttempts');
             toast({
                 title: 'Bienvenido',
                 description: 'Has iniciado sesión correctamente.',
@@ -103,12 +182,14 @@ const Login = () => {
                             />
                         </div>
 
-                        <Button type="submit" className="w-full" disabled={loading}>
+                        <Button type="submit" className="w-full" disabled={loading || (lockoutUntil !== null && Date.now() < lockoutUntil)}>
                             {loading ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                     Ingresando...
                                 </>
+                            ) : lockoutUntil && Date.now() < lockoutUntil ? (
+                                'Acesso Bloqueado'
                             ) : (
                                 'Iniciar Sesión'
                             )}

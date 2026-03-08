@@ -168,8 +168,6 @@ const Checkout = () => {
 
       if (error) throw error;
 
-      console.log('MercadoPago preference created:', data);
-
       // Redirect to MercadoPago checkout
       if (data.init_point) {
         window.location.href = data.init_point;

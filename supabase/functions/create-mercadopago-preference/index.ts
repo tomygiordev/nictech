@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,12 +39,46 @@ serve(async (req) => {
       throw new Error("MercadoPago access token not configured");
     }
 
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const body: RequestBody = await req.json();
     console.log("Received request body:", JSON.stringify(body));
 
     if (!body.items || body.items.length === 0) {
       throw new Error("No items provided");
     }
+
+    // ==========================================
+    // SECURITY VALIDATION: Fetch real prices
+    // ==========================================
+    const itemIds = body.items.map((i) => i.id);
+    const { data: dbProducts, error: dbError } = await supabase
+      .from("products")
+      .select("id, name, price, stock")
+      .in("id", itemIds);
+
+    if (dbError || !dbProducts) {
+      throw new Error("Error comprobando el inventario");
+    }
+
+    const dbProductsMap = new Map(dbProducts.map((p) => [p.id, p]));
+
+    // Validate that items requested still exist and have enough stock
+    for (const item of body.items) {
+      const realProduct = dbProductsMap.get(item.id);
+      if (!realProduct) {
+        throw new Error(`El producto ${item.name} ya no está disponible`);
+      }
+      if (item.quantity > realProduct.stock) {
+        throw new Error(`Stock insuficiente para ${item.name}. Solo quedan ${realProduct.stock}`);
+      }
+      // Re-assign the REAL price from DB completely overwriting the frontend price
+      item.price = realProduct.price;
+      item.name = realProduct.name; // enforce real name to avoid invoice tampering
+    }
+    // ==========================================
 
     // Get origin from body or headers
     let origin = body.origin || req.headers.get("origin") || "";
@@ -87,7 +122,7 @@ serve(async (req) => {
         pending: `${validOrigin}/checkout?payment=pending`,
       },
       payer: payerData,
-      auto_return: "approved",
+      auto_return: validOrigin.includes("localhost") ? undefined : "approved",
       statement_descriptor: "NICTECH",
       external_reference: `order-${Date.now()}`,
       notification_url: "https://tuzpcofywkhglkqplhnn.supabase.co/functions/v1/mercadopago-webhook",
