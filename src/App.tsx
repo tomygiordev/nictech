@@ -16,6 +16,8 @@ import Admin from "./pages/Admin";
 import Login from "./pages/Login";
 import Checkout from "./pages/Checkout";
 import NotFound from "./pages/NotFound";
+import TerminosCondiciones from "./pages/TerminosCondiciones";
+import PoliticasPrivacidad from "./pages/PoliticasPrivacidad";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,6 +47,8 @@ const App = () => (
                 <Route path="/contacto" element={<Contacto />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/admin" element={<Admin />} />
+                <Route path="/terminos" element={<TerminosCondiciones />} />
+                <Route path="/privacidad" element={<PoliticasPrivacidad />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>

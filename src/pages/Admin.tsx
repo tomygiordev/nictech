@@ -1261,9 +1261,19 @@ const Admin = () => {
                               {order.payment_id}
                             </TableCell>
                             <TableCell>
-                              <div className="flex flex-col">
-                                <span className="font-medium">{order.payer?.email || '-'}</span>
-                                <span className="text-xs text-muted-foreground">{order.payer?.first_name} {order.payer?.last_name}</span>
+                              <div className="flex flex-col gap-1">
+                                <span className="font-bold">{order.payer?.name || order.payer?.first_name || 'Sin Nombre'}</span>
+                                <span className="text-sm text-foreground">{order.payer?.email || '-'}</span>
+                                {order.payer?.phone?.number && (
+                                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                    📞 {order.payer.phone.area_code}{order.payer.phone.number}
+                                  </span>
+                                )}
+                                {order.payer?.identification?.number && (
+                                  <span className="text-xs text-muted-foreground">
+                                    DNI: {order.payer.identification.number}
+                                  </span>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>

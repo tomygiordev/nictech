@@ -19,6 +19,8 @@ interface RequestBody {
     name?: string;
     email?: string;
     phone?: string;
+    dni?: string;
+    address?: string;
   };
   origin?: string;
 }
@@ -63,6 +65,8 @@ serve(async (req) => {
     const payerData = (body.payer && body.payer.email) ? {
       name: body.payer.name,
       email: body.payer.email,
+      phone: body.payer.phone ? { area_code: "", number: body.payer.phone } : undefined,
+      identification: body.payer.dni ? { type: "DNI", number: body.payer.dni } : undefined,
     } : undefined;
 
     // Build MercadoPago preference - MINIMAL DEBUG VERSION
@@ -89,7 +93,10 @@ serve(async (req) => {
       notification_url: "https://tuzpcofywkhglkqplhnn.supabase.co/functions/v1/mercadopago-webhook",
       metadata: {
         // redundant but useful for easy access in webhook without parsing description
-        items: JSON.stringify(body.items.map(i => ({ id: i.id, quantity: i.quantity })))
+        items: JSON.stringify(body.items.map(i => ({ id: i.id, quantity: i.quantity }))),
+        payer_dni: body.payer?.dni || "",
+        payer_phone: body.payer?.phone || "",
+        payer_address: body.payer?.address || ""
       }
     };
 

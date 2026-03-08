@@ -140,18 +140,31 @@ export const Footer = () => {
 
         <div className="mt-12 pt-8 border-t border-secondary-foreground/10">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-sm text-secondary-foreground/60">
-              © 2026 Nictech. Todos los derechos reservados.
-            </p>
+            <div className="text-center md:text-left">
+              <p className="text-sm text-secondary-foreground/60 mb-1">
+                © 2026 Nictech. Todos los derechos reservados.
+              </p>
+              <p className="text-sm text-secondary-foreground/50">
+                Desarrollado por{' '}
+                <a
+                  href="https://tomygiorgi.vercel.app/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-primary transition-colors font-medium border-b border-secondary-foreground/20 hover:border-primary"
+                >
+                  Tomás Giorgi
+                </a>
+              </p>
+            </div>
             <div className="flex gap-6">
               <Link
-                to="#"
+                to="/privacidad"
                 className="text-sm text-secondary-foreground/60 hover:text-secondary-foreground transition-colors"
               >
                 Política de Privacidad
               </Link>
               <Link
-                to="#"
+                to="/terminos"
                 className="text-sm text-secondary-foreground/60 hover:text-secondary-foreground transition-colors"
               >
                 Términos y Condiciones

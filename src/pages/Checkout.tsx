@@ -24,6 +24,8 @@ const Checkout = () => {
     name: '',
     email: '',
     phone: '',
+    dni: '',
+    address: '',
   });
 
   // Handle payment status from redirect
@@ -127,8 +129,8 @@ const Checkout = () => {
   }
 
   const handleCheckout = async () => {
-    if (!payerInfo.email) {
-      toast.error('Por favor ingresa tu email');
+    if (!payerInfo.name || !payerInfo.email || !payerInfo.phone || !payerInfo.dni || !payerInfo.address) {
+      toast.error('Por favor completa todos los campos obligatorios');
       return;
     }
 
@@ -219,58 +221,31 @@ const Checkout = () => {
               Volver a la Tienda
             </Button>
 
-            <div className="grid lg:grid-cols-2 gap-8">
-              {/* Order Summary */}
-              <div className="bg-muted/30 rounded-2xl p-6 h-fit">
-                <h2 className="text-xl font-bold mb-6">Resumen del Pedido</h2>
-
-                <div className="space-y-4 mb-6">
-                  {items.map((item) => (
-                    <div key={item.id} className="flex gap-4">
-                      <div className="h-16 w-16 rounded-lg bg-muted overflow-hidden flex-shrink-0">
-                        {item.image_url ? (
-                          <img
-                            src={item.image_url}
-                            alt={item.name}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="h-full w-full bg-muted" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{item.name}</p>
-                        <p className="text-muted-foreground text-sm">
-                          Cantidad: {item.quantity}
-                        </p>
-                        <p className="text-primary font-semibold">
-                          $ {(item.price * item.quantity).toLocaleString('es-AR')}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="border-t border-border pt-4">
-                  <div className="flex justify-between items-center text-lg font-bold">
-                    <span>Total:</span>
-                    <span className="text-primary">$ {totalPrice.toLocaleString('es-AR')}</span>
-                  </div>
-                </div>
-              </div>
-
+            <div className="flex flex-col-reverse lg:grid lg:grid-cols-12 gap-8">
               {/* Payment Form */}
-              <div className="space-y-6">
-                <div>
+              <div className="lg:col-span-7 space-y-6">
+                <div className="bg-card rounded-2xl p-6 border border-border">
                   <h2 className="text-xl font-bold mb-6">Información de Contacto</h2>
                   <div className="space-y-4">
                     <div>
-                      <Label htmlFor="name">Nombre Completo</Label>
+                      <Label htmlFor="name">Nombre Completo *</Label>
                       <Input
                         id="name"
+                        required
                         value={payerInfo.name}
                         onChange={(e) => setPayerInfo(prev => ({ ...prev, name: e.target.value }))}
-                        placeholder="Tu nombre"
+                        placeholder="Tu nombre completo"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="dni">DNI / CUIL *</Label>
+                      <Input
+                        id="dni"
+                        required
+                        type="text"
+                        value={payerInfo.dni}
+                        onChange={(e) => setPayerInfo(prev => ({ ...prev, dni: e.target.value }))}
+                        placeholder="Sin puntos ni espacios"
                       />
                     </div>
                     <div>
@@ -285,61 +260,121 @@ const Checkout = () => {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="phone">Teléfono</Label>
+                      <Label htmlFor="phone">Teléfono / WhatsApp *</Label>
                       <Input
                         id="phone"
                         type="tel"
+                        required
                         value={payerInfo.phone}
                         onChange={(e) => setPayerInfo(prev => ({ ...prev, phone: e.target.value }))}
-                        placeholder="+54 11 1234-5678"
+                        placeholder="+54 9 11 1234-5678"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="address">Dirección de Envío o Facturación *</Label>
+                      <Input
+                        id="address"
+                        type="text"
+                        required
+                        value={payerInfo.address}
+                        onChange={(e) => setPayerInfo(prev => ({ ...prev, address: e.target.value }))}
+                        placeholder="Calle, Número, Localidad, Provincia"
                       />
                     </div>
                   </div>
-                </div>
 
-                <div>
-                  <h2 className="text-xl font-bold mb-4">Método de Pago</h2>
-                  <RadioGroup
-                    value={paymentMethod}
-                    onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
-                    className="space-y-3"
-                  >
-                    <div className="flex items-center space-x-3 p-4 rounded-xl border border-primary/50 bg-primary/5 transition-colors cursor-pointer">
-                      <RadioGroupItem value="mercadopago" id="mercadopago" />
-                      <Label htmlFor="mercadopago" className="flex items-center gap-3 cursor-pointer flex-1">
-                        <Wallet className="h-5 w-5 text-[#009ee3]" />
-                        <div>
-                          <p className="font-medium">Mercado Pago</p>
-                          <p className="text-sm text-muted-foreground">
-                            Se generará un link con todos los métodos de pago (Tarjetas, Efectivo, etc.)
+                  <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+                    <h3 className="text-sm font-semibold text-blue-500 mb-1">¡Importante sobre los envíos!</h3>
+                    <p className="text-xs text-muted-foreground">
+                      El monto a pagar no incluye costos de envío. Al finalizar tu compra nos pondremos en contacto con vos al número o email que proporcionaste para coordinar el método de entrega y los costos asociados según tu localidad.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Summary */}
+              <div className="lg:col-span-5">
+                <div className="bg-muted/30 rounded-2xl p-6 h-fit sticky top-24 space-y-6">
+                  <h2 className="text-xl font-bold">Resumen del Pedido</h2>
+
+                  <div className="space-y-4">
+                    {items.map((item) => (
+                      <div key={item.id} className="flex gap-4">
+                        <div className="h-16 w-16 rounded-lg bg-background border overflow-hidden flex-shrink-0">
+                          {item.image_url ? (
+                            <img
+                              src={item.image_url}
+                              alt={item.name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-full w-full bg-muted" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{item.name}</p>
+                          <p className="text-muted-foreground text-sm">
+                            Cantidad: {item.quantity}
+                          </p>
+                          <p className="text-primary font-semibold">
+                            $ {(item.price * item.quantity).toLocaleString('es-AR')}
                           </p>
                         </div>
-                      </Label>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-border pt-4">
+                    <div className="flex justify-between items-center text-lg font-bold">
+                      <span>Total:</span>
+                      <span className="text-primary">$ {totalPrice.toLocaleString('es-AR')}</span>
                     </div>
-                  </RadioGroup>
+                  </div>
+
+                  <div className="pt-2">
+                    <h3 className="font-bold mb-3">Método de Pago</h3>
+                    <RadioGroup
+                      value={paymentMethod}
+                      onValueChange={(v) => setPaymentMethod(v as PaymentMethod)}
+                      className="space-y-3"
+                    >
+                      <div className="flex items-center space-x-3 p-4 rounded-xl border border-primary/50 bg-primary/5 transition-colors cursor-pointer">
+                        <RadioGroupItem value="mercadopago" id="mercadopago" />
+                        <Label htmlFor="mercadopago" className="flex items-center gap-3 cursor-pointer flex-1">
+                          <Wallet className="h-5 w-5 text-[#009ee3]" />
+                          <div>
+                            <p className="font-medium">Mercado Pago</p>
+                            <p className="text-xs text-muted-foreground">
+                              Tarjetas o saldo. Serás redirigido.
+                            </p>
+                          </div>
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  <Button
+                    onClick={handleCheckout}
+                    disabled={loading}
+                    size="lg"
+                    className="w-full h-12 text-base"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Procesando...
+                      </>
+                    ) : (
+                      <>
+                        Pagar $ {totalPrice.toLocaleString('es-AR')}
+                      </>
+                    )}
+                  </Button>
+
+                  <p className="text-xs text-muted-foreground text-center">
+                    Podrás ingresar los datos de tu tarjeta una vez que inicies sesión en tu cuenta de MercadoPago.
+                  </p>
                 </div>
-
-                <Button
-                  onClick={handleCheckout}
-                  disabled={loading}
-                  size="lg"
-                  className="w-full"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                      Procesando...
-                    </>
-                  ) : (
-                    <>
-                      Pagar $ {totalPrice.toLocaleString('es-AR')}
-                    </>
-                  )}
-                </Button>
-
-                <p className="text-xs text-muted-foreground text-center">
-                  Al continuar, serás redirigido a MercadoPago para completar tu pago de forma segura.
-                </p>
               </div>
             </div>
           </div>

@@ -252,22 +252,24 @@
   }
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+/* Custom scrollbar (Desktop Only) */
+@media (min-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
 
-::-webkit-scrollbar-track {
-  @apply bg-muted rounded-full;
-}
+  ::-webkit-scrollbar-track {
+    @apply bg-muted rounded-full;
+  }
 
-::-webkit-scrollbar-thumb {
-  @apply bg-accent rounded-full;
-}
+  ::-webkit-scrollbar-thumb {
+    @apply bg-accent rounded-full;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-primary/50;
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary/50;
+  }
 }
 
 /* React Quill Custom Styles */
