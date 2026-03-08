@@ -82,6 +82,10 @@ const Tienda = () => {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default'>('default');
 
+  // Pagination State
+  const INITIAL_VISIBLE_COUNT = 15;
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
+
   // filter State
   const [models, setModels] = useState<SmartphoneModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
@@ -263,6 +267,15 @@ const Tienda = () => {
       return 0;
     });
   }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition]);
+
+  // Reset pagination when any filter changes
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+  }, [searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition]);
+
+  const displayedProducts = useMemo(() => {
+    return filteredProducts.slice(0, visibleCount);
+  }, [filteredProducts, visibleCount]);
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -456,33 +469,47 @@ const Tienda = () => {
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {filteredProducts.map((product) => (
-                      <div
-                        key={product.id}
-                        onClick={() => setSelectedProduct(product)}
-                        className="cursor-pointer"
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedProduct(product);
-                          }
-                        }}
-                      >
-                        <ProductCard
-                          id={product.id}
-                          name={product.name}
-                          price={product.price}
-                          stock={product.stock}
-                          image_url={product.image_url || undefined}
-                          description={product.description || undefined}
-                          category={product.category?.name || 'Varios'}
-                        />
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                      {displayedProducts.map((product) => (
+                        <div
+                          key={product.id}
+                          onClick={() => setSelectedProduct(product)}
+                          className="cursor-pointer"
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedProduct(product);
+                            }
+                          }}
+                        >
+                          <ProductCard
+                            id={product.id}
+                            name={product.name}
+                            price={product.price}
+                            stock={product.stock}
+                            image_url={product.image_url || undefined}
+                            description={product.description || undefined}
+                            category={product.category?.name || 'Varios'}
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {visibleCount < filteredProducts.length && (
+                      <div className="flex justify-center mt-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <button
+                          onClick={() => setVisibleCount(prev => prev + INITIAL_VISIBLE_COUNT)}
+                          className="px-8 py-3 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 font-medium transition-all shadow-sm flex items-center gap-2"
+                        >
+                          Cargar más productos
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
