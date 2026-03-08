@@ -2,7 +2,7 @@ import { Helmet } from 'react-helmet-async';
 import { Layout } from '@/components/layout/Layout';
 import { HeroSection } from '@/components/home/HeroSection';
 import { WhyChooseUs } from '@/components/home/WhyChooseUs';
-import { Testimonials } from '@/components/home/Testimonials';
+import { OurServices } from '@/components/home/OurServices';
 
 const Index = () => {
   return (
@@ -14,7 +14,7 @@ const Index = () => {
       <Layout>
         <HeroSection />
         <WhyChooseUs />
-        <Testimonials />
+        <OurServices />
       </Layout>
     </>
   );

@@ -564,7 +564,7 @@ export const VariantManagement = () => {
                                         className={`flex items-center justify-center w-10 h-10 border rounded-lg cursor-pointer transition-all ${newVariantData.image_preview ? 'border-primary' : 'bg-background hover:bg-accent'}`}
                                     >
                                         {newVariantData.image_preview ?
-                                            <img src={newVariantData.image_preview} className="w-full h-full object-cover rounded-lg" />
+                                            <img src={newVariantData.image_preview} alt="Vista previa" className="w-full h-full object-cover rounded-lg" />
                                             : <Upload className="h-4 w-4 text-muted-foreground" />}
                                     </Label>
                                     {newVariantData.image_preview && (
@@ -682,7 +682,15 @@ export const VariantManagement = () => {
                                                                 <div
                                                                     key={varItem.id}
                                                                     onClick={() => setExpandedVariantItemId(varItem.id)}
-                                                                    className={`relative p-3 rounded-md border cursor-pointer transition-all hover:shadow-sm group ${expandedVariantItemId === varItem.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'bg-background hover:border-primary/50'}`}
+                                                                    role="button"
+                                                                    tabIndex={0}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                                            e.preventDefault();
+                                                                            setExpandedVariantItemId(varItem.id);
+                                                                        }
+                                                                    }}
+                                                                    className={`relative p-3 rounded-md border cursor-pointer transition-all hover:shadow-sm group text-left ${expandedVariantItemId === varItem.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'bg-background hover:border-primary/50'}`}
                                                                 >
                                                                     <div className="flex justify-between items-start mb-1">
                                                                         <h4 className="font-medium text-sm line-clamp-1 pr-6 flex-1">
@@ -793,7 +801,7 @@ export const VariantManagement = () => {
                                                     className={`flex items-center justify-center w-10 h-10 border rounded-lg cursor-pointer transition-all ${newVariant.image_preview ? 'border-primary' : 'bg-background hover:bg-accent'}`}
                                                 >
                                                     {newVariant.image_preview ?
-                                                        <img src={newVariant.image_preview} className="w-full h-full object-cover rounded-lg" />
+                                                        <img src={newVariant.image_preview} alt="Vista previa variante" className="w-full h-full object-cover rounded-lg" />
                                                         : <Upload className="h-4 w-4 text-muted-foreground" />
                                                     }
                                                 </Label>
@@ -946,7 +954,7 @@ export const VariantManagement = () => {
                                         className={`flex items-center justify-center w-24 h-24 border-2 border-dashed rounded-lg cursor-pointer transition-all ${editingVariantItem.image_preview ? 'border-primary' : 'bg-background hover:bg-accent'}`}
                                     >
                                         {editingVariantItem.image_preview ?
-                                            <img src={editingVariantItem.image_preview} className="w-full h-full object-cover rounded-lg" />
+                                            <img src={editingVariantItem.image_preview} alt="Vista previa variante editada" className="w-full h-full object-cover rounded-lg" />
                                             : <Upload className="h-6 w-6 text-muted-foreground" />}
                                     </Label>
                                     {editingVariantItem.image_preview && (
@@ -999,7 +1007,7 @@ export const VariantManagement = () => {
                                 <Label>Imagen</Label>
                                 <div className="flex items-center gap-4">
                                     {editVariantPreview || editingVariant.image_url ? (
-                                        <img src={editVariantPreview || editingVariant.image_url} className="h-16 w-16 object-cover rounded border" />
+                                        <img src={editVariantPreview || editingVariant.image_url} alt="Vista previa de imagen editada" className="h-16 w-16 object-cover rounded border" />
                                     ) : (
                                         <div className="h-16 w-16 bg-muted rounded border flex items-center justify-center text-xs text-muted-foreground">Sin img</div>
                                     )}

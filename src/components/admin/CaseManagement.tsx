@@ -595,7 +595,7 @@ export const CaseManagement = () => {
                                                     className={`flex items-center justify-center w-10 h-10 border rounded-lg cursor-pointer transition-all ${newVariant.image_preview ? 'border-primary' : 'bg-background hover:bg-accent'}`}
                                                 >
                                                     {newVariant.image_preview ?
-                                                        <img src={newVariant.image_preview} className="w-full h-full object-cover rounded-lg" />
+                                                        <img src={newVariant.image_preview} alt="Vista previa de variante nueva" className="w-full h-full object-cover rounded-lg" />
                                                         : <Upload className="h-4 w-4 text-muted-foreground" />
                                                     }
                                                 </Label>
@@ -768,7 +768,7 @@ export const CaseManagement = () => {
                                 <Label>Imagen</Label>
                                 <div className="flex items-center gap-4">
                                     {editVariantPreview || editingVariant.image_url ? (
-                                        <img src={editVariantPreview || editingVariant.image_url} className="h-16 w-16 object-cover rounded border" />
+                                        <img src={editVariantPreview || editingVariant.image_url} alt="Vista previa de variante editada" className="h-16 w-16 object-cover rounded border" />
                                     ) : (
                                         <div className="h-16 w-16 bg-muted rounded border flex items-center justify-center text-xs text-muted-foreground">Sin img</div>
                                     )}

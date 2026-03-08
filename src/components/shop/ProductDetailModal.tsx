@@ -30,10 +30,6 @@ interface ProductDetailModalProps {
 export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailModalProps) => {
     const { addToCart } = useCart();
 
-    if (!product) return null;
-
-    if (!product) return null;
-
     const [variants, setVariants] = useState<{ id: string, color: string, stock: number, image_url: string | null }[]>([]);
     const [selectedVariant, setSelectedVariant] = useState<{ id: string, color: string, stock: number, image_url: string | null } | null>(null);
 
@@ -66,8 +62,8 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         fetchVariants();
     }, [product]);
 
-    // Update images/lightbox when variant is selected
     useEffect(() => {
+        if (!product) return;
         const initialImages = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
 
         if (selectedVariant && selectedVariant.image_url) {
@@ -146,6 +142,8 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         onClose();
     };
 
+    if (!product) return null;
+
     return (
         <>
             <Dialog open={isOpen} onOpenChange={onClose}>
@@ -172,9 +170,10 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                     <CarouselContent className="h-full ml-0">
                                         {images.map((image, index) => (
                                             <CarouselItem key={index} className="flex h-full items-center justify-center p-0 basis-full">
-                                                <div
-                                                    className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden bg-white cursor-zoom-in"
+                                                <button
+                                                    className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden bg-white cursor-zoom-in group"
                                                     onClick={() => openLightbox(index)}
+                                                    aria-label={`Ampliar imagen ${index + 1} de ${product.name}`}
                                                 >
                                                     {/* Main Image */}
                                                     <div className="relative z-10 w-full h-full flex items-center justify-center p-4">
@@ -184,7 +183,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                                             className="max-h-full max-w-full object-contain"
                                                         />
                                                     </div>
-                                                </div>
+                                                </button>
                                             </CarouselItem>
                                         ))}
                                     </CarouselContent>
@@ -241,7 +240,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                 {/* Variants Selector */}
                                 {variants.length > 0 && (
                                     <div className="mb-8">
-                                        <label className="text-sm font-medium mb-3 block text-muted-foreground">Color</label>
+                                        <h3 className="text-sm font-medium mb-3 block text-muted-foreground">Color</h3>
                                         <div className="flex flex-wrap gap-3">
                                             {variants.map(variant => (
                                                 <button
@@ -335,6 +334,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                     <button
                         onClick={closeLightbox}
                         className="absolute top-4 right-4 text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors z-[110]"
+                        aria-label="Cerrar vista previa de imagen"
                     >
                         <X size={32} />
                     </button>
@@ -344,12 +344,14 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                             <button
                                 onClick={prevImage}
                                 className="absolute left-4 text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors z-[110]"
+                                aria-label="Imagen anterior"
                             >
                                 <ChevronLeft size={40} />
                             </button>
                             <button
                                 onClick={nextImage}
                                 className="absolute right-4 text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors z-[110]"
+                                aria-label="Siguiente imagen"
                             >
                                 <ChevronRight size={40} />
                             </button>
@@ -359,6 +361,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                     <div
                         className="relative w-full h-full p-4 flex items-center justify-center"
                         onClick={(e) => e.stopPropagation()}
+                        role="presentation"
                     >
                         <img
                             src={images[currentImageIndex]}

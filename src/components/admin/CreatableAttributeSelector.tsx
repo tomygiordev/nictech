@@ -68,7 +68,7 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
             if (error) throw error;
 
             setItems(prev => [...prev, data as unknown as Item]);
-            onValueChange(data.name); // Return Name
+            onValueChange((data as any).name); // Return Name
             setOpen(false);
             setSearch("");
             toast({ title: `${label || 'Ítem'} creado`, description: formattedName });
@@ -101,6 +101,7 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
                         variant="outline"
                         role="combobox"
                         aria-expanded={open}
+                        aria-controls={`${tableName}-listbox`}
                         disabled={disabled}
                         className="w-full justify-between"
                     >
@@ -115,7 +116,7 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
                             value={search}
                             onValueChange={setSearch}
                         />
-                        <CommandList>
+                        <CommandList id={`${tableName}-listbox`}>
                             <CommandEmpty className="p-2">
                                 <p className="text-sm text-muted-foreground mb-2">"{search}" no existe.</p>
                                 <Button size="sm" variant="secondary" className="w-full" onClick={createItem}>

@@ -458,7 +458,19 @@ const Tienda = () => {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
                     {filteredProducts.map((product) => (
-                      <div key={product.id} onClick={() => setSelectedProduct(product)} className="cursor-pointer">
+                      <div
+                        key={product.id}
+                        onClick={() => setSelectedProduct(product)}
+                        className="cursor-pointer"
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedProduct(product);
+                          }
+                        }}
+                      >
                         <ProductCard
                           id={product.id}
                           name={product.name}

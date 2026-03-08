@@ -419,7 +419,7 @@ export function SmartphoneManagement() {
                                     {/* Main Image */}
                                     <div className="relative h-24 w-24 border rounded-md flex items-center justify-center bg-muted overflow-hidden group">
                                         {previewUrl ? (
-                                            <img src={previewUrl} className="h-full w-full object-cover" />
+                                            <img src={previewUrl} alt="Vista previa de imagen principal" className="h-full w-full object-cover" />
                                         ) : (
                                             <div className="text-xs text-muted-foreground text-center p-2">Principal</div>
                                         )}
@@ -432,12 +432,13 @@ export function SmartphoneManagement() {
                                     {/* Existing Additional Images */}
                                     {currentProduct.additional_images?.map((url, idx) => (
                                         <div key={`existing-${idx}`} className="relative h-24 w-24 border rounded-md overflow-hidden group">
-                                            <img src={url} className="h-full w-full object-cover" />
+                                            <img src={url} alt={`Imagen adicional existente ${idx + 1}`} className="h-full w-full object-cover" />
                                             <button
                                                 onClick={() => removeExistingAdditionalImage(idx)}
                                                 className="absolute top-1 right-1 bg-destructive text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                type="button"
                                             >
-                                                <X className="h-3 w-3" />
+                                                <Trash2 size={12} />
                                             </button>
                                         </div>
                                     ))}
@@ -445,7 +446,7 @@ export function SmartphoneManagement() {
                                     {/* New Additional Images */}
                                     {additionalPreviews.map((url, idx) => (
                                         <div key={`new-${idx}`} className="relative h-24 w-24 border rounded-md overflow-hidden group">
-                                            <img src={url} className="h-full w-full object-cover" />
+                                            <img src={url} alt={`Nueva imagen adicional ${idx + 1}`} className="h-full w-full object-cover" />
                                             <button
                                                 onClick={() => removeNewAdditionalImage(idx)}
                                                 className="absolute top-1 right-1 bg-destructive text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
