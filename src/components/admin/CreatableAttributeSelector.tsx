@@ -59,6 +59,15 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
             // Capitalize first letter helps with uniformity
             const formattedName = normalizedName.charAt(0).toUpperCase() + normalizedName.slice(1);
 
+            // Check if it already exists locally (case-insensitive)
+            const exists = items.find(i => i.name.toLowerCase() === normalizedName.toLowerCase());
+            if (exists) {
+                onValueChange(exists.name);
+                setOpen(false);
+                setSearch("");
+                return;
+            }
+
             const { data, error } = await supabase
                 .from(tableName as any)
                 .insert({ name: formattedName })

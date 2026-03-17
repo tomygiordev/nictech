@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { CreatableAttributeSelector } from '@/components/admin/CreatableAttributeSelector';
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
+import { MultiModelSelector } from '@/components/admin/MultiModelSelector';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 interface Product {
@@ -23,6 +24,7 @@ interface Product {
     category_id: string;
     image_url: string | null;
     tags: string[] | null;
+    is_active?: boolean;
 }
 
 interface Variant {
@@ -30,6 +32,7 @@ interface Variant {
     color: string;
     stock: number;
     image_url: string | null;
+    is_active?: boolean;
 }
 
 interface Category {
@@ -67,7 +70,7 @@ export const VariantManagement = () => {
 
     // New Case Form State
     const [newVariantData, setNewVariantData] = useState({
-        modelId: "",
+        modelIds: [] as string[],
         categoryId: "",
         price: "",
         stock: "",
@@ -105,6 +108,69 @@ export const VariantManagement = () => {
     const [editingVariant, setEditingVariant] = useState<any>(null); // { id, color, stock, image_url }
     const [editVariantFile, setEditVariantFile] = useState<File | null>(null);
     const [editVariantPreview, setEditVariantPreview] = useState<string | null>(null);
+
+    // Quick Stock Update (Wait, user wants to replace this with general one)
+    const [stockAddingVariant, setStockAddingVariant] = useState<any>(null);
+    const [stockAddAmount, setStockAddAmount] = useState("1");
+
+    // General Stock Update Tool
+    const [isBatchStockOpen, setIsBatchStockOpen] = useState(false);
+    const [stockUpdateData, setStockUpdateData] = useState({
+        catId: '',
+        modelId: '',
+        variantId: '',
+        color: '',
+        newStock: ''
+    });
+    const [modalVariants, setModalVariants] = useState<Variant[]>([]);
+    const [modalAvailableModels, setModalAvailableModels] = useState<string[]>([]);
+
+    useEffect(() => {
+        const fetchAvailableModels = async () => {
+            if (stockUpdateData.catId) {
+                const { data } = await supabase
+                    .from('products')
+                    .select('model_id')
+                    .eq('category_id', stockUpdateData.catId);
+
+                if (data) {
+                    const ids = Array.from(new Set(data.map(p => p.model_id).filter(id => id !== null))) as string[];
+                    setModalAvailableModels(ids);
+                    return;
+                }
+            }
+            setModalAvailableModels([]);
+        };
+        fetchAvailableModels();
+    }, [stockUpdateData.catId]);
+
+    useEffect(() => {
+        const fetchModalVariants = async () => {
+            if (stockUpdateData.catId && stockUpdateData.modelId) {
+                // Find product for this cat + model
+                const { data: products } = await supabase
+                    .from('products')
+                    .select('id')
+                    .eq('category_id', stockUpdateData.catId)
+                    .eq('model_id', stockUpdateData.modelId)
+                    .limit(1);
+
+                if (products && products.length > 0) {
+                    const { data: variants } = await supabase
+                        .from('product_variants' as any)
+                        .select('*')
+                        .eq('product_id', products[0].id)
+                        .order('color');
+
+                    setModalVariants(variants as unknown as Variant[] || []);
+                    return;
+                }
+            }
+            setModalVariants([]);
+            setStockUpdateData(prev => ({ ...prev, variantId: '', color: '', newStock: '' }));
+        };
+        fetchModalVariants();
+    }, [stockUpdateData.catId, stockUpdateData.modelId]);
 
     useEffect(() => {
         fetchInitialData();
@@ -200,19 +266,15 @@ export const VariantManagement = () => {
     };
 
     const handleCreateVariantItem = async () => {
-        if (!newVariantData.modelId || !newVariantData.categoryId || !newVariantData.price) {
+        if (newVariantData.modelIds.length === 0 || !newVariantData.categoryId || !newVariantData.price) {
             toast({ title: "Faltan datos", description: "Completa todos los campos.", variant: "destructive" });
             return;
         }
         setCreatingVariant(true);
 
         try {
-            const selectedPhone = smartphones.find(s => s.id === newVariantData.modelId);
             const selectedCategory = categories.find(c => c.id === newVariantData.categoryId);
-
-            if (!selectedPhone || !selectedCategory) throw new Error("Selección no válida");
-
-            const finalName = `${selectedCategory.name} ${selectedPhone.name}`;
+            if (!selectedCategory) throw new Error("Categoría no válida");
 
             let imageUrl = null;
             if (newVariantData.image_file) {
@@ -224,29 +286,46 @@ export const VariantManagement = () => {
                 imageUrl = publicUrlData.publicUrl;
             }
 
-            const { data, error } = await supabase
-                .from('products')
-                .insert({
-                    name: finalName,
-                    price: Number(newVariantData.price),
-                    stock: newVariantData.stock ? Number(newVariantData.stock) : 0,
-                    image_url: imageUrl,
-                    category_id: selectedCategory.id,
-                    model_id: selectedPhone.id,
-                    description: `${selectedCategory.name} para ${selectedPhone.name}`,
-                    tags: ['Accesorio', selectedCategory.name, selectedPhone.brand_name]
-                } as any)
-                .select('*, categories:category_id(*)')
-                .single();
+            const creations = newVariantData.modelIds.map(async (modelId) => {
+                const selectedPhone = smartphones.find(s => s.id === modelId);
+                if (!selectedPhone) return null;
 
-            if (error) throw error;
+                const finalName = `${selectedCategory.name} ${selectedPhone.name}`;
 
-            setVariantsList(prev => [data as any, ...prev]);
-            toast({ title: "Producto Creado", description: finalName });
+                const { data, error } = await supabase
+                    .from('products')
+                    .insert({
+                        name: finalName,
+                        price: Number(newVariantData.price),
+                        stock: newVariantData.stock ? Number(newVariantData.stock) : 0,
+                        image_url: imageUrl,
+                        category_id: selectedCategory.id,
+                        model_id: selectedPhone.id,
+                        description: `${selectedCategory.name} para ${selectedPhone.name}`,
+                        tags: ['Accesorio', selectedCategory.name, selectedPhone.brand_name]
+                    } as any)
+                    .select('*, categories:category_id(*)')
+                    .single();
+
+                if (error) throw error;
+                return data;
+            });
+
+            const results = await Promise.all(creations);
+            const successfulResults = results.filter(r => r !== null);
+
+            setVariantsList(prev => [...successfulResults as any[], ...prev]);
+            toast({
+                title: successfulResults.length > 1 ? "Productos Creados" : "Producto Creado",
+                description: successfulResults.length > 1 ? `${successfulResults.length} modelos agregados.` : (successfulResults[0] as any).name
+            });
+
             setIsCreateDialogOpen(false);
-            setNewVariantData({ modelId: "", categoryId: "", price: "", stock: "", image_file: null, image_preview: "" });
+            setNewVariantData({ modelIds: [], categoryId: "", price: "", stock: "", image_file: null, image_preview: "" });
 
-            setExpandedVariantItemId(data.id);
+            if (successfulResults.length === 1) {
+                setExpandedVariantItemId((successfulResults[0] as any).id);
+            }
 
         } catch (error: any) {
             toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -282,7 +361,7 @@ export const VariantManagement = () => {
     };
 
     const openCreateProductModalForCategory = (catId: string) => {
-        setNewVariantData({ ...newVariantData, categoryId: catId, price: "", modelId: "", stock: "", image_file: null, image_preview: "" });
+        setNewVariantData({ ...newVariantData, categoryId: catId, price: "", modelIds: [], stock: "", image_file: null, image_preview: "" });
         setIsCreateDialogOpen(true);
     };
 
@@ -319,7 +398,9 @@ export const VariantManagement = () => {
             // Update Parent Stock & Image
             const currentVarItem = variantsList.find(c => c.id === expandedVariantItemId);
             if (currentVarItem) {
-                const newTotal = currentVarItem.stock + Number(newVariant.stock);
+                // Calculate EXACT total stock from all variants (including the newly added one)
+                const updatedVariants = [...variants, variant as any];
+                const newTotal = updatedVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
                 const updates: any = { stock: newTotal };
 
                 // Set main image if not exists
@@ -410,14 +491,17 @@ export const VariantManagement = () => {
             setVariants(prev => prev.map(v => v.id === editingVariant.id ? { ...v, color: editingVariant.color, stock: Number(editingVariant.stock), image_url: imageUrl } : v));
 
             // Recalculate stock for parent
-            // This is complex because we need to know the diff or just refetch. 
-            // Simplest is to refetch parent or re-sum.
-            // Let's re-sum from current variants state (updated)
-            const updatedVariants = variants.map(v => v.id === editingVariant.id ? { ...v, stock: Number(editingVariant.stock) } : v);
-            const newTotalStock = updatedVariants.reduce((acc, v) => acc + v.stock, 0);
+            const updatedVariants = variants.map(v => v.id === editingVariant.id
+                ? { ...v, stock: Number(editingVariant.stock) }
+                : v
+            );
+            const newTotalStock = updatedVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
 
             await supabase.from('products').update({ stock: newTotalStock } as any).eq('id', expandedVariantItemId);
             setVariantsList(prev => prev.map(c => c.id === expandedVariantItemId ? { ...c, stock: newTotalStock } : c));
+
+            // Update local variants state with the updated one
+            setVariants(updatedVariants);
 
             toast({ title: "Variante Actualizada" });
             setEditingVariant(null);
@@ -425,6 +509,105 @@ export const VariantManagement = () => {
             setEditVariantPreview(null);
         } catch (error: any) {
             toast({ title: "Error", description: "No se pudo actualizar.", variant: "destructive" });
+        }
+        setSavingVariant(false);
+    };
+
+    const handleToggleVariantActive = async (variant: Variant) => {
+        const newStatus = !variant.is_active;
+        try {
+            const { error } = await supabase
+                .from('product_variants' as any)
+                .update({ is_active: newStatus })
+                .eq('id', variant.id);
+
+            if (error) throw error;
+
+            setVariants(prev => prev.map(v => v.id === variant.id ? { ...v, is_active: newStatus } : v));
+            toast({
+                title: newStatus ? "Variante Activada" : "Variante Inactivada",
+                description: `${variant.color} ahora está ${newStatus ? 'visible' : 'oculta'} en la tienda.`
+            });
+        } catch (error: any) {
+            toast({ title: "Error", description: "No se pudo cambiar el estado.", variant: "destructive" });
+        }
+    };
+
+    const handleBatchStockUpdate = async () => {
+        if (!stockUpdateData.variantId || stockUpdateData.newStock === "") {
+            toast({ title: "Faltan datos", variant: "destructive" });
+            return;
+        }
+
+        setSavingVariant(true);
+        try {
+            // Update the variant
+            const selectedVariant = modalVariants.find(v => v.id === stockUpdateData.variantId);
+            if (!selectedVariant) throw new Error("Variante no encontrada");
+
+            // Get product ID to update total stock later
+            const { data: varData } = await supabase
+                .from('product_variants' as any)
+                .select('product_id')
+                .eq('id', stockUpdateData.variantId)
+                .single();
+
+            const productId = (varData as any)?.product_id;
+
+            const { error } = await supabase
+                .from('product_variants' as any)
+                .update({ stock: Number(stockUpdateData.newStock) })
+                .eq('id', stockUpdateData.variantId);
+
+            if (error) throw error;
+
+            // Recalculate parent stock
+            if (productId) {
+                const { data: allVars } = await supabase
+                    .from('product_variants' as any)
+                    .select('stock')
+                    .eq('product_id', productId);
+
+                const totalStock = ((allVars as any[]) || []).reduce((acc, v) => acc + (v.stock || 0), 0);
+                await supabase.from('products').update({ stock: totalStock } as any).eq('id', productId);
+            }
+
+            toast({ title: "Stock actualizado", description: `Se actualizó ${selectedVariant.color} a ${stockUpdateData.newStock} unidades.` });
+            setIsBatchStockOpen(false);
+            setStockUpdateData({ catId: '', modelId: '', variantId: '', color: '', newStock: '' });
+
+            // Refresh current view
+            fetchVariantsList();
+            if (expandedVariantItemId) fetchVariants(expandedVariantItemId);
+
+        } catch (error: any) {
+            toast({ title: "Error", description: error.message, variant: "destructive" });
+        }
+        setSavingVariant(false);
+    };
+
+    const handleAddStock = async () => {
+        if (!stockAddingVariant || !stockAddAmount || isNaN(Number(stockAddAmount))) return;
+        setSavingVariant(true);
+        try {
+            const newStock = stockAddingVariant.stock + Number(stockAddAmount);
+            const { error } = await supabase.from('product_variants' as any).update({ stock: newStock }).eq('id', stockAddingVariant.id);
+            if (error) throw error;
+
+            // Update local variants
+            const updatedVariants = variants.map(v => v.id === stockAddingVariant.id ? { ...v, stock: newStock } : v);
+            setVariants(updatedVariants);
+
+            // Update parent stock
+            const newTotalStock = updatedVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
+            await supabase.from('products').update({ stock: newTotalStock } as any).eq('id', expandedVariantItemId);
+            setVariantsList(prev => prev.map(c => c.id === expandedVariantItemId ? { ...c, stock: newTotalStock } : c));
+
+            toast({ title: "Stock actualizado", description: `Se sumaron ${stockAddAmount} unidades a ${stockAddingVariant.color}.` });
+            setStockAddingVariant(null);
+            setStockAddAmount("1");
+        } catch (error: any) {
+            toast({ title: "Error", description: "No se pudo actualizar el stock.", variant: "destructive" });
         }
         setSavingVariant(false);
     };
@@ -438,7 +621,10 @@ export const VariantManagement = () => {
         if (expandedVariantItemId) {
             const currentVarItem = variantsList.find(c => c.id === expandedVariantItemId);
             if (currentVarItem) {
-                const newTotal = Math.max(0, currentVarItem.stock - currentStock);
+                // Calculate EXACT total stock from remaining variants
+                const remainingVariants = variants.filter(v => v.id !== id);
+                const newTotal = remainingVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
+
                 await supabase.from('products').update({ stock: newTotal } as any).eq('id', expandedVariantItemId);
                 setVariantsList(prev => prev.map(c => c.id === expandedVariantItemId ? { ...c, stock: newTotal } : c));
             }
@@ -481,7 +667,7 @@ export const VariantManagement = () => {
         <div className="space-y-6">
             {/* Top Bar: Filter & Create */}
             {/* Top Bar: Filter */}
-            <div className="flex flex-col md:flex-row justify-start items-start md:items-center gap-4 bg-muted/30 p-4 rounded-lg border border-dashed mb-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-muted/30 p-4 rounded-lg border border-dashed mb-6">
                 <div className="flex items-center gap-4 w-full md:w-auto">
                     <div className="flex items-center gap-2 text-muted-foreground">
                         <Filter className="h-4 w-4" />
@@ -499,6 +685,11 @@ export const VariantManagement = () => {
                         </SelectContent>
                     </Select>
                 </div>
+
+                <Button variant="outline" onClick={() => setIsBatchStockOpen(true)} className="gap-2">
+                    <Save className="h-4 w-4" />
+                    Actualizar Stock
+                </Button>
             </div>
 
             {/* Hidden Dialog used by the '+ Nuevo Producto' buttons below */}
@@ -513,20 +704,13 @@ export const VariantManagement = () => {
                             <Input value={categories.find(c => c.id === newVariantData.categoryId)?.name || ''} disabled className="bg-muted" />
                         </div>
                         <div className="space-y-2">
-                            <Label>Modelo de Celular de Destino</Label>
-                            <Select
-                                value={newVariantData.modelId}
-                                onValueChange={(val) => setNewVariantData({ ...newVariantData, modelId: val })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Seleccionar..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {smartphones.map(phone => (
-                                        <SelectItem key={phone.id} value={phone.id}>{phone.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <Label>Modelos de Celular de Destino</Label>
+                            <MultiModelSelector
+                                models={smartphones}
+                                selectedModelIds={newVariantData.modelIds}
+                                onSelectionChange={(ids) => setNewVariantData({ ...newVariantData, modelIds: ids })}
+                                placeholder="Seleccionar uno o más modelos..."
+                            />
                         </div>
                         <div className="space-y-2">
                             <Label>Precio Base ($)</Label>
@@ -578,9 +762,9 @@ export const VariantManagement = () => {
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancelar</Button>
-                        <Button onClick={handleCreateVariantItem} disabled={creatingVariant || !newVariantData.categoryId || !newVariantData.modelId}>
+                        <Button onClick={handleCreateVariantItem} disabled={creatingVariant || !newVariantData.categoryId || newVariantData.modelIds.length === 0}>
                             {creatingVariant && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Crear Producto
+                            Crear {newVariantData.modelIds.length > 1 ? `(${newVariantData.modelIds.length}) Productos` : 'Producto'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -881,8 +1065,17 @@ export const VariantManagement = () => {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="icon"
+                                                                className={`${v.is_active === false ? 'text-destructive' : 'text-muted-foreground'} hover:text-primary hover:bg-primary/10`}
+                                                                onClick={(e) => { e.stopPropagation(); handleToggleVariantActive(v); }}
+                                                                title={v.is_active === false ? "Activar variante" : "Inactivar variante"}
+                                                            >
+                                                                {v.is_active === false ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
                                                                 className="text-muted-foreground hover:text-primary hover:bg-primary/10"
-                                                                onClick={() => setEditingVariant(v)}
+                                                                onClick={(e) => { e.stopPropagation(); setEditingVariant(v); }}
                                                                 title="Editar variante"
                                                             >
                                                                 <Pencil className="h-4 w-4" />
@@ -891,7 +1084,7 @@ export const VariantManagement = () => {
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                                                onClick={() => handleDeleteVariant(v.id, v.stock)}
+                                                                onClick={(e) => { e.stopPropagation(); handleDeleteVariant(v.id, v.stock); }}
                                                                 title="Borrar variante"
                                                             >
                                                                 <Trash2 className="h-4 w-4" />
@@ -1032,6 +1225,95 @@ export const VariantManagement = () => {
                         <Button onClick={handleUpdateVariant} disabled={savingVariant}>
                             {savingVariant && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Guardar
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            {/* General Stock Update Dialog */}
+            <Dialog open={isBatchStockOpen} onOpenChange={setIsBatchStockOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Gestor de Stock Rápido</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>1. Categoría</Label>
+                            <Select
+                                value={stockUpdateData.catId}
+                                onValueChange={(val) => setStockUpdateData(prev => ({ ...prev, catId: val, modelId: '', variantId: '' }))}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seleccionar categoría..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {accessoryCategories
+                                        .filter(c => !hiddenCategories.includes(c.id))
+                                        .map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>2. Modelo de Celular</Label>
+                            <Select
+                                value={stockUpdateData.modelId}
+                                onValueChange={(val) => setStockUpdateData(prev => ({ ...prev, modelId: val, variantId: '' }))}
+                                disabled={!stockUpdateData.catId}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seleccionar modelo..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {smartphones
+                                        .filter(s => modalAvailableModels.includes(s.id))
+                                        .map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {stockUpdateData.modelId && (
+                            <div className="space-y-2">
+                                <Label>3. Variante (Color/Diseño)</Label>
+                                <div className="grid grid-cols-2 gap-2 max-h-[200px] overflow-y-auto p-1 border rounded-lg">
+                                    {modalVariants.length > 0 ? (
+                                        modalVariants.map(v => (
+                                            <Button
+                                                key={v.id}
+                                                variant={stockUpdateData.variantId === v.id ? "default" : "outline"}
+                                                size="sm"
+                                                className="justify-start text-xs h-auto py-2 px-3"
+                                                onClick={() => setStockUpdateData(prev => ({ ...prev, variantId: v.id, newStock: String(v.stock) }))}
+                                            >
+                                                <div className="flex flex-col items-start overflow-hidden">
+                                                    <span className="truncate w-full">{v.color}</span>
+                                                    <span className="text-[10px] opacity-70">Stock: {v.stock}</span>
+                                                </div>
+                                            </Button>
+                                        ))
+                                    ) : (
+                                        <p className="col-span-2 text-center text-xs text-muted-foreground py-4">No hay variantes para este modelo.</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {stockUpdateData.variantId && (
+                            <div className="space-y-2 pt-2 border-t">
+                                <Label className="text-primary font-bold">4. Nuevo Stock para {modalVariants.find(v => v.id === stockUpdateData.variantId)?.color}</Label>
+                                <Input
+                                    type="number"
+                                    value={stockUpdateData.newStock}
+                                    onChange={(e) => setStockUpdateData(prev => ({ ...prev, newStock: e.target.value }))}
+                                    autoFocus
+                                />
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsBatchStockOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleBatchStockUpdate} disabled={savingVariant || !stockUpdateData.variantId}>
+                            {savingVariant && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Actualizar Stock
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -21,6 +21,7 @@ interface Repair {
   notes: string | null;
   problem_description: string | null;
   created_at: string;
+  repair_logs?: RepairLog[];
 }
 
 interface RepairLog {
@@ -83,18 +84,13 @@ const Seguimiento = () => {
     setLoading(false);
   };
 
-  const selectRepair = async (repair: Repair) => {
+  const selectRepair = (repair: Repair) => {
     setSelectedRepair(repair);
-    // Fetch logs for the selected repair
-    const { data: logsData } = await supabase
-      .from('repair_logs' as any)
-      .select('*')
-      .eq('repair_id', repair.id)
-      .eq('is_public', true) // Only public logs
-      .order('created_at', { ascending: false });
-
-    if (logsData) {
-      setLogs(logsData as unknown as RepairLog[]);
+    // Los logs ya vienen integrados en el objeto repair gracias al nuevo RPC seguro
+    if (repair.repair_logs) {
+      setLogs(repair.repair_logs);
+    } else {
+      setLogs([]);
     }
   };
 
