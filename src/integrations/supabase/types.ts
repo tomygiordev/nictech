@@ -453,6 +453,7 @@ export type Database = {
         Args: { search_code: string }
         Returns: {
           client_name: string
+          client_dni: string
           created_at: string
           device_brand: string
           device_model: string
@@ -462,6 +463,12 @@ export type Database = {
           problem_description: string
           status: Database["public"]["Enums"]["repair_status"]
           tracking_code: string
+          repair_logs: {
+            id: string
+            created_at: string
+            content: string
+            is_public: boolean
+          }[]
         }[]
       }
       process_approved_order: {
