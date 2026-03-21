@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, ShoppingCart, Key, ChevronDown, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { supabase } from '@/integrations/supabase/client';
 
 const navLinks = [
   { href: '/', label: 'Inicio' },
@@ -26,39 +27,75 @@ const navLinks = [
 
 const PHONE_BRANDS = ['Samsung', 'iPhone', 'Xiaomi', 'Motorola'];
 
-const simpleCategories = [
-  { label: 'Vidrios Templados', nombre: 'Vidrios Templados' },
-  { label: 'Protectores de Cámara', nombre: 'Protectores de Cámara' },
-  { label: 'Auriculares', nombre: 'Auriculares' },
-  { label: 'Cargadores', nombre: 'Cargadores' },
-  { label: 'Accesorios', nombre: 'Accesorios' },
-];
+// Categorías que tienen submenu de marcas
+const isBrandCategory = (name: string) =>
+  name.toLowerCase().includes('smartphone') ||
+  name.toLowerCase().includes('celular') ||
+  name.toLowerCase().includes('funda');
 
-const specialLinks = [
-  { href: '/tienda?nombre=Promos', label: 'Promos' },
-  { href: '/tienda?nombre=Combos', label: 'Combos' },
-  { href: '/tienda?nombre=Ofertas', label: 'Ofertas' },
-];
+// Nombre visible en el navbar (alias)
+const displayName = (name: string) => {
+  if (name.toLowerCase().includes('smartphone') || name.toLowerCase().includes('celular'))
+    return 'Celulares';
+  return name;
+};
+
+// Categorías que se muestran como links especiales (ya están en la barra)
+const SPECIAL_NAMES = ['combos', 'promos'];
 
 interface NavbarProps {
   onSearchOpen?: () => void;
 }
 
+interface Category {
+  id: string;
+  name: string;
+}
+
 export const Navbar = ({ onSearchOpen }: NavbarProps) => {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
   const location = useLocation();
   const navigate = useNavigate();
   const { totalItems, openCart } = useCart();
+
+  useEffect(() => {
+    supabase
+      .from('categories' as any)
+      .select('id, name')
+      .order('name', { ascending: true })
+      .then(({ data }) => {
+        if (data) setCategories(data as unknown as Category[]);
+      });
+  }, []);
+
+  // Ordena: Smartphone primero, luego Fundas, luego el resto
+  const sortedCategories = [...categories].sort((a, b) => {
+    const aPhone = a.name.toLowerCase().includes('smartphone') || a.name.toLowerCase().includes('celular');
+    const bPhone = b.name.toLowerCase().includes('smartphone') || b.name.toLowerCase().includes('celular');
+    const aFunda = a.name.toLowerCase().includes('funda');
+    const bFunda = b.name.toLowerCase().includes('funda');
+    if (aPhone && !bPhone) return -1;
+    if (!aPhone && bPhone) return 1;
+    if (aFunda && !bFunda) return -1;
+    if (!aFunda && bFunda) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  // Separa categorías especiales (Promos/Combos) que van en barra aparte
+  const dropdownCategories = sortedCategories.filter(
+    c => !SPECIAL_NAMES.includes(c.name.toLowerCase())
+  );
 
   const isActive = (href: string) => location.pathname === href;
   const isTienda = location.pathname === '/tienda';
 
   const linkClass = (active: boolean) =>
     cn(
-      "px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+      'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
       active
-        ? "bg-primary/10 text-primary"
-        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+        ? 'bg-primary/10 text-primary'
+        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
     );
 
   return (
@@ -70,7 +107,7 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
             <img
               src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo_color.png"
               alt="Nictech Logo"
-              className="h-10 w-auto object-contain transition-transform group-hover:scale-100"
+              className="h-10 w-auto object-contain"
             />
           </Link>
 
@@ -82,14 +119,14 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
               </Link>
             ))}
 
-            {/* Categories Dropdown */}
+            {/* Tienda Dropdown — categorías dinámicas */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   className={cn(
-                    "px-3 py-2 h-auto text-sm font-medium gap-1",
-                    isTienda ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+                    'px-3 py-2 h-auto text-sm font-medium gap-1',
+                    isTienda ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
                   Tienda <ChevronDown className="h-3 w-3" />
@@ -101,76 +138,63 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
 
-                {/* Celulares con submenu de marcas */}
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="cursor-pointer">Celulares</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuItem onClick={() => navigate('/tienda?nombre=Celulares')} className="cursor-pointer">
-                      Todos
+                {dropdownCategories.map((cat) =>
+                  isBrandCategory(cat.name) ? (
+                    <DropdownMenuSub key={cat.id}>
+                      <DropdownMenuSubTrigger className="cursor-pointer">
+                        {displayName(cat.name)}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          onClick={() => navigate(`/tienda?nombre=${encodeURIComponent(cat.name)}`)}
+                        >
+                          {cat.name.toLowerCase().includes('funda') ? 'Todas' : 'Todos'}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {PHONE_BRANDS.map((brand) => (
+                          <DropdownMenuItem
+                            key={brand}
+                            className="cursor-pointer"
+                            onClick={() =>
+                              navigate(`/tienda?nombre=${encodeURIComponent(cat.name)}&marca=${encodeURIComponent(brand)}`)
+                            }
+                          >
+                            {brand}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  ) : (
+                    <DropdownMenuItem
+                      key={cat.id}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/tienda?nombre=${encodeURIComponent(cat.name)}`)}
+                    >
+                      {cat.name}
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {PHONE_BRANDS.map((brand) => (
-                      <DropdownMenuItem
-                        key={brand}
-                        className="cursor-pointer"
-                        onClick={() => navigate(`/tienda?nombre=Celulares&marca=${encodeURIComponent(brand)}`)}
-                      >
-                        {brand}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-
-                {/* Fundas con submenu de marcas */}
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="cursor-pointer">Fundas</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuItem onClick={() => navigate('/tienda?nombre=Fundas')} className="cursor-pointer">
-                      Todas
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {PHONE_BRANDS.map((brand) => (
-                      <DropdownMenuItem
-                        key={brand}
-                        className="cursor-pointer"
-                        onClick={() => navigate(`/tienda?nombre=Fundas&marca=${encodeURIComponent(brand)}`)}
-                      >
-                        {brand}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-
-                {/* Resto de categorías simples */}
-                {simpleCategories.map((cat) => (
-                  <DropdownMenuItem
-                    key={cat.nombre}
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/tienda?nombre=${encodeURIComponent(cat.nombre)}`)}
-                  >
-                    {cat.label}
-                  </DropdownMenuItem>
-                ))}
+                  )
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Special Links */}
-            {specialLinks.map((link) => (
-              <Link
-                key={link.href}
-                to={link.href}
-                className={cn(
-                  "px-3 py-2 rounded-lg text-sm font-medium transition-colors text-primary/80 hover:text-primary hover:bg-primary/5"
-                )}
-              >
-                {link.label}
-              </Link>
-            ))}
+            {/* Promos y Combos como links especiales */}
+            <Link
+              to="/tienda?nombre=Promos"
+              className="px-3 py-2 rounded-lg text-sm font-medium transition-colors text-primary/80 hover:text-primary hover:bg-primary/5"
+            >
+              Promos
+            </Link>
+            <Link
+              to="/tienda?nombre=Combos"
+              className="px-3 py-2 rounded-lg text-sm font-medium transition-colors text-primary/80 hover:text-primary hover:bg-primary/5"
+            >
+              Combos
+            </Link>
           </div>
 
           {/* Right side icons */}
           <div className="flex items-center gap-1">
-            {/* Admin Shortcut (Desktop) */}
             <Link to="/login" className="hidden md:block">
               <Button variant="ghost" size="icon" className="opacity-30 hover:opacity-100 transition-opacity duration-300">
                 <Key className="h-5 w-5" />
@@ -178,7 +202,6 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
               </Button>
             </Link>
 
-            {/* Search */}
             {onSearchOpen && (
               <Button variant="ghost" size="icon" onClick={onSearchOpen} className="hidden md:flex">
                 <Search className="h-5 w-5" />
@@ -186,7 +209,6 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
               </Button>
             )}
 
-            {/* Cart */}
             <Button variant="ghost" size="icon" className="relative" onClick={openCart}>
               <ShoppingCart className="h-5 w-5" />
               {totalItems > 0 && (
@@ -196,7 +218,7 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
               )}
             </Button>
 
-            {/* Mobile Menu (Sheet) */}
+            {/* Mobile Menu */}
             <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="md:hidden">
@@ -217,74 +239,41 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
                     </Link>
                   ))}
 
-                  <Link
-                    to="/tienda"
-                    onClick={() => setSheetOpen(false)}
-                    className={linkClass(isTienda)}
-                  >
+                  <Link to="/tienda" onClick={() => setSheetOpen(false)} className={linkClass(isTienda)}>
                     Tienda
                   </Link>
 
-                  {/* Categories in mobile */}
                   <div className="pt-2 pb-1 px-3">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Categorías</p>
                   </div>
 
-                  {/* Celulares */}
-                  <Link
-                    to="/tienda?nombre=Celulares"
-                    onClick={() => setSheetOpen(false)}
-                    className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors pl-6"
-                  >
-                    Celulares
-                  </Link>
-                  {PHONE_BRANDS.map((brand) => (
-                    <Link
-                      key={`cel-${brand}`}
-                      to={`/tienda?nombre=Celulares&marca=${encodeURIComponent(brand)}`}
-                      onClick={() => setSheetOpen(false)}
-                      className="px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors pl-10"
-                    >
-                      {brand}
-                    </Link>
+                  {dropdownCategories.map((cat) => (
+                    <div key={cat.id}>
+                      <Link
+                        to={`/tienda?nombre=${encodeURIComponent(cat.name)}`}
+                        onClick={() => setSheetOpen(false)}
+                        className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors pl-6 block"
+                      >
+                        {displayName(cat.name)}
+                      </Link>
+                      {isBrandCategory(cat.name) &&
+                        PHONE_BRANDS.map((brand) => (
+                          <Link
+                            key={`${cat.id}-${brand}`}
+                            to={`/tienda?nombre=${encodeURIComponent(cat.name)}&marca=${encodeURIComponent(brand)}`}
+                            onClick={() => setSheetOpen(false)}
+                            className="px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors pl-10 block"
+                          >
+                            {brand}
+                          </Link>
+                        ))}
+                    </div>
                   ))}
 
-                  {/* Fundas */}
-                  <Link
-                    to="/tienda?nombre=Fundas"
-                    onClick={() => setSheetOpen(false)}
-                    className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors pl-6"
-                  >
-                    Fundas
-                  </Link>
-                  {PHONE_BRANDS.map((brand) => (
-                    <Link
-                      key={`funda-${brand}`}
-                      to={`/tienda?nombre=Fundas&marca=${encodeURIComponent(brand)}`}
-                      onClick={() => setSheetOpen(false)}
-                      className="px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors pl-10"
-                    >
-                      {brand}
-                    </Link>
-                  ))}
-
-                  {/* Resto de categorías */}
-                  {simpleCategories.map((cat) => (
-                    <Link
-                      key={cat.nombre}
-                      to={`/tienda?nombre=${encodeURIComponent(cat.nombre)}`}
-                      onClick={() => setSheetOpen(false)}
-                      className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors pl-6"
-                    >
-                      {cat.label}
-                    </Link>
-                  ))}
-
-                  {/* Special links in mobile */}
                   <div className="pt-2 pb-1 px-3">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Destacados</p>
                   </div>
-                  {specialLinks.map((link) => (
+                  {[{ href: '/tienda?nombre=Promos', label: 'Promos' }, { href: '/tienda?nombre=Combos', label: 'Combos' }].map((link) => (
                     <Link
                       key={link.href}
                       to={link.href}
@@ -295,7 +284,6 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
                     </Link>
                   ))}
 
-                  {/* Admin link */}
                   <Link
                     to="/login"
                     onClick={() => setSheetOpen(false)}
