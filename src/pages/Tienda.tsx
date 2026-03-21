@@ -279,6 +279,13 @@ const Tienda = () => {
       .replace(/[\u0300-\u036f]/g, "");
   };
 
+  // Map model_id → brand_id para lookup O(1) — debe ir ANTES de filteredProducts
+  const modelBrandMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of models) map.set(m.id, m.brand_id);
+    return map;
+  }, [models]);
+
   const filteredProducts = useMemo(() => {
     const normalizedQuery = normalizeText(searchQuery);
     const searchTerms = normalizedQuery.split(/\s+/).filter(Boolean);
@@ -333,13 +340,6 @@ const Tienda = () => {
     if (!selectedBrand) return models;
     return models.filter(m => m.brand_id === selectedBrand);
   }, [models, selectedBrand]);
-
-  // Map model_id → brand_id for O(1) brand lookup on fundas (js-index-maps)
-  const modelBrandMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of models) map.set(m.id, m.brand_id);
-    return map;
-  }, [models]);
 
   // Reset pagination when any filter changes
   useEffect(() => {
