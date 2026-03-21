@@ -3,7 +3,20 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(npm ls:*)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(npx skills:*)",
+      "Bash(find /c/Users/Gime/Desktop/nictech/supabase/functions -name *repair* -o -name *tracking*)",
+      "Bash(find /c/Users/Gime/Desktop/nictech -name *.sql)",
+      "Bash(grep -r \"CREATE FUNCTION\\\\|CREATE RLS\\\\|enable rls\\\\|CREATE POLICY\" /c/Users/Gime/Desktop/nictech --include=*.ts --include=*.tsx --include=*.js --include=*.sql)",
+      "Bash(xargs grep:*)",
+      "Bash(find /c/Users/Gime/Desktop/nictech/src -name *repair* -o -name *case*)",
+      "Bash(find /c/Users/Gime/Desktop/nictech -path */src/utils/* -type f)",
+      "mcp__supabase__list_projects",
+      "mcp__supabase__apply_migration"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }
