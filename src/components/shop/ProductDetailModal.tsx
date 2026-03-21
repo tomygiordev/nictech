@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ShoppingCart, ChevronLeft, ChevronRight, X, MessageCircle } from 'lucide-react';
@@ -96,6 +96,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
 
     const [lightboxOpen, setLightboxOpen] = useState(false);
+    const lightboxOpenRef = useRef(false);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [api, setApi] = useState<CarouselApi>();
     const [lightboxApi, setLightboxApi] = useState<CarouselApi>();
@@ -126,10 +127,12 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
     const openLightbox = (index: number) => {
         setCurrentImageIndex(index);
+        lightboxOpenRef.current = true;
         setLightboxOpen(true);
     };
 
     const closeLightbox = () => {
+        lightboxOpenRef.current = false;
         setLightboxOpen(false);
     };
 
@@ -226,7 +229,11 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
     return (
         <>
             <Dialog open={isOpen} onOpenChange={onClose}>
-                <DialogContent className="max-w-4xl p-0 gap-0 border-none shadow-2xl rounded-3xl max-h-[95vh] md:max-h-[600px] flex flex-col md:block overflow-hidden [&>button:last-child]:hidden">
+                <DialogContent
+                        className="max-w-4xl p-0 gap-0 border-none shadow-2xl rounded-3xl max-h-[95vh] md:max-h-[600px] flex flex-col md:block overflow-hidden [&>button:last-child]:hidden"
+                        onInteractOutside={(e) => { if (lightboxOpenRef.current) e.preventDefault(); }}
+                        onPointerDownOutside={(e) => { if (lightboxOpenRef.current) e.preventDefault(); }}
+                    >
                     <DialogTitle className="sr-only">Detalles del producto: {product.name}</DialogTitle>
                     <DialogDescription className="sr-only">
                         Vista detallada del producto {product.name}, incluyendo precio, descripción y opciones de compra.
@@ -378,28 +385,43 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                 >
                     {/* Cerrar */}
                     <button
-                        onClick={closeLightbox}
+                        onClick={(e) => { e.stopPropagation(); closeLightbox(); }}
+                        onPointerDown={(e) => e.stopPropagation()}
                         className="absolute top-4 right-4 text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors z-[110]"
                         aria-label="Cerrar"
                     >
                         <X size={28} />
                     </button>
 
-                    {/* Imagen centrada con tamaño contenido al viewport */}
-                    <div className="flex-1 flex items-center justify-center px-16 py-12">
+                    {/* Imagen centrada con contenedor de tamaño estandarizado */}
+                    <div
+                        className="flex-1 flex items-center justify-center"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         {images[currentImageIndex] && (
-                            <img
-                                src={images[currentImageIndex]}
-                                alt={`Imagen ampliada ${currentImageIndex + 1}`}
-                                onClick={(e) => e.stopPropagation()}
+                            <div
                                 style={{
-                                    maxHeight: 'calc(100vh - 120px)',
-                                    maxWidth: 'calc(100vw - 128px)',
-                                    objectFit: 'contain',
-                                    cursor: 'zoom-out',
-                                    borderRadius: '8px',
+                                    width: 'min(80vw, 900px)',
+                                    height: 'min(80vh, 700px)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
                                 }}
-                            />
+                            >
+                                <img
+                                    src={images[currentImageIndex]}
+                                    alt={`Imagen ampliada ${currentImageIndex + 1}`}
+                                    style={{
+                                        maxWidth: '100%',
+                                        maxHeight: '100%',
+                                        objectFit: 'contain',
+                                        cursor: 'zoom-out',
+                                        borderRadius: '8px',
+                                        display: 'block',
+                                    }}
+                                    onClick={closeLightbox}
+                                />
+                            </div>
                         )}
                     </div>
 
@@ -408,6 +430,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                         <>
                             <button
                                 onClick={(e) => { e.stopPropagation(); prevImage(); }}
+                                onPointerDown={(e) => e.stopPropagation()}
                                 className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-3 hover:bg-white/10 rounded-full transition-colors z-[110]"
                                 aria-label="Anterior"
                             >
@@ -415,6 +438,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); nextImage(); }}
+                                onPointerDown={(e) => e.stopPropagation()}
                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-3 hover:bg-white/10 rounded-full transition-colors z-[110]"
                                 aria-label="Siguiente"
                             >
