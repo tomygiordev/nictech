@@ -8,7 +8,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 
@@ -20,10 +24,11 @@ const navLinks = [
   { href: '/contacto', label: 'Contacto' },
 ];
 
-const categories = [
-  { label: 'Celulares', nombre: 'Celulares' },
-  { label: 'Fundas', nombre: 'Fundas' },
+const PHONE_BRANDS = ['Samsung', 'iPhone', 'Xiaomi', 'Motorola'];
+
+const simpleCategories = [
   { label: 'Vidrios Templados', nombre: 'Vidrios Templados' },
+  { label: 'Protectores de Cámara', nombre: 'Protectores de Cámara' },
   { label: 'Auriculares', nombre: 'Auriculares' },
   { label: 'Cargadores', nombre: 'Cargadores' },
   { label: 'Accesorios', nombre: 'Accesorios' },
@@ -90,11 +95,54 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
                   Tienda <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuContent align="start" className="w-52">
                 <DropdownMenuItem asChild>
                   <Link to="/tienda" className="cursor-pointer">Todos los productos</Link>
                 </DropdownMenuItem>
-                {categories.map((cat) => (
+                <DropdownMenuSeparator />
+
+                {/* Celulares con submenu de marcas */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer">Celulares</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onClick={() => navigate('/tienda?nombre=Celulares')} className="cursor-pointer">
+                      Todos
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {PHONE_BRANDS.map((brand) => (
+                      <DropdownMenuItem
+                        key={brand}
+                        className="cursor-pointer"
+                        onClick={() => navigate(`/tienda?nombre=Celulares&marca=${encodeURIComponent(brand)}`)}
+                      >
+                        {brand}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+
+                {/* Fundas con submenu de marcas */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="cursor-pointer">Fundas</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onClick={() => navigate('/tienda?nombre=Fundas')} className="cursor-pointer">
+                      Todas
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {PHONE_BRANDS.map((brand) => (
+                      <DropdownMenuItem
+                        key={brand}
+                        className="cursor-pointer"
+                        onClick={() => navigate(`/tienda?nombre=Fundas&marca=${encodeURIComponent(brand)}`)}
+                      >
+                        {brand}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+
+                {/* Resto de categorías simples */}
+                {simpleCategories.map((cat) => (
                   <DropdownMenuItem
                     key={cat.nombre}
                     className="cursor-pointer"
@@ -181,7 +229,47 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
                   <div className="pt-2 pb-1 px-3">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Categorías</p>
                   </div>
-                  {categories.map((cat) => (
+
+                  {/* Celulares */}
+                  <Link
+                    to="/tienda?nombre=Celulares"
+                    onClick={() => setSheetOpen(false)}
+                    className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors pl-6"
+                  >
+                    Celulares
+                  </Link>
+                  {PHONE_BRANDS.map((brand) => (
+                    <Link
+                      key={`cel-${brand}`}
+                      to={`/tienda?nombre=Celulares&marca=${encodeURIComponent(brand)}`}
+                      onClick={() => setSheetOpen(false)}
+                      className="px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors pl-10"
+                    >
+                      {brand}
+                    </Link>
+                  ))}
+
+                  {/* Fundas */}
+                  <Link
+                    to="/tienda?nombre=Fundas"
+                    onClick={() => setSheetOpen(false)}
+                    className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors pl-6"
+                  >
+                    Fundas
+                  </Link>
+                  {PHONE_BRANDS.map((brand) => (
+                    <Link
+                      key={`funda-${brand}`}
+                      to={`/tienda?nombre=Fundas&marca=${encodeURIComponent(brand)}`}
+                      onClick={() => setSheetOpen(false)}
+                      className="px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors pl-10"
+                    >
+                      {brand}
+                    </Link>
+                  ))}
+
+                  {/* Resto de categorías */}
+                  {simpleCategories.map((cat) => (
                     <Link
                       key={cat.nombre}
                       to={`/tienda?nombre=${encodeURIComponent(cat.nombre)}`}

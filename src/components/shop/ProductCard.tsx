@@ -7,6 +7,7 @@ interface ProductCardProps {
   id: string;
   name: string;
   price: number;
+  original_price?: number | null;
   stock: number;
   image_url?: string;
   description?: string;
@@ -18,6 +19,7 @@ export const ProductCard = ({
   id,
   name,
   price,
+  original_price,
   stock,
   image_url,
   description,
@@ -55,10 +57,15 @@ export const ProductCard = ({
         )}
 
         {/* Category badge */}
-        <div className="absolute top-3 left-3">
+        <div className="absolute top-3 left-3 flex flex-col gap-1">
           <span className="px-3 py-1 rounded-full bg-background/90 backdrop-blur-sm text-xs font-medium text-foreground">
             {category}
           </span>
+          {original_price != null && (
+            <span className="px-2 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold w-fit">
+              PROMO
+            </span>
+          )}
         </div>
 
         {/* Stock indicator */}
@@ -105,6 +112,11 @@ export const ProductCard = ({
 
         <div className="mt-auto flex items-center justify-between pt-4 border-t border-border/50">
           <div>
+            {original_price != null && (
+              <span className="text-sm text-muted-foreground line-through block">
+                $ {original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            )}
             <span className="text-2xl font-bold text-primary">
               $ {price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>

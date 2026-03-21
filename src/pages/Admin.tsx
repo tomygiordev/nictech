@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search } from 'lucide-react';
+import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag } from 'lucide-react';
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,6 +18,7 @@ import { CaseManagement } from '@/components/admin/CaseManagement';
 import { VariantManagement } from '@/components/admin/VariantManagement';
 import { SmartphoneManagement } from '@/components/admin/SmartphoneManagement';
 import { BlogManagement } from '@/components/admin/BlogManagement';
+import { PromoManagement } from '@/components/admin/PromoManagement';
 import { useAuth } from '@/contexts/AuthContext';
 
 
@@ -735,6 +736,10 @@ const Admin = () => {
                   <Package className="h-4 w-4" />
                   Ventas Online
                 </TabsTrigger>
+                <TabsTrigger value="promos" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
+                  <Tag className="h-4 w-4" />
+                  Promos
+                </TabsTrigger>
                 <TabsTrigger value="blog" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <MessageSquare className="h-4 w-4" />
                   Blog
@@ -1318,6 +1323,12 @@ const Admin = () => {
                       </TableBody>
                     </Table>
                   </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="promos">
+                <div className="bg-card rounded-2xl border border-border p-6">
+                  <PromoManagement />
                 </div>
               </TabsContent>
 

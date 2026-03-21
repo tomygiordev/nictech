@@ -31,8 +31,9 @@ export const Layout = ({ children }: LayoutProps) => {
         </Suspense>
       )}
       <div className="bg-primary text-primary-foreground overflow-hidden py-2 border-b border-primary/20">
-        <div className="flex whitespace-nowrap animate-marquee gap-0">
-          {[...BANNER_ITEMS, ...BANNER_ITEMS].map((item, i) => (
+        {/* w-max ensures translateX(-50%) is 50% of CONTENT width, not viewport */}
+        <div className="flex w-max whitespace-nowrap animate-marquee gap-0">
+          {[...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS].map((item, i) => (
             <span key={i} className="text-xs font-medium inline-flex items-center">
               <span className="px-8">{item}</span>
               <span className="opacity-40">·</span>

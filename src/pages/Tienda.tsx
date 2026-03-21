@@ -31,6 +31,7 @@ interface Product {
   name: string;
   category_id: string;
   price: number;
+  original_price?: number | null;
   stock: number;
   image_url: string | null;
   additional_images: string[] | null;
@@ -45,6 +46,7 @@ interface Product {
 interface SmartphoneModel {
   id: string;
   name: string;
+  brand_id: string;
 }
 
 interface Brand {
@@ -179,16 +181,24 @@ const Tienda = () => {
     }
   }, [searchParams, setSearchParams]);
 
-  // Apply ?nombre= URL param when categories are loaded
+  // Apply ?nombre= and ?marca= URL params when data is loaded
   useEffect(() => {
     const nombre = searchParams.get('nombre');
-    if (!nombre || categories.length === 0) return;
-    const match = categories.find(c => c.name.toLowerCase() === nombre.toLowerCase());
-    if (match) {
-      setSelectedCategory(match.id);
-      setSearchParams({}, { replace: true });
+    const marca = searchParams.get('marca');
+    if (!nombre && !marca) return;
+    if (categories.length === 0) return;
+
+    let applied = false;
+    if (nombre) {
+      const match = categories.find(c => c.name.toLowerCase() === nombre.toLowerCase());
+      if (match) { setSelectedCategory(match.id); applied = true; }
     }
-  }, [categories, searchParams, setSearchParams]);
+    if (marca && brands.length > 0) {
+      const match = brands.find(b => b.name.toLowerCase() === marca.toLowerCase());
+      if (match) { setSelectedBrand(match.id); applied = true; }
+    }
+    if (applied) setSearchParams({}, { replace: true });
+  }, [categories, brands, searchParams, setSearchParams]);
 
   const fetchProducts = async () => {
     const [productsRes, categoriesRes, modelsRes, brandsRes] = await Promise.all([
@@ -214,7 +224,9 @@ const Tienda = () => {
         // @ts-ignore
         brand_id: item.brand_id,
         // @ts-ignore
-        condition: item.condition
+        condition: item.condition,
+        // @ts-ignore
+        original_price: item.original_price ?? null,
       }));
       setProducts(formattedProducts);
 
@@ -239,7 +251,8 @@ const Tienda = () => {
     if (modelsRes.data) {
       const formattedModels = (modelsRes.data as any[]).map((m: any) => ({
         id: m.id,
-        name: `${m.brand?.name} ${m.name}`
+        name: `${m.brand?.name} ${m.name}`,
+        brand_id: m.brand_id,
       })).sort((a, b) => a.name.localeCompare(b.name));
       setModels(formattedModels);
     }
@@ -308,6 +321,12 @@ const Tienda = () => {
     }
     return Array.from(tagSet).sort();
   }, [products, selectedCategory, isFundaCategory]);
+
+  // Models filtered by selected brand (for fundas/vidrios/protectors)
+  const filteredModels = useMemo(() => {
+    if (!selectedBrand) return models;
+    return models.filter(m => m.brand_id === selectedBrand);
+  }, [models, selectedBrand]);
 
   // Reset pagination when any filter changes
   useEffect(() => {
@@ -487,14 +506,14 @@ const Tienda = () => {
 
                   models={(() => {
                     const catName = categories.find(c => c.id === selectedCategory)?.name.toLowerCase() || '';
-                    return (catName.includes('funda') || catName.includes('vidrios') || catName.includes('protector') || catName.includes('cámara') || catName.includes('camara')) ? models : [];
+                    return (catName.includes('funda') || catName.includes('vidrios') || catName.includes('protector') || catName.includes('cámara') || catName.includes('camara')) ? filteredModels : [];
                   })()}
                   selectedModel={selectedModel}
                   onModelChange={setSelectedModel}
 
-                  brands={isSmartphoneCategory ? brands : []}
+                  brands={isSmartphoneCategory || isFundaCategory ? brands : []}
                   selectedBrand={selectedBrand}
-                  onBrandChange={setSelectedBrand}
+                  onBrandChange={(brandId) => { setSelectedBrand(brandId); setSelectedModel(null); }}
 
                   selectedCondition={selectedCondition}
                   onConditionChange={isSmartphoneCategory ? setSelectedCondition : undefined}
@@ -555,6 +574,7 @@ const Tienda = () => {
                             id={product.id}
                             name={product.name}
                             price={product.price}
+                            original_price={product.original_price}
                             stock={product.stock}
                             image_url={product.image_url || undefined}
                             description={product.description || undefined}

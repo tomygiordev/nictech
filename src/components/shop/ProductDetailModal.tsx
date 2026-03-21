@@ -13,6 +13,7 @@ interface Product {
     id: string;
     name: string;
     price: number;
+    original_price?: number | null;
     stock: number;
     image_url: string | null;
     additional_images: string[] | null;
@@ -328,8 +329,15 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                     </div>
                                 </div>
 
-                                <div className="text-2xl md:text-3xl font-bold text-primary mb-6">
-                                    $ {product.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <div className="mb-6">
+                                    {product.original_price != null && (
+                                        <p className="text-base text-muted-foreground line-through">
+                                            $ {product.original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                    )}
+                                    <span className="text-2xl md:text-3xl font-bold text-primary">
+                                        $ {product.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
                                 </div>
 
                                 <div className="prose prose-sm text-muted-foreground mb-8">

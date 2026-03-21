@@ -102,44 +102,7 @@ export const ProductFilters = ({
 
           {/* Categories removed - now rendered horizontally in Tienda.tsx */}
 
-          {/* Model Filter - Only if models are available (implies Fundas category or similar) */}
-          {models.length > 0 && onModelChange && (
-            <div className="mb-8">
-              <h4 className="text-sm font-medium text-foreground mb-3">Modelo</h4>
-              <div className="space-y-2">
-                <button
-                  onClick={() => onModelChange(null)}
-                  className={cn(
-                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                    !selectedModel
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  Todos los modelos
-                </button>
-                <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-1">
-                  {models.map((model) => (
-                    <button
-                      key={model.id}
-                      onClick={() => onModelChange(model.id)}
-                      className={cn(
-                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
-                        selectedModel === model.id
-                          ? "bg-primary/10 text-primary font-medium"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      {model.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-
-          {/* Brand Filter */}
+          {/* Brand Filter - shown first */}
           {brands && brands.length > 0 && onBrandChange && (
             <div className="mb-8">
               <h4 className="text-sm font-medium text-foreground mb-3">Marca</h4>
@@ -168,6 +131,42 @@ export const ProductFilters = ({
                       )}
                     >
                       {brand.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Model Filter - shown after brand */}
+          {models.length > 0 && onModelChange && (
+            <div className="mb-8">
+              <h4 className="text-sm font-medium text-foreground mb-3">Modelo</h4>
+              <div className="space-y-2">
+                <button
+                  onClick={() => onModelChange(null)}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                    !selectedModel
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  Todos los modelos
+                </button>
+                <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-1">
+                  {models.map((model) => (
+                    <button
+                      key={model.id}
+                      onClick={() => onModelChange(model.id)}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                        selectedModel === model.id
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      {model.name}
                     </button>
                   ))}
                 </div>
