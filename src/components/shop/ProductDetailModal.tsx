@@ -27,6 +27,38 @@ interface ProductDetailModalProps {
     onClose: () => void;
 }
 
+const COLOR_MAP: Record<string, string> = {
+    'blanco': '#FFFFFF',
+    'negro': '#000000',
+    'azul': '#3B82F6',
+    'celeste': '#67E8F9',
+    'rojo': '#EF4444',
+    'verde': '#22C55E',
+    'rosa': '#EC4899',
+    'violeta': '#A855F7',
+    'amarillo': '#EAB308',
+    'naranja': '#F97316',
+    'gris': '#6B7280',
+    'marron': '#92400E',
+    'marrón': '#92400E',
+    'dorado': '#F59E0B',
+    'plateado': '#D1D5DB',
+    'beige': '#D4B896',
+    'turquesa': '#14B8A6',
+    'bordo': '#881337',
+    'bordó': '#881337',
+    'lila': '#C084FC',
+    'magenta': '#E879F9',
+};
+
+const getVariantColor = (colorName: string): string =>
+    COLOR_MAP[colorName.toLowerCase()] ?? '#9CA3AF';
+
+const isLightColor = (colorName: string): boolean => {
+    const lightColors = ['blanco', 'amarillo', 'beige', 'plateado'];
+    return lightColors.includes(colorName.toLowerCase());
+};
+
 export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailModalProps) => {
     const { addToCart } = useCart();
 
@@ -244,7 +276,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                         <div className="relative bg-white flex items-center justify-center p-6 aspect-square md:aspect-auto md:h-full overflow-hidden shrink-0">
 
                             {images.length > 0 ? (
-                                <Carousel setApi={setApi} className="w-full h-full">
+                                <Carousel key={images.join('|')} setApi={setApi} className="w-full h-full">
                                     <CarouselContent className="h-full ml-0">
                                         {images.map((image, index) => (
                                             <CarouselItem key={`${image}-${index}`} className="flex h-full items-center justify-center p-0 basis-full">
@@ -331,24 +363,12 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                                     title={`${variant.color} (${variant.stock} diponibles)`}
                                                 >
                                                     <span
-                                                        className={cn(
-                                                            "h-full w-full rounded-full",
-                                                            variant.color === 'Blanco' ? 'bg-white' :
-                                                                variant.color === 'Negro' ? 'bg-black' :
-                                                                    variant.color === 'Azul' ? 'bg-blue-500' :
-                                                                        variant.color === 'Rojo' ? 'bg-red-500' :
-                                                                            variant.color === 'Verde' ? 'bg-green-500' :
-                                                                                variant.color === 'Rosa' ? 'bg-pink-500' :
-                                                                                    variant.color === 'Violeta' ? 'bg-purple-500' :
-                                                                                        variant.color === 'Amarillo' ? 'bg-yellow-500' :
-                                                                                            variant.color === 'Naranja' ? 'bg-orange-500' :
-                                                                                                variant.color === 'Gris' ? 'bg-gray-500' :
-                                                                                                    'bg-gradient-to-tr from-gray-200 to-gray-400'
-                                                        )}
+                                                        className="h-full w-full rounded-full border border-black/10"
+                                                        style={{ backgroundColor: getVariantColor(variant.color) }}
                                                     />
                                                     {selectedVariant?.id === variant.id && (
                                                         <span className="absolute inset-0 flex items-center justify-center">
-                                                            <div className={cn("h-2 w-2 rounded-full", variant.color === 'Blanco' ? "bg-black" : "bg-white")} />
+                                                            <div className={cn("h-2 w-2 rounded-full", isLightColor(variant.color) ? "bg-black" : "bg-white")} />
                                                         </span>
                                                     )}
                                                 </button>
