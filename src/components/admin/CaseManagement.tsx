@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { CreatableAttributeSelector } from '@/components/admin/CreatableAttributeSelector'; // Assuming we can reuse or adapt this usage pattern
 import { MultiModelSelector } from '@/components/admin/MultiModelSelector';
+import { getVariantColor, saveColorHex, loadColorsFromDB } from '@/lib/colors';
 
 interface Product {
     id: string;
@@ -152,6 +153,7 @@ export const CaseManagement = () => {
 
     useEffect(() => {
         fetchInitialData();
+        loadColorsFromDB();
     }, []);
 
     useEffect(() => {
@@ -781,20 +783,33 @@ export const CaseManagement = () => {
                                                             ) : (
                                                                 <div
                                                                     className="w-12 h-12 rounded-md border flex items-center justify-center shadow-sm"
-                                                                    style={{
-                                                                        backgroundColor: v.color === 'Transparente' ? 'transparent' :
-                                                                            v.color === 'Multicolor' ? 'transparent' :
-                                                                                FIXED_COLORS.includes(v.color) ? v.color.toLowerCase().split(' ')[0] : 'white',
-                                                                        backgroundImage: v.color === 'Transparente' ? 'url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAGElEQVQYlWNgYGCQwoKxgqGgcJA5h3yFAAs8BRWVSmnOAAAAAElFTkSuQmCC")' :
-                                                                            v.color === 'Multicolor' ? 'linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet)' : 'none'
-                                                                    }}
+                                                                    style={{ background: getVariantColor(v.color) }}
                                                                 >
                                                                     {!v.image_url && <Palette className="h-4 w-4 opacity-20 mix-blend-difference text-white" />}
                                                                 </div>
                                                             )}
                                                         </div>
                                                         <div>
-                                                            <p className="font-medium text-sm">{v.color}</p>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <p className="font-medium text-sm">{v.color}</p>
+                                                                {/* Lápiz: editar hex del color */}
+                                                                <label
+                                                                    title={`Cambiar color de "${v.color}"`}
+                                                                    className="relative cursor-pointer flex items-center justify-center w-5 h-5 rounded hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
+                                                                >
+                                                                    <Pencil className="h-3 w-3 text-muted-foreground" />
+                                                                    <input
+                                                                        type="color"
+                                                                        className="absolute opacity-0 w-0 h-0"
+                                                                        value={(() => { const c = getVariantColor(v.color); return c.startsWith('#') ? c : '#9CA3AF'; })()}
+                                                                        onChange={async (e) => {
+                                                                            const hex = e.target.value;
+                                                                            const ok = await saveColorHex(v.color, hex);
+                                                                            if (ok) toast({ title: `Color "${v.color}" actualizado`, description: hex });
+                                                                        }}
+                                                                    />
+                                                                </label>
+                                                            </div>
                                                             <div className="flex items-center gap-2 mt-0.5">
                                                                 <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal">
                                                                     Stock: {v.stock}

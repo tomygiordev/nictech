@@ -7,7 +7,7 @@ import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
-
+import { getVariantColor, isLightColor } from '@/lib/colors';
 
 interface Product {
     id: string;
@@ -29,37 +29,6 @@ interface ProductDetailModalProps {
     onClose: () => void;
 }
 
-const COLOR_MAP: Record<string, string> = {
-    'blanco': '#FFFFFF',
-    'negro': '#000000',
-    'azul': '#3B82F6',
-    'celeste': '#67E8F9',
-    'rojo': '#EF4444',
-    'verde': '#22C55E',
-    'rosa': '#EC4899',
-    'violeta': '#A855F7',
-    'amarillo': '#EAB308',
-    'naranja': '#F97316',
-    'gris': '#6B7280',
-    'marron': '#92400E',
-    'marrón': '#92400E',
-    'dorado': '#F59E0B',
-    'plateado': '#D1D5DB',
-    'beige': '#D4B896',
-    'turquesa': '#14B8A6',
-    'bordo': '#881337',
-    'bordó': '#881337',
-    'lila': '#C084FC',
-    'magenta': '#E879F9',
-};
-
-const getVariantColor = (colorName: string): string =>
-    COLOR_MAP[colorName.toLowerCase()] ?? '#9CA3AF';
-
-const isLightColor = (colorName: string): boolean => {
-    const lightColors = ['blanco', 'amarillo', 'beige', 'plateado'];
-    return lightColors.includes(colorName.toLowerCase());
-};
 
 export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailModalProps) => {
     const { addToCart } = useCart();
@@ -403,47 +372,59 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
             {/* Lightbox Overlay */}
             {lightboxOpen && (
-                <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-200">
+                <div
+                    className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-200"
+                    onClick={closeLightbox}
+                >
+                    {/* Cerrar */}
                     <button
                         onClick={closeLightbox}
                         className="absolute top-4 right-4 text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors z-[110]"
-                        aria-label="Cerrar vista previa de imagen"
+                        aria-label="Cerrar"
                     >
-                        <X size={32} />
+                        <X size={28} />
                     </button>
 
-                    <div className="flex-1 flex items-center justify-center w-full relative">
-                        {images.length > 0 && (
-                            <Carousel
-                                setApi={setLightboxApi}
-                                opts={{ startIndex: currentImageIndex, loop: true }}
-                                className="w-full h-full max-w-7xl mx-auto flex items-center justify-center"
-                            >
-                                <CarouselContent className="h-full ml-0">
-                                    {images.map((image, index) => (
-                                        <CarouselItem key={`lightbox-${image}-${index}`} className="flex h-full w-full items-center justify-center p-4 basis-full">
-                                            <div className="relative w-full h-full flex items-center justify-center" onClick={closeLightbox}>
-                                                <img
-                                                    src={image}
-                                                    alt={`Imagen ampliada ${index + 1}`}
-                                                    className="max-h-full max-w-full object-contain cursor-zoom-out"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                />
-                                            </div>
-                                        </CarouselItem>
-                                    ))}
-                                </CarouselContent>
-                                {images.length > 1 && (
-                                    <>
-                                        <CarouselPrevious className="left-4 bg-white/10 text-white hover:bg-white/20 hover:text-white border-none z-[110] hidden md:flex" />
-                                        <CarouselNext className="right-4 bg-white/10 text-white hover:bg-white/20 hover:text-white border-none z-[110] hidden md:flex" />
-                                    </>
-                                )}
-                            </Carousel>
+                    {/* Imagen centrada con tamaño contenido al viewport */}
+                    <div className="flex-1 flex items-center justify-center px-16 py-12">
+                        {images[currentImageIndex] && (
+                            <img
+                                src={images[currentImageIndex]}
+                                alt={`Imagen ampliada ${currentImageIndex + 1}`}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                    maxHeight: 'calc(100vh - 120px)',
+                                    maxWidth: 'calc(100vw - 128px)',
+                                    objectFit: 'contain',
+                                    cursor: 'zoom-out',
+                                    borderRadius: '8px',
+                                }}
+                            />
                         )}
                     </div>
 
-                    <div className="pb-8 text-center text-white/50 text-sm z-[110] pointer-events-none">
+                    {/* Flechas navegación */}
+                    {images.length > 1 && (
+                        <>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); prevImage(); }}
+                                className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-3 hover:bg-white/10 rounded-full transition-colors z-[110]"
+                                aria-label="Anterior"
+                            >
+                                <ChevronLeft size={32} />
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); nextImage(); }}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-3 hover:bg-white/10 rounded-full transition-colors z-[110]"
+                                aria-label="Siguiente"
+                            >
+                                <ChevronRight size={32} />
+                            </button>
+                        </>
+                    )}
+
+                    {/* Contador */}
+                    <div className="pb-6 text-center text-white/50 text-sm pointer-events-none">
                         {currentImageIndex + 1} / {images.length}
                     </div>
                 </div>

@@ -14,6 +14,7 @@ import { CreatableAttributeSelector } from '@/components/admin/CreatableAttribut
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { MultiModelSelector } from '@/components/admin/MultiModelSelector';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { getVariantColor, saveColorHex, loadColorsFromDB } from '@/lib/colors';
 
 interface Product {
     id: string;
@@ -53,34 +54,6 @@ const FIXED_COLORS = [
     'Multicolor', 'Diseño 1', 'Diseño 2', 'Diseño 3'
 ];
 
-const COLOR_MAP: Record<string, string> = {
-    'transparente': 'transparent',
-    'blanco': '#FFFFFF',
-    'negro': '#000000',
-    'azul': '#3B82F6',
-    'celeste': '#67E8F9',
-    'rojo': '#EF4444',
-    'verde': '#22C55E',
-    'rosa': '#EC4899',
-    'violeta': '#A855F7',
-    'amarillo': '#EAB308',
-    'naranja': '#F97316',
-    'gris': '#6B7280',
-    'marron': '#92400E',
-    'marrón': '#92400E',
-    'dorado': '#F59E0B',
-    'plateado': '#D1D5DB',
-    'beige': '#D4B896',
-    'turquesa': '#14B8A6',
-    'bordo': '#881337',
-    'bordó': '#881337',
-    'lila': '#C084FC',
-    'magenta': '#E879F9',
-    'multicolor': 'linear-gradient(135deg, red, orange, yellow, green, blue, violet)',
-};
-
-const getVariantColor = (colorName: string): string =>
-    COLOR_MAP[colorName.toLowerCase()] ?? '#9CA3AF';
 
 export const VariantManagement = () => {
     // Data States
@@ -203,6 +176,7 @@ export const VariantManagement = () => {
 
     useEffect(() => {
         fetchInitialData();
+        loadColorsFromDB();
     }, []);
 
     useEffect(() => {
@@ -1244,6 +1218,28 @@ export const VariantManagement = () => {
                                         onChange={(e) => setEditingVariant({ ...editingVariant, color: e.target.value })}
                                         className="flex-1"
                                     />
+                                    {/* Lápiz: asignar hex a este nombre de color */}
+                                    <label
+                                        title={`Asignar color a "${editingVariant.color}"`}
+                                        className="relative cursor-pointer flex items-center justify-center w-8 h-8 rounded-full hover:bg-muted transition-colors border"
+                                    >
+                                        <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <input
+                                            type="color"
+                                            className="absolute opacity-0 w-0 h-0"
+                                            value={(() => {
+                                                const c = getVariantColor(editingVariant.color);
+                                                return c.startsWith('#') ? c : '#9CA3AF';
+                                            })()}
+                                            onChange={async (e) => {
+                                                const hex = e.target.value;
+                                                const ok = await saveColorHex(editingVariant.color, hex);
+                                                if (ok) toast({ title: `Color "${editingVariant.color}" actualizado`, description: hex });
+                                                // Forzar re-render refrescando el variant color preview
+                                                setEditingVariant({ ...editingVariant, color: editingVariant.color });
+                                            }}
+                                        />
+                                    </label>
                                 </div>
                             </div>
                             <div className="space-y-2">
