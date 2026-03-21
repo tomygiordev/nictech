@@ -170,6 +170,15 @@ const Tienda = () => {
     fetchProducts();
   }, []);
 
+  // Apply ?q= URL param (from global search) to set searchQuery on load
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q) {
+      setSearchQuery(q);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
   // Apply ?nombre= URL param when categories are loaded
   useEffect(() => {
     const nombre = searchParams.get('nombre');
@@ -478,7 +487,7 @@ const Tienda = () => {
 
                   models={(() => {
                     const catName = categories.find(c => c.id === selectedCategory)?.name.toLowerCase() || '';
-                    return (catName.includes('funda') || catName.includes('vidrios')) ? models : [];
+                    return (catName.includes('funda') || catName.includes('vidrios') || catName.includes('protector') || catName.includes('cámara') || catName.includes('camara')) ? models : [];
                   })()}
                   selectedModel={selectedModel}
                   onModelChange={setSelectedModel}

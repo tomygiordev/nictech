@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone } from 'lucide-react';
+import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search } from 'lucide-react';
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { supabase } from '@/integrations/supabase/client';
@@ -467,6 +467,7 @@ const Admin = () => {
   };
 
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [productSearch, setProductSearch] = useState('');
 
   // Helper to check if category is smartphone
   const isSmartphoneCategory = (categoryId: string) => {
@@ -606,8 +607,8 @@ const Admin = () => {
       const productData = {
         name: finalName,
         category_id: newProduct.category_id,
-        price: parseFloat(newProduct.price),
-        stock: parseInt(newProduct.stock),
+        price: parseFloat(newProduct.price) || 0,
+        stock: parseInt(newProduct.stock, 10) || 0,
         description: newProduct.description || null,
         image_url: finalImageUrl || null,
         additional_images: allAdditionalImages,
@@ -920,9 +921,9 @@ const Admin = () => {
 
               {/* Products Tab */}
               <TabsContent value="products">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Add Product Form */}
-                  <div className="bg-card rounded-2xl border border-border p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                  {/* Add Product Form — sticky */}
+                  <div className="bg-card rounded-2xl border border-border p-6 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold flex items-center gap-2">
                         <Plus className="h-5 w-5" />
@@ -957,7 +958,7 @@ const Admin = () => {
                         <Input
                           id="name"
                           value={newProduct.name}
-                          onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                          onChange={(e) => { const v = e.target.value; setNewProduct(prev => ({ ...prev, name: v })); }}
                           required
                         />
                       </div>
@@ -970,7 +971,7 @@ const Admin = () => {
                             type="number"
                             step="0.01"
                             value={newProduct.price}
-                            onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
+                            onChange={(e) => { const v = e.target.value; setNewProduct(prev => ({ ...prev, price: v })); }}
                             required
                           />
                         </div>
@@ -979,8 +980,9 @@ const Admin = () => {
                           <Input
                             id="stock"
                             type="number"
+                            min="0"
                             value={newProduct.stock}
-                            onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
+                            onChange={(e) => { const v = e.target.value; setNewProduct(prev => ({ ...prev, stock: v })); }}
                             required
                           />
                         </div>
@@ -1140,19 +1142,30 @@ const Admin = () => {
 
                   {/* Products Table */}
                   <div className="lg:col-span-2 bg-card rounded-2xl border border-border overflow-hidden">
-                    <div className="p-6 border-b border-border">
-                      <h3 className="text-lg font-semibold">Inventario de Productos</h3>
-                      <p className="text-muted-foreground text-sm">
-                        {products.filter(product => {
-                          const catName = product.category?.name?.toLowerCase() || '';
-                          return !catName.includes('celular') &&
-                            !catName.includes('smartphone') &&
-                            !catName.includes('iphone') &&
-                            !catName.includes('samsung') &&
-                            !catName.includes('funda') &&
-                            !catName.includes('case');
-                        }).length} productos (excluye celulares y fundas)
-                      </p>
+                    <div className="p-6 border-b border-border space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold">Inventario de Productos</h3>
+                        <span className="text-muted-foreground text-sm">
+                          {products.filter(product => {
+                            const catName = product.category?.name?.toLowerCase() || '';
+                            return !catName.includes('celular') &&
+                              !catName.includes('smartphone') &&
+                              !catName.includes('iphone') &&
+                              !catName.includes('samsung') &&
+                              !catName.includes('funda') &&
+                              !catName.includes('case');
+                          }).length} productos (excluye celulares y fundas)
+                        </span>
+                      </div>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar por nombre, categoría..."
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
                     </div>
                     <div className="overflow-x-auto">
                       <Table>
@@ -1169,12 +1182,15 @@ const Admin = () => {
                           {products
                             .filter(product => {
                               const catName = product.category?.name?.toLowerCase() || '';
-                              return !catName.includes('celular') &&
-                                !catName.includes('smartphone') &&
-                                !catName.includes('iphone') &&
-                                !catName.includes('samsung') &&
-                                !catName.includes('funda') &&
-                                !catName.includes('case');
+                              const excluded = catName.includes('celular') || catName.includes('smartphone') ||
+                                catName.includes('iphone') || catName.includes('samsung') ||
+                                catName.includes('funda') || catName.includes('case');
+                              if (excluded) return false;
+                              if (!productSearch.trim()) return true;
+                              const q = productSearch.toLowerCase();
+                              return product.name.toLowerCase().includes(q) ||
+                                (product.category?.name?.toLowerCase() || '').includes(q) ||
+                                (product.tags || []).some(t => t.toLowerCase().includes(q));
                             })
                             .map((product) => (
                               <TableRow key={product.id}>

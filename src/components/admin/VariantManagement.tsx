@@ -53,6 +53,35 @@ const FIXED_COLORS = [
     'Multicolor', 'Diseño 1', 'Diseño 2', 'Diseño 3'
 ];
 
+const COLOR_MAP: Record<string, string> = {
+    'transparente': 'transparent',
+    'blanco': '#FFFFFF',
+    'negro': '#000000',
+    'azul': '#3B82F6',
+    'celeste': '#67E8F9',
+    'rojo': '#EF4444',
+    'verde': '#22C55E',
+    'rosa': '#EC4899',
+    'violeta': '#A855F7',
+    'amarillo': '#EAB308',
+    'naranja': '#F97316',
+    'gris': '#6B7280',
+    'marron': '#92400E',
+    'marrón': '#92400E',
+    'dorado': '#F59E0B',
+    'plateado': '#D1D5DB',
+    'beige': '#D4B896',
+    'turquesa': '#14B8A6',
+    'bordo': '#881337',
+    'bordó': '#881337',
+    'lila': '#C084FC',
+    'magenta': '#E879F9',
+    'multicolor': 'linear-gradient(135deg, red, orange, yellow, green, blue, violet)',
+};
+
+const getVariantColor = (colorName: string): string =>
+    COLOR_MAP[colorName.toLowerCase()] ?? '#9CA3AF';
+
 export const VariantManagement = () => {
     // Data States
     const [smartphones, setSmartphones] = useState<SmartphoneModel[]>([]);
@@ -1025,11 +1054,11 @@ export const VariantManagement = () => {
                                                                 <div
                                                                     className="w-12 h-12 rounded-md border flex items-center justify-center shadow-sm"
                                                                     style={{
-                                                                        backgroundColor: v.color === 'Transparente' ? 'transparent' :
-                                                                            v.color === 'Multicolor' ? 'transparent' :
-                                                                                FIXED_COLORS.includes(v.color) ? v.color.toLowerCase().split(' ')[0] : 'white',
-                                                                        backgroundImage: v.color === 'Transparente' ? 'url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAGElEQVQYlWNgYGCQwoKxgqGgcJA5h3yFAAs8BRWVSmnOAAAAAElFTkSuQmCC")' :
-                                                                            v.color === 'Multicolor' ? 'linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet)' : 'none'
+                                                                        background: v.color === 'Transparente'
+                                                                            ? 'repeating-conic-gradient(#ccc 0% 25%, white 0% 50%) 0 0 / 10px 10px'
+                                                                            : v.color === 'Multicolor'
+                                                                                ? 'linear-gradient(135deg, red, orange, yellow, green, blue, violet)'
+                                                                                : getVariantColor(v.color),
                                                                     }}
                                                                 >
                                                                     {!v.image_url && <Palette className="h-4 w-4 opacity-20 mix-blend-difference text-white" />}
@@ -1183,14 +1212,39 @@ export const VariantManagement = () => {
                     </DialogHeader>
                     {editingVariant && (
                         <div className="space-y-4 py-4">
+                            {/* Color picker */}
                             <div className="space-y-2">
-                                <CreatableAttributeSelector
-                                    tableName="colors"
-                                    label="Color"
-                                    selectedValue={editingVariant.color}
-                                    onValueChange={(val) => setEditingVariant({ ...editingVariant, color: val })}
-                                    disabled={true}
-                                />
+                                <Label>Color</Label>
+                                <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg border">
+                                    {FIXED_COLORS.map(c => (
+                                        <button
+                                            key={c}
+                                            type="button"
+                                            title={c}
+                                            onClick={() => setEditingVariant({ ...editingVariant, color: c })}
+                                            className={`w-8 h-8 rounded-full border-2 transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 ${editingVariant.color === c ? 'border-primary scale-110 ring-2 ring-primary ring-offset-1' : 'border-border hover:border-primary/60 hover:scale-105'}`}
+                                            style={{
+                                                background: c === 'Transparente'
+                                                    ? 'repeating-conic-gradient(#ccc 0% 25%, white 0% 50%) 0 0 / 10px 10px'
+                                                    : c === 'Multicolor'
+                                                        ? 'linear-gradient(135deg, red, orange, yellow, green, blue, violet)'
+                                                        : getVariantColor(c),
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <div
+                                        className="w-8 h-8 rounded-full border flex-shrink-0"
+                                        style={{ background: getVariantColor(editingVariant.color) }}
+                                    />
+                                    <Input
+                                        placeholder="Nombre del color (ej: Azul, Rosa, #FF5500)"
+                                        value={editingVariant.color}
+                                        onChange={(e) => setEditingVariant({ ...editingVariant, color: e.target.value })}
+                                        className="flex-1"
+                                    />
+                                </div>
                             </div>
                             <div className="space-y-2">
                                 <Label>Stock</Label>

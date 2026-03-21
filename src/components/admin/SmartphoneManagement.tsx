@@ -11,6 +11,7 @@ import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { CreatableAttributeSelector } from '@/components/admin/CreatableAttributeSelector';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface Product {
     id: string;
@@ -303,16 +304,120 @@ export function SmartphoneManagement() {
           )
         : products;
 
+    // ── Agregar Modelo modal state ──
+    const [addModelOpen, setAddModelOpen] = useState(false);
+    const [modelBrandId, setModelBrandId] = useState('');
+    const [modelBrandName, setModelBrandName] = useState('');
+    const [modelName, setModelName] = useState('');
+    const [savingModel, setSavingModel] = useState(false);
+    const [brands, setBrands] = useState<{ id: string; name: string }[]>([]);
+    const [loadingBrands, setLoadingBrands] = useState(false);
+
+    const fetchBrands = async () => {
+        setLoadingBrands(true);
+        const { data } = await supabase.from('brands').select('id, name').order('name');
+        setBrands(data || []);
+        setLoadingBrands(false);
+    };
+
+    const handleAddModel = async () => {
+        const trimmedName = modelName.trim();
+        if (!modelBrandId || !trimmedName) {
+            toast({ title: "Faltan datos", description: "Seleccioná una marca e ingresá el nombre del modelo.", variant: "destructive" });
+            return;
+        }
+        setSavingModel(true);
+        try {
+            // Check for duplicate (case-insensitive)
+            const { data: existing } = await supabase
+                .from('models')
+                .select('id, name')
+                .eq('brand_id', modelBrandId)
+                .ilike('name', trimmedName)
+                .maybeSingle();
+
+            if (existing) {
+                toast({ title: "Modelo ya existe", description: `"${existing.name}" ya está registrado para esa marca.`, variant: "destructive" });
+                setSavingModel(false);
+                return;
+            }
+
+            const { error } = await supabase.from('models').insert({ name: trimmedName, brand_id: modelBrandId });
+            if (error) throw error;
+
+            toast({ title: "Modelo creado", description: `${modelBrandName} ${trimmedName} agregado correctamente.` });
+            setAddModelOpen(false);
+            setModelName('');
+            setModelBrandId('');
+            setModelBrandName('');
+        } catch (err: any) {
+            toast({ title: "Error", description: err.message, variant: "destructive" });
+        }
+        setSavingModel(false);
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold flex items-center gap-2">
                     <Smartphone className="h-6 w-6" /> Gestión de Celulares
                 </h2>
-                <Button onClick={clearForm}>
-                    <Plus className="mr-2 h-4 w-4" /> Agregar Celular
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={() => { fetchBrands(); setAddModelOpen(true); }} className="text-muted-foreground">
+                        <Plus className="mr-2 h-4 w-4" /> Agregar Modelo
+                    </Button>
+                    <Button onClick={clearForm}>
+                        <Plus className="mr-2 h-4 w-4" /> Agregar Celular
+                    </Button>
+                </div>
             </div>
+
+            {/* Modal Agregar Modelo */}
+            <Dialog open={addModelOpen} onOpenChange={setAddModelOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Agregar Nuevo Modelo</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Marca</Label>
+                            {loadingBrands ? (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Cargando marcas...</div>
+                            ) : (
+                                <Select value={modelBrandId} onValueChange={(id) => {
+                                    setModelBrandId(id);
+                                    setModelBrandName(brands.find(b => b.id === id)?.name || '');
+                                }}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Seleccionar marca..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {brands.map(b => (
+                                            <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Nombre del Modelo</Label>
+                            <Input
+                                placeholder="Ej: Galaxy S24 Ultra"
+                                value={modelName}
+                                onChange={(e) => setModelName(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleAddModel(); }}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setAddModelOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleAddModel} disabled={savingModel || !modelBrandId || !modelName.trim()}>
+                            {savingModel && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Crear Modelo
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <div className={isFormOpen ? "grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-6 items-start" : "space-y-4"}>
 
