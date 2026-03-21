@@ -385,8 +385,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                 >
                     {/* Cerrar */}
                     <button
-                        onClick={(e) => { e.stopPropagation(); closeLightbox(); }}
-                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={closeLightbox}
                         className="absolute top-4 right-4 text-white/70 hover:text-white p-2 hover:bg-white/10 rounded-full transition-colors z-[110]"
                         aria-label="Cerrar"
                     >
@@ -394,10 +393,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                     </button>
 
                     {/* Imagen centrada con contenedor de tamaño estandarizado */}
-                    <div
-                        className="flex-1 flex items-center justify-center"
-                        onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className="flex-1 flex items-center justify-center">
                         {images[currentImageIndex] && (
                             <div
                                 style={{
@@ -419,7 +415,6 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                         borderRadius: '8px',
                                         display: 'block',
                                     }}
-                                    onClick={closeLightbox}
                                 />
                             </div>
                         )}
@@ -430,7 +425,6 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                         <>
                             <button
                                 onClick={(e) => { e.stopPropagation(); prevImage(); }}
-                                onPointerDown={(e) => e.stopPropagation()}
                                 className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-3 hover:bg-white/10 rounded-full transition-colors z-[110]"
                                 aria-label="Anterior"
                             >
@@ -438,7 +432,6 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); nextImage(); }}
-                                onPointerDown={(e) => e.stopPropagation()}
                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-3 hover:bg-white/10 rounded-full transition-colors z-[110]"
                                 aria-label="Siguiente"
                             >
