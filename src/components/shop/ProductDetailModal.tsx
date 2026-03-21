@@ -14,6 +14,7 @@ interface Product {
     name: string;
     price: number;
     original_price?: number | null;
+    sale_expires_at?: string | null;
     stock: number;
     image_url: string | null;
     additional_images: string[] | null;
@@ -330,7 +331,8 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                 </div>
 
                                 <div className="mb-6">
-                                    {product.original_price != null && (
+                                    {product.original_price != null &&
+                                     (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date()) && (
                                         <p className="text-base text-muted-foreground line-through">
                                             $ {product.original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </p>

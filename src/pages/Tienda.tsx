@@ -32,6 +32,7 @@ interface Product {
   category_id: string;
   price: number;
   original_price?: number | null;
+  sale_expires_at?: string | null;
   stock: number;
   image_url: string | null;
   additional_images: string[] | null;
@@ -227,6 +228,8 @@ const Tienda = () => {
         condition: item.condition,
         // @ts-ignore
         original_price: item.original_price ?? null,
+        // @ts-ignore
+        sale_expires_at: item.sale_expires_at ?? null,
       }));
       setProducts(formattedProducts);
 
@@ -266,7 +269,7 @@ const Tienda = () => {
 
   const maxPrice = useMemo(() => {
     if (products.length === 0) return 0;
-    return Math.max(...products.map(p => p.price));
+    return Math.max(...products.map(p => p.original_price ?? p.price));
   }, [products]);
 
   const normalizeText = (text: string) => {
@@ -293,8 +296,11 @@ const Tienda = () => {
 
       const matchesCategory = !selectedCategory || product.category_id === selectedCategory;
       const matchesModel = !selectedModel || product.model_id === selectedModel;
-      // @ts-ignore
-      const matchesBrand = !selectedBrand || product.brand_id === selectedBrand;
+      // Check brand directly (celulares) OR through model_id (fundas/vidrios/protectors)
+      const matchesBrand = !selectedBrand || (
+        product.brand_id === selectedBrand ||
+        (product.model_id != null && modelBrandMap.get(product.model_id) === selectedBrand)
+      );
       // @ts-ignore
       const matchesCondition = !selectedCondition || product.condition === selectedCondition;
       const matchesTag = !selectedTag || (product.tags || []).includes(selectedTag);
@@ -309,7 +315,7 @@ const Tienda = () => {
       if (sortOrder === 'desc') return b.price - a.price;
       return 0;
     });
-  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag]);
+  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap]);
 
   // Tags available for funda category
   const availableTags = useMemo(() => {
@@ -327,6 +333,13 @@ const Tienda = () => {
     if (!selectedBrand) return models;
     return models.filter(m => m.brand_id === selectedBrand);
   }, [models, selectedBrand]);
+
+  // Map model_id → brand_id for O(1) brand lookup on fundas (js-index-maps)
+  const modelBrandMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of models) map.set(m.id, m.brand_id);
+    return map;
+  }, [models]);
 
   // Reset pagination when any filter changes
   useEffect(() => {
@@ -574,7 +587,12 @@ const Tienda = () => {
                             id={product.id}
                             name={product.name}
                             price={product.price}
-                            original_price={product.original_price}
+                            original_price={
+                              product.original_price != null &&
+                              (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date())
+                                ? product.original_price
+                                : null
+                            }
                             stock={product.stock}
                             image_url={product.image_url || undefined}
                             description={product.description || undefined}
