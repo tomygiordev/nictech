@@ -59,6 +59,7 @@ export const GlobalSearch = ({ open, onOpenChange }: GlobalSearchProps) => {
         supabase
           .from('repairs')
           .select('tracking_code, client_name, device_model, status')
+          .eq('is_deleted', false)
           .or(`tracking_code.ilike.%${trimmed}%,client_name.ilike.%${trimmed}%,device_model.ilike.%${trimmed}%`)
           .limit(4),
       ]);

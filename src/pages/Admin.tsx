@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag } from 'lucide-react';
+import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag, Trash2 } from 'lucide-react';
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { supabase } from '@/integrations/supabase/client';
@@ -46,6 +46,7 @@ interface Repair {
   problem_description: string | null;
   created_at: string;
   locality?: string;
+  is_deleted?: boolean | null;
 }
 
 interface Category {
@@ -286,7 +287,7 @@ const Admin = () => {
     setLoading(true);
 
     const [repairsRes, productsRes, categoriesRes, ordersRes] = await Promise.all([
-      supabase.from('repairs').select('*').order('created_at', { ascending: false }),
+      supabase.from('repairs').select('*').eq('is_deleted', false).order('created_at', { ascending: false }),
       supabase.from('products').select('*, category:categories(*)').order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('*').order('name', { ascending: true }),
       supabase.from('orders' as any).select('*').order('created_at', { ascending: false }),
@@ -422,7 +423,28 @@ const Admin = () => {
     setSavingRepair(null);
   };
 
+  const hideRepair = async (id: string) => {
+    if (!window.confirm('¿Estás seguro de que deseas ocultar (eliminar) esta reparación del panel?')) return;
 
+    const { error } = await supabase
+      .from('repairs' as any)
+      .update({ is_deleted: true })
+      .eq('id', id);
+
+    if (error) {
+      toast({
+        title: 'Error',
+        description: 'No se pudo ocultar la reparación.',
+        variant: 'destructive',
+      });
+    } else {
+      setRepairs(repairs.filter(r => r.id !== id));
+      toast({
+        title: 'Reparación oculta',
+        description: 'La reparación ha sido ocultada del panel exitosamente.',
+      });
+    }
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isAdditional = false) => {
     const file = e.target.files?.[0];
@@ -908,7 +930,17 @@ const Admin = () => {
                                 </Select>
                               </TableCell>
                               <TableCell>
-                                <RepairLogsDialog repairId={repair.id} trackingCode={repair.tracking_code} />
+                                <div className="flex items-center gap-2">
+                                  <RepairLogsDialog repairId={repair.id} trackingCode={repair.tracking_code} />
+                                  <Button 
+                                    variant="destructive" 
+                                    size="icon" 
+                                    onClick={() => hideRepair(repair.id)}
+                                    title="Ocultar (Eliminar) Reparación"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}

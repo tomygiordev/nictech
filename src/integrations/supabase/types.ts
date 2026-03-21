@@ -407,6 +407,7 @@ export type Database = {
           status: Database["public"]["Enums"]["repair_status"] | null
           tracking_code: string
           updated_at: string | null
+          is_deleted: boolean | null
         }
         Insert: {
           client_dni: string
@@ -422,6 +423,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["repair_status"] | null
           tracking_code: string
           updated_at?: string | null
+          is_deleted?: boolean | null
         }
         Update: {
           client_dni?: string
@@ -437,6 +439,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["repair_status"] | null
           tracking_code?: string
           updated_at?: string | null
+          is_deleted?: boolean | null
         }
         Relationships: []
       }
