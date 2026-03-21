@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Check, ChevronsUpDown, Plus, Trash2 } from "lucide-react";
+import { useState, useEffect, useRef } from 'react';
+import { Check, ChevronsUpDown, Plus, Trash2, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
+import { getVariantColor, saveColorHex, loadColorsFromDB } from '@/lib/colors';
 
 interface Item {
     id: string;
@@ -38,9 +39,13 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(false);
+    // Forzar re-render cuando se edita un color
+    const [colorTick, setColorTick] = useState(0);
+    const isColors = tableName === 'colors';
 
     useEffect(() => {
         fetchItems();
+        if (isColors) loadColorsFromDB().then(() => setColorTick(t => t + 1));
     }, [tableName]);
 
     const fetchItems = async () => {
@@ -133,39 +138,76 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
                                 </Button>
                             </CommandEmpty>
                             <CommandGroup className="max-h-[200px] overflow-y-auto">
-                                {items.map((item) => (
-                                    <CommandItem
-                                        key={item.id}
-                                        value={item.name}
-                                        className="group"
-                                        onSelect={() => {
-                                            onValueChange(item.name);
-                                            setOpen(false);
-                                            setSearch("");
-                                        }}
-                                    >
-                                        <Check
-                                            className={cn(
-                                                "mr-2 h-4 w-4",
-                                                selectedValue === item.name ? "opacity-100" : "opacity-0"
-                                            )}
-                                        />
-                                        <span className="flex-1">{item.name}</span>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                deleteItem(item.id, item.name);
+                                {items.map((item) => {
+                                    const hex = isColors ? getVariantColor(item.name) : null;
+                                    const hexForInput = hex && hex.startsWith('#') ? hex : '#9CA3AF';
+                                    return (
+                                        <CommandItem
+                                            key={item.id}
+                                            value={item.name}
+                                            className="group"
+                                            onSelect={() => {
+                                                onValueChange(item.name);
+                                                setOpen(false);
+                                                setSearch("");
                                             }}
-                                            onPointerDown={(e) => e.stopPropagation()} // Prevent selecting item when clicking delete
-                                            title="Eliminar opción"
                                         >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </CommandItem>
-                                ))}
+                                            <Check
+                                                className={cn(
+                                                    "mr-2 h-4 w-4 shrink-0",
+                                                    selectedValue === item.name ? "opacity-100" : "opacity-0"
+                                                )}
+                                            />
+                                            {/* Swatch de color — solo para tabla colors */}
+                                            {isColors && (
+                                                <span
+                                                    className="w-3.5 h-3.5 rounded-full border border-border mr-2 shrink-0"
+                                                    style={{ background: hex ?? '#9CA3AF' }}
+                                                />
+                                            )}
+                                            <span className="flex-1 truncate">{item.name}</span>
+
+                                            {/* Lápiz de color — solo para tabla colors */}
+                                            {isColors && (
+                                                <label
+                                                    title={`Cambiar color de "${item.name}"`}
+                                                    className="relative cursor-pointer flex items-center justify-center h-6 w-6 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-muted"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onPointerDown={(e) => e.stopPropagation()}
+                                                >
+                                                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                                                    <input
+                                                        type="color"
+                                                        className="absolute opacity-0 w-0 h-0"
+                                                        value={hexForInput}
+                                                        onChange={async (e) => {
+                                                            const newHex = e.target.value;
+                                                            const ok = await saveColorHex(item.name, newHex);
+                                                            if (ok) {
+                                                                toast({ title: `Color guardado`, description: `"${item.name}" → ${newHex}` });
+                                                                setColorTick(t => t + 1);
+                                                            }
+                                                        }}
+                                                    />
+                                                </label>
+                                            )}
+
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    deleteItem(item.id, item.name);
+                                                }}
+                                                onPointerDown={(e) => e.stopPropagation()}
+                                                title="Eliminar opción"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </CommandItem>
+                                    );
+                                })}
                             </CommandGroup>
                         </CommandList>
                     </Command>
