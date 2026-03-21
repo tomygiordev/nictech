@@ -183,7 +183,7 @@ const Tienda = () => {
 
   const fetchProducts = async () => {
     const [productsRes, categoriesRes, modelsRes, brandsRes] = await Promise.all([
-      supabase.from('products').select('*, category:categories(*)').gt('stock', 0).order('created_at', { ascending: false }),
+      supabase.from('products').select('*, category:categories(*), product_variants(*)').gt('stock', 0).order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('*').order('name', { ascending: true }),
       supabase.from('models' as any).select('*, brand:brands(*)'),
       supabase.from('brands' as any).select('*').order('name', { ascending: true }),
@@ -196,7 +196,7 @@ const Tienda = () => {
         category_id: item.category_id,
         price: item.price,
         stock: item.stock,
-        image_url: item.image_url,
+        image_url: item.image_url || (item.product_variants as any[])?.[0]?.image_url || null,
         additional_images: item.additional_images || [],
         description: item.description,
         category: item.category,
