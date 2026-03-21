@@ -226,8 +226,9 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
                   <span className="sr-only">Menú</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="right" className="w-[280px] pt-10">
-                <nav className="flex flex-col gap-1">
+              <SheetContent side="right" className="w-[280px] p-0 flex flex-col">
+                {/* Área scrollable */}
+                <nav className="flex-1 overflow-y-auto px-3 pt-10 pb-4 flex flex-col gap-1" style={{ WebkitOverflowScrolling: 'touch' }}>
                   {navLinks.map((link) => (
                     <Link
                       key={link.href}
@@ -283,16 +284,19 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
                       {link.label}
                     </Link>
                   ))}
+                </nav>
 
+                {/* Admin — siempre visible al fondo */}
+                <div className="border-t border-border/50 px-3 py-3 shrink-0">
                   <Link
                     to="/login"
                     onClick={() => setSheetOpen(false)}
-                    className="px-4 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-2 mt-2 border-t border-border/50"
+                    className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors w-full"
                   >
                     <Key className="h-4 w-4" />
-                    Admin Panel
+                    Panel de Administración
                   </Link>
-                </nav>
+                </div>
               </SheetContent>
             </Sheet>
           </div>
