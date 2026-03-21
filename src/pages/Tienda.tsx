@@ -301,7 +301,20 @@ const Tienda = () => {
         normalizedTags.some(tag => tag.includes(term))
       );
 
-      const matchesCategory = !selectedCategory || product.category_id === selectedCategory;
+      // Filtro especial para "Promos" - mostrar solo productos con descuentos vigentes
+      let matchesCategory = true;
+      if (selectedCategory) {
+        const categoryName = categories.find(c => c.id === selectedCategory)?.name.toLowerCase() || '';
+        if (categoryName === 'promos') {
+          // Promos: solo productos con original_price y descuento no expirado
+          const hasActivePromo = product.original_price != null &&
+            (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date());
+          matchesCategory = hasActivePromo;
+        } else {
+          matchesCategory = product.category_id === selectedCategory;
+        }
+      }
+
       const matchesModel = !selectedModel || product.model_id === selectedModel;
       // Check brand directly (celulares) OR through model_id (fundas/vidrios/protectors)
       const matchesBrand = !selectedBrand || (
@@ -322,7 +335,7 @@ const Tienda = () => {
       if (sortOrder === 'desc') return b.price - a.price;
       return 0;
     });
-  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap]);
+  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap, categories]);
 
   // Tags available for funda category
   const availableTags = useMemo(() => {
@@ -597,6 +610,7 @@ const Tienda = () => {
                             image_url={product.image_url || undefined}
                             description={product.description || undefined}
                             category={product.category?.name || 'Varios'}
+                            tags={product.tags}
                           />
                         </div>
                       ))}
