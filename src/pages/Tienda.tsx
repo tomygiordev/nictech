@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import {
   Search, Loader2, Package, LayoutGrid,
@@ -73,11 +74,13 @@ const getCategoryIcon = (name: string) => {
 };
 
 const Tienda = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 0]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default'>('default');
@@ -157,9 +160,26 @@ const Tienda = () => {
     return name.includes('celular') || name.includes('smartphone') || name.includes('iphone');
   }, [selectedCategory, categories]);
 
+  const isFundaCategory = useMemo(() => {
+    if (!selectedCategory) return false;
+    const cat = categories.find(c => c.id === selectedCategory);
+    return !!cat && cat.name.toLowerCase().includes('funda');
+  }, [selectedCategory, categories]);
+
   useEffect(() => {
     fetchProducts();
   }, []);
+
+  // Apply ?nombre= URL param when categories are loaded
+  useEffect(() => {
+    const nombre = searchParams.get('nombre');
+    if (!nombre || categories.length === 0) return;
+    const match = categories.find(c => c.name.toLowerCase() === nombre.toLowerCase());
+    if (match) {
+      setSelectedCategory(match.id);
+      setSearchParams({}, { replace: true });
+    }
+  }, [categories, searchParams, setSearchParams]);
 
   const fetchProducts = async () => {
     const [productsRes, categoriesRes, modelsRes, brandsRes] = await Promise.all([
@@ -255,10 +275,11 @@ const Tienda = () => {
       const matchesBrand = !selectedBrand || product.brand_id === selectedBrand;
       // @ts-ignore
       const matchesCondition = !selectedCondition || product.condition === selectedCondition;
+      const matchesTag = !selectedTag || (product.tags || []).includes(selectedTag);
 
       const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
 
-      return matchesSearch && matchesCategory && matchesPrice && matchesModel && matchesBrand && matchesCondition;
+      return matchesSearch && matchesCategory && matchesPrice && matchesModel && matchesBrand && matchesCondition && matchesTag;
     });
 
     return result.sort((a, b) => {
@@ -266,12 +287,23 @@ const Tienda = () => {
       if (sortOrder === 'desc') return b.price - a.price;
       return 0;
     });
-  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition]);
+  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag]);
+
+  // Tags available for funda category
+  const availableTags = useMemo(() => {
+    if (!isFundaCategory) return [];
+    const tagSet = new Set<string>();
+    for (const p of products) {
+      if (p.category_id === selectedCategory)
+        (p.tags || []).forEach(t => tagSet.add(t));
+    }
+    return Array.from(tagSet).sort();
+  }, [products, selectedCategory, isFundaCategory]);
 
   // Reset pagination when any filter changes
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_COUNT);
-  }, [searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition]);
+  }, [searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag]);
 
   const displayedProducts = useMemo(() => {
     return filteredProducts.slice(0, visibleCount);
@@ -405,6 +437,31 @@ const Tienda = () => {
                 </div>
               </div>
             </div>
+
+            {/* Tag filter pills for Fundas */}
+            {isFundaCategory && availableTags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                <button
+                  onClick={() => setSelectedTag(null)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    !selectedTag ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                  }`}
+                >
+                  Todos los tipos
+                </button>
+                {availableTags.map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                      selectedTag === tag ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="flex flex-col lg:flex-row gap-8">
               {/* Filters Sidebar */}

@@ -83,6 +83,21 @@ export function BrandModelSelector({ onBrandChange, onModelChange, selectedBrand
         if (!normalizedName) return;
 
         try {
+            const { data: existing } = await supabase
+                .from('brands')
+                .select('id, name')
+                .ilike('name', normalizedName)
+                .maybeSingle();
+
+            if (existing) {
+                if (!brands.some(b => b.id === existing.id)) setBrands(prev => [...prev, existing]);
+                onBrandChange(existing.id, existing.name);
+                setOpenBrand(false);
+                setBrandSearch("");
+                toast({ title: "Marca ya existe", description: `Se seleccionó "${existing.name}"` });
+                return;
+            }
+
             const { data, error } = await supabase
                 .from('brands')
                 .insert({ name: normalizedName })
@@ -106,6 +121,22 @@ export function BrandModelSelector({ onBrandChange, onModelChange, selectedBrand
         if (!normalizedName || !selectedBrandId) return;
 
         try {
+            const { data: existing } = await supabase
+                .from('models')
+                .select('id, name')
+                .eq('brand_id', selectedBrandId)
+                .ilike('name', normalizedName)
+                .maybeSingle();
+
+            if (existing) {
+                if (!models.some(m => m.id === existing.id)) setModels(prev => [...prev, existing]);
+                onModelChange(existing.id, existing.name);
+                setOpenModel(false);
+                setModelSearch("");
+                toast({ title: "Modelo ya existe", description: `Se seleccionó "${existing.name}"` });
+                return;
+            }
+
             const { data, error } = await supabase
                 .from('models')
                 .insert({ name: normalizedName, brand_id: selectedBrandId })

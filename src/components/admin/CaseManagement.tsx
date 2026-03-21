@@ -81,7 +81,7 @@ export const CaseManagement = () => {
 
     // Edit States
     const [editingCase, setEditingCase] = useState<any>(null); // { id, name, price }
-    const [editingVariant, setEditingVariant] = useState<any>(null); // { id, color, stock, image_url }
+    const [editingVariant, setEditingVariant] = useState<Variant | null>(null);
     const [editVariantFile, setEditVariantFile] = useState<File | null>(null);
     const [editVariantPreview, setEditVariantPreview] = useState<string | null>(null);
 
@@ -918,13 +918,13 @@ export const CaseManagement = () => {
                             </div>
                             <div className="space-y-2">
                                 <Label>Stock</Label>
-                                <Input type="number" value={editingVariant.stock} onChange={(e) => setEditingVariant({ ...editingVariant, stock: e.target.value })} />
+                                <Input type="number" value={editingVariant.stock} onChange={(e) => setEditingVariant({ ...editingVariant, stock: Number(e.target.value) })} />
                             </div>
                             <div className="space-y-2">
                                 <Label>Imagen</Label>
                                 <div className="flex items-center gap-4">
                                     {editVariantPreview || editingVariant.image_url ? (
-                                        <img src={editVariantPreview || editingVariant.image_url} alt="Vista previa de variante editada" className="h-16 w-16 object-cover rounded border" />
+                                        <img src={(editVariantPreview || editingVariant.image_url) as string} alt="Vista previa de variante editada" className="h-16 w-16 object-cover rounded border" />
                                     ) : (
                                         <div className="h-16 w-16 bg-muted rounded border flex items-center justify-center text-xs text-muted-foreground">Sin img</div>
                                     )}

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Pencil, Trash2, Smartphone, Save, X, Loader2, Upload, Image as ImageIcon } from 'lucide-react';
+import { Plus, Pencil, Trash2, Smartphone, Save, X, Loader2, Upload, Image as ImageIcon, Search } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { CreatableAttributeSelector } from '@/components/admin/CreatableAttributeSelector';
@@ -49,6 +49,7 @@ export function SmartphoneManagement() {
     // UI States
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
 
     useEffect(() => {
         fetchSmartphones();
@@ -285,7 +286,7 @@ export function SmartphoneManagement() {
     };
 
     const clearForm = () => {
-        setCurrentProduct({ additional_images: [], tags: [] });
+        setCurrentProduct({ additional_images: [], tags: [], stock: 0 });
         setPreviewUrl(null);
         setImageFile(null);
         setAdditionalFiles([]);
@@ -295,21 +296,84 @@ export function SmartphoneManagement() {
         setIsFormOpen(true);
     };
 
+    const filteredProducts = searchQuery.trim()
+        ? products.filter(p =>
+            [p.name, p.brand_name, p.model_name, p.capacity, p.color, p.condition]
+                .some(f => f?.toLowerCase().includes(searchQuery.toLowerCase()))
+          )
+        : products;
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold flex items-center gap-2">
                     <Smartphone className="h-6 w-6" /> Gestión de Celulares
                 </h2>
-                {!isFormOpen && (
-                    <Button onClick={clearForm}>
-                        <Plus className="mr-2 h-4 w-4" /> Agregar Celular
-                    </Button>
-                )}
+                <Button onClick={clearForm}>
+                    <Plus className="mr-2 h-4 w-4" /> Agregar Celular
+                </Button>
             </div>
 
+            <div className={isFormOpen ? "grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-6 items-start" : "space-y-4"}>
+
+            {/* Left column: search + table */}
+            <div className="space-y-3">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Buscar por nombre, marca, modelo..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="pl-9"
+                    />
+                </div>
+
+                <div className="rounded-md border">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Imagen</TableHead>
+                                <TableHead>Nombre</TableHead>
+                                <TableHead>Detalles</TableHead>
+                                <TableHead>Precio</TableHead>
+                                <TableHead>Stock</TableHead>
+                                <TableHead>Acciones</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {loading ? (
+                                <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-8 w-8 animate-spin mx-auto" /></TableCell></TableRow>
+                            ) : filteredProducts.length === 0 ? (
+                                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">{searchQuery ? 'Sin resultados.' : 'No hay celulares registrados.'}</TableCell></TableRow>
+                            ) : (
+                                filteredProducts.map((product) => (
+                                    <TableRow key={product.id}>
+                                        <TableCell>
+                                            {product.image_url && <img src={product.image_url} alt={product.name} className="h-10 w-10 object-contain rounded" />}
+                                        </TableCell>
+                                        <TableCell className="font-medium">{product.name}</TableCell>
+                                        <TableCell className="text-sm text-muted-foreground">
+                                            {product.capacity} • {product.color} • {product.condition}
+                                        </TableCell>
+                                        <TableCell>${product.price}</TableCell>
+                                        <TableCell>{product.stock}</TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <Button variant="ghost" size="icon" onClick={() => handleEdit(product)}><Pencil className="h-4 w-4" /></Button>
+                                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(product.id, product.image_url, product.additional_images)}><Trash2 className="h-4 w-4" /></Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
+            </div>
+
+            {/* Right column: sticky edit/add form */}
             {isFormOpen && (
-                <div className="bg-muted/30 p-6 rounded-lg border border-dashed border-primary/20 space-y-4">
+                <div className="sticky top-4 h-fit bg-muted/30 p-6 rounded-lg border border-dashed border-primary/20 space-y-4">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="font-medium text-lg text-primary">
                             {isEditing ? 'Editar Celular' : 'Nuevo Celular'}
@@ -319,7 +383,7 @@ export function SmartphoneManagement() {
                         </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 gap-4">
                         <div className="space-y-4">
 
                             <BrandModelSelector
@@ -394,7 +458,7 @@ export function SmartphoneManagement() {
                                     <Label>Stock</Label>
                                     <Input
                                         type="number"
-                                        value={currentProduct.stock || ''}
+                                        value={currentProduct.stock ?? ''}
                                         onChange={e => setCurrentProduct({ ...currentProduct, stock: Number(e.target.value) })}
                                     />
                                 </div>
@@ -492,46 +556,6 @@ export function SmartphoneManagement() {
                 </div>
             )}
 
-            <div className="rounded-md border">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Imagen</TableHead>
-                            <TableHead>Nombre</TableHead>
-                            <TableHead>Detalles</TableHead>
-                            <TableHead>Precio</TableHead>
-                            <TableHead>Stock</TableHead>
-                            <TableHead>Acciones</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {loading ? (
-                            <TableRow><TableCell colSpan={6} className="text-center py-8"><Loader2 className="h-8 w-8 animate-spin mx-auto" /></TableCell></TableRow>
-                        ) : products.length === 0 ? (
-                            <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No hay celulares registrados.</TableCell></TableRow>
-                        ) : (
-                            products.map((product) => (
-                                <TableRow key={product.id}>
-                                    <TableCell>
-                                        {product.image_url && <img src={product.image_url} alt={product.name} className="h-10 w-10 object-contain rounded" />}
-                                    </TableCell>
-                                    <TableCell className="font-medium">{product.name}</TableCell>
-                                    <TableCell className="text-sm text-muted-foreground">
-                                        {product.capacity} • {product.color} • {product.condition}
-                                    </TableCell>
-                                    <TableCell>${product.price}</TableCell>
-                                    <TableCell>{product.stock}</TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-2">
-                                            <Button variant="ghost" size="icon" onClick={() => handleEdit(product)}><Pencil className="h-4 w-4" /></Button>
-                                            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(product.id, product.image_url, product.additional_images)}><Trash2 className="h-4 w-4" /></Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))
-                        )}
-                    </TableBody>
-                </Table>
             </div>
         </div>
     );
