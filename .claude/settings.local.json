@@ -12,7 +12,9 @@
       "Bash(find /c/Users/Gime/Desktop/nictech/src -name *repair* -o -name *case*)",
       "Bash(find /c/Users/Gime/Desktop/nictech -path */src/utils/* -type f)",
       "mcp__supabase__list_projects",
-      "mcp__supabase__apply_migration"
+      "mcp__supabase__apply_migration",
+      "Bash(git checkout:*)",
+      "Bash(npm run:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
