@@ -191,8 +191,13 @@ const Tienda = () => {
 
     let applied = false;
     if (nombre) {
-      const match = categories.find(c => c.name.toLowerCase() === nombre.toLowerCase());
-      if (match) { setSelectedCategory(match.id); applied = true; }
+      if (nombre.toLowerCase() === 'promos') {
+        setSelectedCategory('__promos__');
+        applied = true;
+      } else {
+        const match = categories.find(c => c.name.toLowerCase() === nombre.toLowerCase());
+        if (match) { setSelectedCategory(match.id); applied = true; }
+      }
     }
     if (marca && brands.length > 0) {
       const match = brands.find(b => b.name.toLowerCase() === marca.toLowerCase());
@@ -304,8 +309,9 @@ const Tienda = () => {
       // Filtro especial para "Promos" - mostrar solo productos con descuentos vigentes
       let matchesCategory = true;
       if (selectedCategory) {
-        const categoryName = categories.find(c => c.id === selectedCategory)?.name.toLowerCase() || '';
-        if (categoryName === 'promos') {
+        const isPromos = selectedCategory === '__promos__' ||
+          categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'promos';
+        if (isPromos) {
           // Promos: solo productos con original_price y descuento no expirado
           const hasActivePromo = product.original_price != null &&
             (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date());
