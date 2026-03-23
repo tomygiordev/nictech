@@ -292,7 +292,7 @@ const Checkout = () => {
 
               {/* Order Summary */}
               <div className="lg:col-span-5">
-                <div className="bg-muted/30 rounded-2xl p-6 h-fit sticky top-24 space-y-6">
+                <div className="bg-muted/30 rounded-2xl p-6 h-fit lg:sticky lg:top-24 space-y-6">
                   <h2 className="text-xl font-bold">Resumen del Pedido</h2>
 
                   <div className="space-y-4">
@@ -303,6 +303,7 @@ const Checkout = () => {
                             <img
                               src={item.image_url}
                               alt={item.name}
+                              loading="lazy"
                               className="h-full w-full object-cover"
                             />
                           ) : (

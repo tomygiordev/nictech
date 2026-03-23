@@ -146,7 +146,6 @@ const Blog = () => {
           .order('created_at', { ascending: false });
 
         if (error || !data || data.length === 0) {
-          console.log("Using fallback posts");
           setPosts(fallbackPosts);
         } else {
           const mappedPosts = data.map((post: any) => ({
@@ -219,6 +218,7 @@ const Blog = () => {
                         <img
                           src={post.image_url}
                           alt={post.title}
+                          loading="lazy"
                           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                         />
                       ) : (
@@ -284,6 +284,7 @@ const Blog = () => {
                     <img
                       src={selectedPost.image_url}
                       alt={selectedPost.title}
+                      loading="lazy"
                       className="h-full w-full object-cover"
                     />
                   ) : (

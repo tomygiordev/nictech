@@ -171,7 +171,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
             image_url: mappedImageUrl,
         });
 
-        toast.success(`${productName} se agregó a tu carrito`, { duration: 2000 });
+        toast.success(`${productName} se agregó a tu carrito`, { duration: 3500 });
 
         onClose();
     };

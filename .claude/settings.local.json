@@ -17,7 +17,8 @@
       "Bash(npm run:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "mcp__supabase__execute_sql"
+      "mcp__supabase__execute_sql",
+      "Bash(npx tsc:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

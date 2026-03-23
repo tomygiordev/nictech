@@ -150,6 +150,7 @@ export const GlobalSearch = ({ open, onOpenChange }: GlobalSearchProps) => {
                   <img
                     src={product.image_url}
                     alt={product.name}
+                    loading="lazy"
                     className="h-8 w-8 rounded object-contain shrink-0 bg-muted"
                   />
                 ) : (

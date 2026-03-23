@@ -259,11 +259,7 @@ const Admin = () => {
   const { session, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!authLoading && !session) {
-      navigate('/login');
-    }
-  }, [session, authLoading, navigate]);
+  // Auth protection handled by ProtectedRoute wrapper in App.tsx
 
   const hasFetchedRef = useRef(false);
 
@@ -308,7 +304,6 @@ const Admin = () => {
         category: item.category, // This comes from the join
         tags: item.tags || []
       }));
-      setProducts(formattedProducts);
       setProducts(formattedProducts);
     }
     if (categoriesRes.data) setCategories(categoriesRes.data as unknown as Category[]);
@@ -571,8 +566,25 @@ const Admin = () => {
   };
 
   const uploadFile = async (file: File) => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random()}.${fileExt}`;
+    // Validate file type
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      throw new Error('Tipo de archivo no permitido. Solo se aceptan imágenes (JPG, PNG, WebP, GIF).');
+    }
+
+    // Validate file size (max 5MB)
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      throw new Error('El archivo es demasiado grande. Máximo 5MB.');
+    }
+
+    const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    if (!fileExt || !ALLOWED_EXTENSIONS.includes(fileExt)) {
+      throw new Error('Extensión de archivo no permitida.');
+    }
+
+    const fileName = `${crypto.randomUUID()}.${fileExt}`;
     const filePath = `${fileName}`;
 
     const { error: uploadError } = await supabase.storage
@@ -679,15 +691,8 @@ const Admin = () => {
     setSavingProduct(false);
   };
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!session) return null; // Prevent flash of content before redirect
+  // Auth loading/redirect handled by ProtectedRoute wrapper
+  if (!session) return null;
 
   return (
     <>

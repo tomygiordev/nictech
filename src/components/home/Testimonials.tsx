@@ -98,15 +98,19 @@ export const Testimonials = () => {
                 size="icon"
                 className="rounded-full"
                 onClick={prevTestimonial}
+                aria-label="Testimonio anterior"
               >
                 <ChevronLeft className="h-5 w-5" />
               </Button>
 
               {/* Dots */}
-              <div className="flex gap-2">
-                {testimonials.map((_, index) => (
+              <div className="flex gap-2" role="tablist" aria-label="Testimonios">
+                {testimonials.map((t, index) => (
                   <button
                     key={index}
+                    role="tab"
+                    aria-selected={index === currentIndex}
+                    aria-label={`Testimonio de ${t.name}`}
                     onClick={() => setCurrentIndex(index)}
                     className={`h-2 rounded-full transition-all duration-300 ${index === currentIndex
                       ? 'w-8 bg-primary'
@@ -121,6 +125,7 @@ export const Testimonials = () => {
                 size="icon"
                 className="rounded-full"
                 onClick={nextTestimonial}
+                aria-label="Siguiente testimonio"
               >
                 <ChevronRight className="h-5 w-5" />
               </Button>

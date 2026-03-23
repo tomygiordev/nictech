@@ -1,11 +1,22 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Plus, Minus, Trash2, ShoppingBag, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 
 export const CartSlideOver = () => {
   const { items, isOpen, closeCart, updateQuantity, removeFromCart, totalPrice, clearCart, validateCart, isValidating } = useCart();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Validate stock every time the cart is opened
   useEffect(() => {
@@ -75,6 +86,7 @@ export const CartSlideOver = () => {
                         <img
                           src={item.image_url}
                           alt={item.name}
+                          loading="lazy"
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -165,10 +177,27 @@ export const CartSlideOver = () => {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={clearCart}
+                onClick={() => setShowClearConfirm(true)}
               >
                 Vaciar Carrito
               </Button>
+
+              <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Vaciar carrito</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Se eliminarán todos los productos del carrito. Esta acción no se puede deshacer.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => { clearCart(); setShowClearConfirm(false); }}>
+                      Vaciar
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           )}
         </div>

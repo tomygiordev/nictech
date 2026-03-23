@@ -1,10 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = [
+  "https://nictech.vercel.app",
+  "https://www.nictech.vercel.app",
+  "http://localhost:8080",
+  "http://localhost:5173",
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get("origin") || "";
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 interface CartItem {
   id: string;
@@ -29,7 +40,7 @@ interface RequestBody {
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: getCorsHeaders(req) });
   }
 
   try {
@@ -44,10 +55,38 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body: RequestBody = await req.json();
-    console.log("Received request body:", JSON.stringify(body));
 
-    if (!body.items || body.items.length === 0) {
+    // Validate request body structure
+    if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
       throw new Error("No items provided");
+    }
+
+    if (body.items.length > 50) {
+      throw new Error("Too many items in cart");
+    }
+
+    // Validate each item has required fields
+    for (const item of body.items) {
+      if (!item.id || typeof item.id !== "string") {
+        throw new Error("Item ID inválido");
+      }
+      if (!item.quantity || typeof item.quantity !== "number" || item.quantity < 1 || !Number.isInteger(item.quantity)) {
+        throw new Error(`Cantidad inválida para ${item.name || "producto"}`);
+      }
+    }
+
+    // Validate payer data if provided
+    if (body.payer) {
+      if (body.payer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.payer.email)) {
+        throw new Error("Email inválido");
+      }
+      if (body.payer.dni) {
+        const cleanDni = body.payer.dni.replace(/[.\s-]/g, "");
+        if (!/^\d{7,8}$/.test(cleanDni)) {
+          throw new Error("DNI inválido");
+        }
+        body.payer.dni = cleanDni;
+      }
     }
 
     // ==========================================
@@ -88,10 +127,10 @@ serve(async (req) => {
       origin = origin.slice(0, -1);
     }
 
-    console.log("Using origin:", origin);
-
-    // Validate origin but proceed with fallback if needed for testing
-    const validOrigin = (origin && origin.startsWith("http")) ? origin : "https://nictech.vercel.app"; // Fallback to Vercel URL if unknown
+    // Validate origin: only accept HTTPS in production, allow localhost for dev
+    const validOrigin = (origin && (origin.startsWith("https://") || origin.startsWith("http://localhost")))
+      ? origin
+      : "https://nictech.vercel.app";
 
     // IMPORTANT: Mercado Pago sometimes dislikes localhost for auto_return
     // We strictly format the back_urls here.
@@ -135,8 +174,6 @@ serve(async (req) => {
       }
     };
 
-    console.log("PAYLOAD TO MP:", JSON.stringify(preference, null, 2));
-
     // Create preference via MercadoPago API
     const mpResponse = await fetch("https://api.mercadopago.com/checkout/preferences", {
       method: "POST",
@@ -148,7 +185,6 @@ serve(async (req) => {
     });
 
     const mpData = await mpResponse.json();
-    console.log("MercadoPago response:", JSON.stringify(mpData));
 
     if (!mpResponse.ok) {
       console.error("MercadoPago API error:", mpData);
@@ -162,7 +198,7 @@ serve(async (req) => {
         sandbox_init_point: mpData.sandbox_init_point,
       }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         status: 200,
       }
     );
@@ -172,7 +208,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ error: errorMessage }),
       {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         status: 400,
       }
     );

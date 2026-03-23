@@ -23,6 +23,7 @@ export const Footer = () => {
                 href="https://www.facebook.com/profile.php?id=61563599450690&sk=about"
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label="Síguenos en Facebook"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
               >
                 <Facebook className="h-4 w-4" />
@@ -31,6 +32,7 @@ export const Footer = () => {
                 href="https://www.instagram.com/nictech.ar/"
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label="Síguenos en Instagram"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
               >
                 <Instagram className="h-4 w-4" />
@@ -39,6 +41,7 @@ export const Footer = () => {
                 href="https://www.youtube.com/@nictech.repara"
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label="Suscribite en YouTube"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
               >
                 <Youtube className="h-4 w-4" />
@@ -47,8 +50,8 @@ export const Footer = () => {
                 href="https://www.tiktok.com/@nictech.ar?_t=ZS-93n1Y2l53h3"
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label="Síguenos en TikTok"
                 className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary-foreground/10 hover:bg-primary transition-colors"
-                title="TikTok"
               >
                 <Video className="h-4 w-4" />
               </a>

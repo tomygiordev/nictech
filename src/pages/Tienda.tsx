@@ -208,10 +208,13 @@ const Tienda = () => {
 
   const fetchProducts = async () => {
     const [productsRes, categoriesRes, modelsRes, brandsRes] = await Promise.all([
-      supabase.from('products').select('*, category:categories(*), product_variants(*)').gt('stock', 0).order('created_at', { ascending: false }),
-      supabase.from('categories' as any).select('*').order('name', { ascending: true }),
-      supabase.from('models' as any).select('*, brand:brands(*)'),
-      supabase.from('brands' as any).select('*').order('name', { ascending: true }),
+      supabase.from('products')
+        .select('id, name, category_id, price, stock, image_url, additional_images, description, tags, model_id, brand_id, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(image_url)')
+        .gt('stock', 0)
+        .order('created_at', { ascending: false }),
+      supabase.from('categories' as any).select('id, name').order('name', { ascending: true }),
+      supabase.from('models' as any).select('id, name, brand_id, brand:brands(name)'),
+      supabase.from('brands' as any).select('id, name').order('name', { ascending: true }),
     ]);
 
     if (productsRes.data) {
@@ -457,6 +460,7 @@ const Tienda = () => {
                         className={`
                           group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
                           transition-all duration-200 whitespace-nowrap select-none
+                          focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none
                           ${!selectedCategory
                             ? 'text-primary bg-primary/10'
                             : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
@@ -479,6 +483,7 @@ const Tienda = () => {
                             className={`
                               group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
                               transition-all duration-200 whitespace-nowrap select-none
+                              focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none
                               ${isActive
                                 ? 'text-primary bg-primary/10'
                                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
@@ -503,7 +508,7 @@ const Tienda = () => {
               <div className="flex flex-wrap gap-2 mt-4">
                 <button
                   onClick={() => setSelectedTag(null)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none ${
                     !selectedTag ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'
                   }`}
                 >
@@ -513,7 +518,7 @@ const Tienda = () => {
                   <button
                     key={tag}
                     onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none ${
                       selectedTag === tag ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'
                     }`}
                   >
@@ -589,18 +594,12 @@ const Tienda = () => {
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
                       {displayedProducts.map((product) => (
-                        <div
+                        <button
                           key={product.id}
+                          type="button"
                           onClick={() => setSelectedProduct(product)}
-                          className="cursor-pointer"
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              setSelectedProduct(product);
-                            }
-                          }}
+                          className="cursor-pointer text-left w-full"
+                          aria-label={`Ver detalles de ${product.name}`}
                         >
                           <ProductCard
                             id={product.id}
@@ -618,7 +617,7 @@ const Tienda = () => {
                             category={product.category?.name || 'Varios'}
                             tags={product.tags}
                           />
-                        </div>
+                        </button>
                       ))}
                     </div>
 

@@ -1,3 +1,4 @@
+import React from 'react';
 import { ShoppingCart, Package, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
@@ -15,7 +16,7 @@ interface ProductCardProps {
   tags?: string[] | null;
 }
 
-export const ProductCard = ({
+export const ProductCard = React.memo(({
   id,
   name,
   price,
@@ -37,7 +38,7 @@ export const ProductCard = ({
       maxStock: stock,
       image_url: image_url || null,
     });
-    toast.success(`${name} se agregó a tu carrito`, { duration: 2000 });
+    toast.success(`${name} se agregó a tu carrito`, { duration: 3500 });
   };
 
   return (
@@ -48,6 +49,7 @@ export const ProductCard = ({
           <img
             src={image_url}
             alt={name}
+            loading="lazy"
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
@@ -139,4 +141,4 @@ export const ProductCard = ({
       </div>
     </div>
   );
-};
+});

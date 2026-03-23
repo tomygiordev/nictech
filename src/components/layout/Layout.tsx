@@ -1,4 +1,5 @@
 import { useState, lazy, Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
 import { CartSlideOver } from './CartSlideOver';
@@ -26,15 +27,18 @@ export const Layout = ({ children }: LayoutProps) => {
     <div className="min-h-screen flex flex-col">
       <Navbar onSearchOpen={() => setSearchOpen(true)} />
       {searchOpen && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
           <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
         </Suspense>
       )}
-      <div className="bg-primary text-primary-foreground overflow-hidden py-2 border-b border-primary/20">
-        {/* w-max ensures translateX(-50%) is 50% of CONTENT width, not viewport */}
-        <div className="flex w-max whitespace-nowrap animate-marquee gap-0">
+      <div
+        className="bg-primary text-primary-foreground overflow-hidden py-2 border-b border-primary/20 group"
+        role="marquee"
+        aria-label="Información destacada"
+      >
+        <div className="flex w-max whitespace-nowrap animate-marquee group-hover:[animation-play-state:paused] group-focus-within:[animation-play-state:paused] motion-reduce:animate-none gap-0">
           {[...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS].map((item, i) => (
-            <span key={i} className="text-xs font-medium inline-flex items-center">
+            <span key={i} className="text-xs sm:text-sm font-medium inline-flex items-center">
               <span className="px-8">{item}</span>
               <span className="opacity-40">·</span>
             </span>

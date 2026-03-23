@@ -19,7 +19,7 @@ const Login = () => {
     const { toast } = useToast();
     const { session, loading: authLoading } = useAuth();
 
-    // Rate limiting state
+    // Rate limiting state (client-side only — server-side rate limiting should also be configured in Supabase)
     const [failedAttempts, setFailedAttempts] = useState(0);
     const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
 

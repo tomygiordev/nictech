@@ -779,7 +779,7 @@ export const CaseManagement = () => {
                                                     <div className="flex items-center gap-4">
                                                         <div className="relative">
                                                             {v.image_url ? (
-                                                                <img src={v.image_url} alt="" className="w-12 h-12 object-cover rounded-md bg-muted border" />
+                                                                <img src={v.image_url} alt={`Variante ${v.color}`} className="w-12 h-12 object-cover rounded-md bg-muted border" />
                                                             ) : (
                                                                 <div
                                                                     className="w-12 h-12 rounded-md border flex items-center justify-center shadow-sm"

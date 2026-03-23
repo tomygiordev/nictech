@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface CartItem {
@@ -39,14 +39,35 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>(() => {
-    const savedItems = localStorage.getItem('cartItems');
-    return savedItems ? JSON.parse(savedItems) : [];
+    try {
+      const savedItems = localStorage.getItem('cartItems');
+      if (!savedItems) return [];
+      const parsed = JSON.parse(savedItems);
+      if (!Array.isArray(parsed)) {
+        localStorage.removeItem('cartItems');
+        return [];
+      }
+      return parsed;
+    } catch {
+      localStorage.removeItem('cartItems');
+      return [];
+    }
   });
   const [isOpen, setIsOpen] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
 
+  // Debounce localStorage writes to avoid blocking main thread on rapid cart updates
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
-    localStorage.setItem('cartItems', JSON.stringify(items));
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem('cartItems', JSON.stringify(items));
+      } catch {
+        // localStorage full or unavailable
+      }
+    }, 500);
+    return () => clearTimeout(saveTimerRef.current);
   }, [items]);
 
   /**
