@@ -965,7 +965,7 @@ const Admin = () => {
               <TabsContent value="products">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                   {/* Add Product Form — sticky */}
-                  <div className="bg-card rounded-2xl border border-border p-6 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
+                  <div className="bg-card rounded-2xl border border-border p-6 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-y-auto hide-scrollbar">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold flex items-center gap-2">
                         <Plus className="h-5 w-5" />
