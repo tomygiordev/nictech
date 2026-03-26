@@ -42,6 +42,7 @@ interface Product {
   model_id?: string;
   brand_id?: string;
   condition?: string;
+  price_usd?: number | null;
 }
 
 interface SmartphoneModel {
@@ -86,7 +87,8 @@ const Tienda = () => {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 0]);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default'>('default');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default' | 'popular'>('default');
+  const [clickCounts, setClickCounts] = useState<Map<string, number>>(new Map());
 
   // Pagination State
   const INITIAL_VISIBLE_COUNT = 15;
@@ -209,7 +211,7 @@ const Tienda = () => {
   const fetchProducts = async () => {
     const [productsRes, categoriesRes, modelsRes, brandsRes] = await Promise.all([
       supabase.from('products')
-        .select('id, name, category_id, price, stock, image_url, additional_images, description, tags, model_id, brand_id, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(image_url)')
+        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, model_id, brand_id, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(image_url)')
         .gt('stock', 0)
         .order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('id, name').order('name', { ascending: true }),
@@ -238,6 +240,8 @@ const Tienda = () => {
         original_price: item.original_price ?? null,
         // @ts-ignore
         sale_expires_at: item.sale_expires_at ?? null,
+        // @ts-ignore
+        price_usd: item.price_usd ?? null,
       }));
       setProducts(formattedProducts);
 
@@ -270,6 +274,16 @@ const Tienda = () => {
 
     if (brandsRes.data) {
       setBrands(brandsRes.data as unknown as Brand[]);
+    }
+
+    // Fetch product click counts for "Más buscados" sort
+    const { data: clickData } = await supabase.rpc('get_product_click_counts');
+    if (clickData) {
+      const map = new Map<string, number>();
+      (clickData as any[]).forEach((row: any) => {
+        map.set(row.product_id, row.click_count);
+      });
+      setClickCounts(map);
     }
 
     setLoading(false);
@@ -342,9 +356,14 @@ const Tienda = () => {
     return result.sort((a, b) => {
       if (sortOrder === 'asc') return a.price - b.price;
       if (sortOrder === 'desc') return b.price - a.price;
+      if (sortOrder === 'popular') {
+        const aClicks = clickCounts.get(a.id) || 0;
+        const bClicks = clickCounts.get(b.id) || 0;
+        return bClicks - aClicks;
+      }
       return 0;
     });
-  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap, categories]);
+  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap, categories, clickCounts]);
 
   // Tags available for funda category
   const availableTags = useMemo(() => {
@@ -362,6 +381,14 @@ const Tienda = () => {
     if (!selectedBrand) return models;
     return models.filter(m => m.brand_id === selectedBrand);
   }, [models, selectedBrand]);
+
+  // Reset sub-filters when category changes
+  useEffect(() => {
+    setSelectedModel(null);
+    setSelectedBrand(null);
+    setSelectedCondition(null);
+    setSelectedTag(null);
+  }, [selectedCategory]);
 
   // Reset pagination when any filter changes
   useEffect(() => {
@@ -570,6 +597,7 @@ const Tienda = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="default">Más recientes</SelectItem>
+                      <SelectItem value="popular">Más buscados</SelectItem>
                       <SelectItem value="asc">Menor precio</SelectItem>
                       <SelectItem value="desc">Mayor precio</SelectItem>
                     </SelectContent>
@@ -597,7 +625,10 @@ const Tienda = () => {
                         <button
                           key={product.id}
                           type="button"
-                          onClick={() => setSelectedProduct(product)}
+                          onClick={() => {
+                            supabase.from('product_clicks').insert({ product_id: product.id });
+                            setSelectedProduct(product);
+                          }}
                           className="cursor-pointer text-left w-full"
                           aria-label={`Ver detalles de ${product.name}`}
                         >
@@ -605,6 +636,7 @@ const Tienda = () => {
                             id={product.id}
                             name={product.name}
                             price={product.price}
+                            price_usd={product.price_usd}
                             original_price={
                               product.original_price != null &&
                               (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date())

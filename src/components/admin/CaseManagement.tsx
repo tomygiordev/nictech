@@ -55,6 +55,7 @@ export const CaseManagement = () => {
 
     // Filter States
     const [selectedPhoneId, setSelectedPhoneId] = useState<string>("all");
+    const [searchQuery, setSearchQuery] = useState("");
 
     // UI States
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -560,6 +561,10 @@ export const CaseManagement = () => {
                             ))}
                         </SelectContent>
                     </Select>
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Buscar funda..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9 w-[220px] bg-background" />
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -632,16 +637,16 @@ export const CaseManagement = () => {
                             <Smartphone className="h-5 w-5" />
                             Listado de Fundas
                         </h3>
-                        <Badge variant="outline">{cases.length}</Badge>
+                        <Badge variant="outline">{searchQuery ? cases.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).length : cases.length}</Badge>
                     </div>
 
                     <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                        {cases.length === 0 ? (
+                        {cases.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
                             <div className="text-muted-foreground text-sm italic p-8 text-center border rounded-lg bg-muted/20 border-dashed">
-                                No hay fundas creadas.
+                                {searchQuery ? 'No se encontraron fundas con ese nombre.' : 'No hay fundas creadas.'}
                             </div>
                         ) : (
-                            cases.map(caseItem => (
+                            cases.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).map(caseItem => (
                                 <div
                                     key={caseItem.id}
                                     onClick={() => setExpandedCaseId(caseItem.id)}

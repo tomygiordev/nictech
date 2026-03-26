@@ -38,10 +38,9 @@ const Contacto = () => {
                 </div>
                 <h4 className="font-medium text-foreground mb-2">Dirección</h4>
                 <p className="text-muted-foreground">
-                  Calle 19 y 5 (Esquina)<br />
-                  Gilbert <br />
-                  Urdinarrain <br />
-                  Entre Ríos
+                  La paz 1214, Urdinarrain, Entre Ríos<br />
+                  C.5 y C.19, Gilbert, Entre Ríos<br />
+                  <span className="text-xs">(sucursal con local comercial)</span>
                 </p>
               </div>
 
@@ -49,7 +48,7 @@ const Contacto = () => {
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary mb-4">
                   <Phone className="h-6 w-6" />
                 </div>
-                <h4 className="font-medium text-foreground mb-2">WhatsApp / Teléfono</h4>
+                <h4 className="font-medium text-foreground mb-2">WhatsApp</h4>
                 <a
                   href="https://wa.me/5493446353769"
                   target="_blank"

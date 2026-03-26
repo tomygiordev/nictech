@@ -8,6 +8,7 @@ interface ProductCardProps {
   id: string;
   name: string;
   price: number;
+  price_usd?: number | null;
   original_price?: number | null;
   stock: number;
   image_url?: string;
@@ -20,6 +21,7 @@ export const ProductCard = React.memo(({
   id,
   name,
   price,
+  price_usd,
   original_price,
   stock,
   image_url,
@@ -64,7 +66,7 @@ export const ProductCard = React.memo(({
             {category}
           </span>
           {original_price != null && (
-            <span className="px-2 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold w-fit">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold w-fit shadow-sm">
               PROMO
             </span>
           )}
@@ -72,8 +74,8 @@ export const ProductCard = React.memo(({
 
         {/* Stock indicator */}
         {stock <= 5 && stock > 0 && (
-          <div className="absolute top-3 right-3">
-            <span className="px-3 py-1 rounded-full bg-red-600 text-white animate-pulse shadow-sm text-xs font-bold">
+          <div className="absolute top-3 right-3 max-w-[45%]">
+            <span className="px-2 py-1 rounded-full bg-red-600 text-white animate-pulse shadow-sm text-[10px] font-bold leading-tight block text-center">
               ¡Últimas unidades!
             </span>
           </div>
@@ -89,7 +91,7 @@ export const ProductCard = React.memo(({
 
       {/* Content */}
       <div className="p-5 flex flex-col flex-1">
-        <h3 className="font-semibold text-foreground text-lg mb-1 line-clamp-1 group-hover:text-primary transition-colors">
+        <h3 className="font-semibold text-foreground text-lg mb-1 line-clamp-2 group-hover:text-primary transition-colors">
           {name}
         </h3>
         {description && (
@@ -114,14 +116,27 @@ export const ProductCard = React.memo(({
 
         <div className="mt-auto flex items-center justify-between pt-4 border-t border-border/50">
           <div>
-            {original_price != null && (
-              <span className="text-sm text-muted-foreground line-through block">
-                $ {original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+            {price_usd != null ? (
+              <>
+                <span className="text-2xl font-bold text-green-700">
+                  USD {price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Precio en dólares
+                </p>
+              </>
+            ) : (
+              <>
+                {original_price != null && (
+                  <span className="text-sm text-muted-foreground line-through block">
+                    $ {original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                )}
+                <span className="text-2xl font-bold text-primary">
+                  $ {price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </>
             )}
-            <span className="text-2xl font-bold text-primary">
-              $ {price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
             <p className="text-xs text-muted-foreground mt-1">
               {stock > 0 ? `${stock} disponibles` : 'Sin stock'}
             </p>

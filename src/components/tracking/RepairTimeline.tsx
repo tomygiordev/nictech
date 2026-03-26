@@ -1,12 +1,34 @@
-import { Check, Clock, Package, Wrench, Search, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Check, Clock, Package, Wrench, Search, CheckCircle2, Circle, Truck } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
-const steps = [
-  { id: 'Recibido', label: 'Recibido', icon: Package, description: 'Tu dispositivo ha sido recibido' },
-  { id: 'Diagnóstico', label: 'Diagnóstico', icon: Search, description: 'Evaluando el problema' },
-  { id: 'Repuestos', label: 'Repuestos', icon: Clock, description: 'Esperando piezas necesarias' },
-  { id: 'Reparación', label: 'Reparación', icon: Wrench, description: 'En proceso de reparación' },
-  { id: 'Finalizado', label: 'Finalizado', icon: CheckCircle2, description: 'Listo para retirar' },
+// Map icon names from DB to actual Lucide components
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  PackageCheck: Package,
+  Package: Package,
+  Search: Search,
+  Truck: Truck,
+  Clock: Clock,
+  Wrench: Wrench,
+  CheckCircle: CheckCircle2,
+  Circle: Circle,
+};
+
+interface StatusStep {
+  id: string;
+  name: string;
+  icon: React.ComponentType<{ className?: string }>;
+  sort_order: number;
+}
+
+// Fallback steps if DB is unavailable
+const FALLBACK_STEPS: StatusStep[] = [
+  { id: 'Recibido', name: 'Recibido', icon: Package, sort_order: 0 },
+  { id: 'Diagnóstico', name: 'Diagnóstico', icon: Search, sort_order: 1 },
+  { id: 'Repuestos', name: 'Repuestos', icon: Clock, sort_order: 2 },
+  { id: 'Reparación', name: 'Reparación', icon: Wrench, sort_order: 3 },
+  { id: 'Finalizado', name: 'Finalizado', icon: CheckCircle2, sort_order: 4 },
 ];
 
 interface RepairTimelineProps {
@@ -14,6 +36,29 @@ interface RepairTimelineProps {
 }
 
 export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
+  const [steps, setSteps] = useState<StatusStep[]>(FALLBACK_STEPS);
+
+  useEffect(() => {
+    const fetchStatuses = async () => {
+      const { data } = await supabase
+        .from('repair_statuses')
+        .select('id, name, icon, sort_order')
+        .order('sort_order', { ascending: true });
+
+      if (data && data.length > 0) {
+        setSteps(
+          (data as any[]).map((s) => ({
+            id: s.name,
+            name: s.name,
+            icon: ICON_MAP[s.icon] || Circle,
+            sort_order: s.sort_order,
+          }))
+        );
+      }
+    };
+    fetchStatuses();
+  }, []);
+
   const currentIndex = steps.findIndex(step => step.id === currentStatus);
 
   return (
@@ -25,15 +70,16 @@ export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
           <div className="absolute top-6 left-0 right-0 h-1 bg-muted rounded-full">
             <div
               className="h-full bg-primary rounded-full transition-all duration-500"
-              style={{ width: `${(currentIndex / (steps.length - 1)) * 100}%` }}
+              style={{ width: currentIndex >= 0 ? `${(currentIndex / (steps.length - 1)) * 100}%` : '0%' }}
             />
           </div>
 
           {/* Steps */}
           {steps.map((step, index) => {
-            const isCompleted = index < currentIndex;
+            const isCompleted = currentIndex >= 0 && index < currentIndex;
             const isCurrent = index === currentIndex;
-            const isPending = index > currentIndex;
+            const isPending = currentIndex < 0 || index > currentIndex;
+            const StepIcon = step.icon;
 
             return (
               <div key={step.id} className="relative flex flex-col items-center">
@@ -49,7 +95,7 @@ export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
                   {isCompleted ? (
                     <Check className="h-6 w-6 text-primary-foreground" />
                   ) : (
-                    <step.icon
+                    <StepIcon
                       className={cn(
                         "h-6 w-6",
                         isCurrent ? "text-primary-foreground" : "text-muted-foreground"
@@ -66,10 +112,7 @@ export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
                       (isCompleted || isCurrent) ? "text-foreground" : "text-muted-foreground"
                     )}
                   >
-                    {step.label}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-[120px]">
-                    {step.description}
+                    {step.name}
                   </p>
                 </div>
               </div>
@@ -81,9 +124,10 @@ export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
       {/* Mobile Timeline */}
       <div className="md:hidden space-y-4">
         {steps.map((step, index) => {
-          const isCompleted = index < currentIndex;
+          const isCompleted = currentIndex >= 0 && index < currentIndex;
           const isCurrent = index === currentIndex;
-          const isPending = index > currentIndex;
+          const isPending = currentIndex < 0 || index > currentIndex;
+          const StepIcon = step.icon;
 
           return (
             <div key={step.id} className="flex items-start gap-4">
@@ -100,7 +144,7 @@ export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
                   {isCompleted ? (
                     <Check className="h-5 w-5 text-primary-foreground" />
                   ) : (
-                    <step.icon
+                    <StepIcon
                       className={cn(
                         "h-5 w-5",
                         isCurrent ? "text-primary-foreground" : "text-muted-foreground"
@@ -126,10 +170,7 @@ export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
                     (isCompleted || isCurrent) ? "text-foreground" : "text-muted-foreground"
                   )}
                 >
-                  {step.label}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {step.description}
+                  {step.name}
                 </p>
               </div>
             </div>

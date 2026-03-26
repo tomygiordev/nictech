@@ -32,13 +32,14 @@ export const Layout = ({ children }: LayoutProps) => {
         </Suspense>
       )}
       <div
-        className="bg-primary text-primary-foreground overflow-hidden py-2 border-b border-primary/20 group"
+        className="overflow-hidden py-2.5 group"
         role="marquee"
         aria-label="Información destacada"
+        style={{ background: 'linear-gradient(135deg, #f97316 0%, #f47820 50%, #f97316 100%)' }}
       >
         <div className="flex w-max whitespace-nowrap animate-marquee group-hover:[animation-play-state:paused] group-focus-within:[animation-play-state:paused] motion-reduce:animate-none gap-0">
           {[...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS].map((item, i) => (
-            <span key={i} className="text-xs sm:text-sm font-medium inline-flex items-center">
+            <span key={i} className="text-xs sm:text-sm font-extrabold uppercase tracking-wide text-white inline-flex items-center">
               <span className="px-8">{item}</span>
               <span className="opacity-40">·</span>
             </span>

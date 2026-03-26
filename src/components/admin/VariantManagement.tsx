@@ -63,6 +63,7 @@ export const VariantManagement = () => {
 
     // Filter States
     const [selectedPhoneId, setSelectedPhoneId] = useState<string>("all");
+    const [searchQuery, setSearchQuery] = useState("");
 
     // UI States
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -687,6 +688,10 @@ export const VariantManagement = () => {
                             ))}
                         </SelectContent>
                     </Select>
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Buscar producto..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9 w-[220px] bg-background" />
+                    </div>
                 </div>
 
                 <Button variant="outline" onClick={() => setIsBatchStockOpen(true)} className="gap-2">
@@ -825,7 +830,7 @@ export const VariantManagement = () => {
                                 {accessoryCategories
                                     .filter(cat => showHidden || !hiddenCategories.includes(cat.id))
                                     .map(cat => {
-                                        const catProducts = variantsList.filter(p => p.category_id === cat.id);
+                                        const catProducts = variantsList.filter(p => p.category_id === cat.id && p.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
                                         // Always show categories even if empty, the user might want to populate them
                                         // if selectedPhoneId has a filter, we hide categories that have absolutely 0 matching results

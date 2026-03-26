@@ -71,7 +71,9 @@ export const PromoManagement = () => {
     if (isNaN(val) || val <= 0) return null;
     if (mode === 'percent') {
       if (val >= 100) return null;
-      return selectedProduct.price * (1 - val / 100);
+      // Use original_price as base when product already has a promo, to avoid compounding discounts
+      const basePrice = selectedProduct.original_price ?? selectedProduct.price;
+      return basePrice * (1 - val / 100);
     }
     return val;
   }, [selectedProduct, discountValue, mode]);

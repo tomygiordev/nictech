@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag, Trash2 } from 'lucide-react';
+import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag, Trash2, ImagePlay, BarChart3, DollarSign, Pencil } from 'lucide-react';
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,6 +19,11 @@ import { VariantManagement } from '@/components/admin/VariantManagement';
 import { SmartphoneManagement } from '@/components/admin/SmartphoneManagement';
 import { BlogManagement } from '@/components/admin/BlogManagement';
 import { PromoManagement } from '@/components/admin/PromoManagement';
+import { BannerManagement } from '@/components/admin/BannerManagement';
+import { RepairStatusSelect, useRepairStatuses } from '@/components/admin/RepairStatusManager';
+import { DollarSettings, useDollarRate } from '@/components/admin/DollarSettings';
+import { UnifiedInventory } from '@/components/admin/UnifiedInventory';
+import { InventoryModule } from '@/components/admin/InventoryModule';
 import { useAuth } from '@/contexts/AuthContext';
 
 
@@ -32,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-type RepairStatus = 'Recibido' | 'Diagnóstico' | 'Repuestos' | 'Reparación' | 'Finalizado';
+type RepairStatus = string;
 
 interface Repair {
   id: string;
@@ -47,6 +52,7 @@ interface Repair {
   created_at: string;
   locality?: string;
   is_deleted?: boolean | null;
+  quoted_price?: number | null;
 }
 
 interface Category {
@@ -85,12 +91,49 @@ interface Order {
   created_at: string;
 }
 
-const RepairLogsDialog = ({ repairId, trackingCode }: { repairId: string; trackingCode: string }) => {
+interface RepairLogsDialogProps {
+  repair: Repair;
+  onQuoteSaved: (repairId: string, price: number) => void;
+}
+
+const RepairLogsDialog = ({ repair, onQuoteSaved }: RepairLogsDialogProps) => {
+  const repairId = repair.id;
+  const trackingCode = repair.tracking_code;
   const [logs, setLogs] = useState<RepairLog[]>([]);
   const [newLog, setNewLog] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [open, setOpen] = useState(false);
+
+  // Quote state local to dialog
+  const [quoteValue, setQuoteValue] = useState(repair.quoted_price != null ? repair.quoted_price.toString() : '');
+  const [savingQuoteLocal, setSavingQuoteLocal] = useState(false);
+
+  // Sync when parent changes (e.g. saved from table inline)
+  useEffect(() => {
+    setQuoteValue(repair.quoted_price != null ? repair.quoted_price.toString() : '');
+  }, [repair.quoted_price]);
+
+  const saveQuote = async () => {
+    const price = parseFloat(quoteValue.replace(',', '.'));
+    if (!quoteValue.trim() || isNaN(price) || price < 0) {
+      toast({ title: 'Ingresá un precio válido', variant: 'destructive' }); return;
+    }
+    setSavingQuoteLocal(true);
+    await supabase.from('repairs' as any).update({ quoted_price: price }).eq('id', repairId);
+    if (repair.quoted_price != null) {
+      await (supabase as any).from('inventory_movements').delete()
+        .eq('channel', 'Reparación').like('notes', `%${trackingCode}%`);
+    }
+    await (supabase as any).from('inventory_movements').insert({
+      product_id: null, variant_id: null, type: 'sale', quantity: 1, unit_price: price,
+      channel: 'Reparación',
+      notes: `${trackingCode} · ${repair.client_name ?? repair.client_dni} · ${repair.device_brand ?? ''} ${repair.device_model}`.trim(),
+    });
+    onQuoteSaved(repairId, price);
+    toast({ title: 'Cotización guardada', description: `$${price.toLocaleString('es-AR')}` });
+    setSavingQuoteLocal(false);
+  };
 
   useEffect(() => {
     if (open) {
@@ -164,7 +207,34 @@ const RepairLogsDialog = ({ repairId, trackingCode }: { repairId: string; tracki
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col h-[400px]">
+        {/* Quote section */}
+        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cotización del servicio</p>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
+              <Input
+                type="number" min="0" placeholder="0"
+                value={quoteValue}
+                onChange={e => setQuoteValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveQuote(); }}
+                className="pl-7 h-9 text-base font-semibold"
+              />
+            </div>
+            <Button size="sm" className="h-9 gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+              disabled={savingQuoteLocal || !quoteValue.trim()} onClick={saveQuote}>
+              {savingQuoteLocal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              Guardar
+            </Button>
+          </div>
+          {repair.quoted_price != null && (
+            <p className="text-xs text-green-600 font-medium">
+              Cotización actual: <span className="font-bold">${repair.quoted_price.toLocaleString('es-AR')}</span> · registrada en historial de inventario
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col h-[340px]">
           <ScrollArea className="flex-1 p-4 border rounded-md mb-4 bg-muted/10">
             {loading ? (
               <div className="flex justify-center items-center h-full">
@@ -213,6 +283,7 @@ const RepairLogsDialog = ({ repairId, trackingCode }: { repairId: string; tracki
   );
 };
 
+
 const Admin = () => {
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('admin_active_tab') || "repairs";
@@ -230,6 +301,9 @@ const Admin = () => {
   const [savingCategory, setSavingCategory] = useState(false);
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const { statuses: repairStatuses, refetch: refetchStatuses } = useRepairStatuses();
+  const dollarRate = useDollarRate();
+  const [priceCurrency, setPriceCurrency] = useState<'ARS' | 'USD'>('ARS');
 
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -248,13 +322,15 @@ const Admin = () => {
   const [newRepair, setNewRepair] = useState({
     client_dni: '',
     client_name: '',
-    client_phone: '',
     device_brand: '',
     device_model: '',
     problem_description: '',
     locality: 'Urdinarrain',
+    quoted_price: '',
   });
   const [savingNewRepair, setSavingNewRepair] = useState(false);
+  const [quotingRepair, setQuotingRepair] = useState<{ id: string; value: string } | null>(null);
+  const [savingQuote, setSavingQuote] = useState(false);
 
   const { session, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -334,12 +410,12 @@ const Admin = () => {
       tracking_code,
       client_dni: rawDni,
       client_name: newRepair.client_name,
-      client_phone: newRepair.client_phone || null,
       device_brand: newRepair.device_brand || null,
       device_model: newRepair.device_model,
       problem_description: newRepair.problem_description || null,
       status: 'Recibido',
       locality: newRepair.locality,
+      quoted_price: newRepair.quoted_price ? parseFloat(newRepair.quoted_price) : null,
     });
 
     if (error) {
@@ -356,11 +432,11 @@ const Admin = () => {
       setNewRepair({
         client_dni: '',
         client_name: '',
-        client_phone: '',
         device_brand: '',
         device_model: '',
         problem_description: '',
         locality: 'Urdinarrain',
+        quoted_price: '',
       });
       fetchData();
     }
@@ -390,6 +466,50 @@ const Admin = () => {
     }
 
     setSavingRepair(null);
+  };
+
+  const saveRepairQuote = async (repair: Repair, priceStr: string) => {
+    const price = parseFloat(priceStr.replace(',', '.'));
+    if (!priceStr.trim() || isNaN(price) || price < 0) {
+      toast({ title: 'Ingresá un precio válido', variant: 'destructive' });
+      return;
+    }
+    setSavingQuote(true);
+    const { error } = await supabase
+      .from('repairs' as any)
+      .update({ quoted_price: price })
+      .eq('id', repair.id);
+
+    if (error) {
+      toast({ title: 'Error al guardar cotización', variant: 'destructive' });
+      setSavingQuote(false);
+      return;
+    }
+
+    // Remove old repair movement if price was previously set
+    if (repair.quoted_price != null) {
+      await (supabase as any)
+        .from('inventory_movements')
+        .delete()
+        .eq('channel', 'Reparación')
+        .like('notes', `%${repair.tracking_code}%`);
+    }
+
+    // Record in inventory history
+    await (supabase as any).from('inventory_movements').insert({
+      product_id: null,
+      variant_id: null,
+      type: 'sale',
+      quantity: 1,
+      unit_price: price,
+      channel: 'Reparación',
+      notes: `${repair.tracking_code} · ${repair.client_name ?? repair.client_dni} · ${repair.device_brand ?? ''} ${repair.device_model}`.trim(),
+    });
+
+    setRepairs(prev => prev.map(r => r.id === repair.id ? { ...r, quoted_price: price } : r));
+    setQuotingRepair(null);
+    toast({ title: 'Cotización guardada', description: `$${price.toLocaleString('es-AR')} registrado en historial` });
+    setSavingQuote(false);
   };
 
   const updateRepairNotes = async (id: string, notes: string) => {
@@ -639,10 +759,15 @@ const Admin = () => {
         }
       }
 
+      const rawPrice = parseFloat(newProduct.price) || 0;
+      const arsPrice = priceCurrency === 'USD' && dollarRate ? Math.round(rawPrice * dollarRate) : rawPrice;
+      const usdPrice = priceCurrency === 'USD' ? rawPrice : null;
+
       const productData = {
         name: finalName,
         category_id: newProduct.category_id,
-        price: parseFloat(newProduct.price) || 0,
+        price: arsPrice,
+        price_usd: usdPrice,
         stock: parseInt(newProduct.stock, 10) || 0,
         description: newProduct.description || null,
         image_url: finalImageUrl || null,
@@ -743,6 +868,10 @@ const Admin = () => {
                   <Wrench className="h-4 w-4" />
                   Reparaciones
                 </TabsTrigger>
+                <TabsTrigger value="inventory" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
+                  <BarChart3 className="h-4 w-4" />
+                  Inventario
+                </TabsTrigger>
                 <TabsTrigger value="products" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Package className="h-4 w-4" />
                   Productos
@@ -766,6 +895,10 @@ const Admin = () => {
                 <TabsTrigger value="promos" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <Tag className="h-4 w-4" />
                   Promos
+                </TabsTrigger>
+                <TabsTrigger value="banners" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
+                  <ImagePlay className="h-4 w-4" />
+                  Banners
                 </TabsTrigger>
                 <TabsTrigger value="blog" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
                   <MessageSquare className="h-4 w-4" />
@@ -804,13 +937,20 @@ const Admin = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="client_phone">Teléfono (Opcional)</Label>
-                        <Input
-                          id="client_phone"
-                          value={newRepair.client_phone}
-                          onChange={(e) => setNewRepair({ ...newRepair, client_phone: e.target.value })}
-                          placeholder="999 999 999"
-                        />
+                        <Label htmlFor="quoted_price">Cotización (Opcional)</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                          <Input
+                            id="quoted_price"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={newRepair.quoted_price}
+                            onChange={(e) => setNewRepair({ ...newRepair, quoted_price: e.target.value })}
+                            placeholder="0"
+                            className="pl-7"
+                          />
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -880,77 +1020,112 @@ const Admin = () => {
                       </p>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Código</TableHead>
-                            <TableHead>Dispositivo</TableHead>
-                            <TableHead>Localidad</TableHead>
-                            <TableHead>Descripción</TableHead>
-                            <TableHead>Estado</TableHead>
-                            <TableHead>Acciones</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {repairs.map((repair) => (
-                            <TableRow key={repair.id}>
-                              <TableCell>
-                                <div className="font-mono font-medium text-primary mb-1">
-                                  {repair.tracking_code}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {repair.client_name || repair.client_dni}
-                                </div>
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {new Date(repair.created_at).toLocaleDateString('es-PE')}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {repair.device_brand} {repair.device_model}
-                              </TableCell>
-                              <TableCell>
-                                <span className={`px-2 py-1 rounded text-xs font-medium border ${repair.locality === 'Gilbert' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-green-100 text-green-800 border-green-200'}`}>
-                                  {repair.locality || 'Urdinarrain'}
+                    <div className="divide-y divide-border">
+                      {repairs.map((repair) => (
+                        <div key={repair.id} className="p-4 hover:bg-muted/30 transition-colors">
+                          {/* Row 1: code + locality + date + actions */}
+                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                            <span className="font-mono font-semibold text-primary text-sm">
+                              {repair.tracking_code}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${repair.locality === 'Gilbert' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-green-100 text-green-800 border-green-200'}`}>
+                              {repair.locality || 'Urdinarrain'}
+                            </span>
+                            <span className="text-xs text-muted-foreground ml-auto">
+                              {new Date(repair.created_at).toLocaleDateString('es-PE')}
+                            </span>
+                            <RepairLogsDialog
+                              repair={repair}
+                              onQuoteSaved={(id, price) => setRepairs(prev => prev.map(r => r.id === id ? { ...r, quoted_price: price } : r))}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => hideRepair(repair.id)}
+                              title="Ocultar Reparación"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+
+                          {/* Row 2: client + device + description */}
+                          <div className="flex items-baseline gap-2 mb-2 flex-wrap">
+                            <span className="text-sm font-medium">
+                              {repair.client_name || repair.client_dni}
+                            </span>
+                            <span className="text-xs text-muted-foreground">·</span>
+                            <span className="text-sm text-muted-foreground">
+                              {repair.device_brand} {repair.device_model}
+                            </span>
+                            {(repair.problem_description || repair.notes) && (
+                              <>
+                                <span className="text-xs text-muted-foreground">·</span>
+                                <span className="text-xs text-muted-foreground truncate max-w-[240px]" title={repair.problem_description || repair.notes || ''}>
+                                  {repair.problem_description || repair.notes}
                                 </span>
-                              </TableCell>
-                              <TableCell className="max-w-[150px] truncate" title={repair.problem_description || repair.notes || ''}>
-                                {repair.problem_description || repair.notes || '-'}
-                              </TableCell>
-                              <TableCell>
-                                <Select
-                                  value={repair.status}
-                                  onValueChange={(value) => updateRepairStatus(repair.id, value as RepairStatus)}
-                                >
-                                  <SelectTrigger className="w-32 h-8">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="Recibido">Recibido</SelectItem>
-                                    <SelectItem value="Diagnóstico">Diagnóstico</SelectItem>
-                                    <SelectItem value="Repuestos">Repuestos</SelectItem>
-                                    <SelectItem value="Reparación">Reparación</SelectItem>
-                                    <SelectItem value="Finalizado">Finalizado</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <RepairLogsDialog repairId={repair.id} trackingCode={repair.tracking_code} />
-                                  <Button 
-                                    variant="destructive" 
-                                    size="icon" 
-                                    onClick={() => hideRepair(repair.id)}
-                                    title="Ocultar (Eliminar) Reparación"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Row 3: status + price */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <RepairStatusSelect
+                              value={repair.status}
+                              onValueChange={(value) => updateRepairStatus(repair.id, value as RepairStatus)}
+                              statuses={repairStatuses}
+                              onStatusesChanged={refetchStatuses}
+                            />
+                            {quotingRepair?.id === repair.id ? (
+                              <div className="flex items-center gap-1">
+                                <span className="text-sm font-semibold text-muted-foreground">$</span>
+                                <Input
+                                  autoFocus
+                                  type="number"
+                                  min="0"
+                                  placeholder="0"
+                                  value={quotingRepair.value}
+                                  onChange={e => setQuotingRepair({ id: repair.id, value: e.target.value })}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveRepairQuote(repair, quotingRepair.value);
+                                    if (e.key === 'Escape') setQuotingRepair(null);
+                                  }}
+                                  className="h-7 w-24 text-sm"
+                                />
+                                <Button size="icon" className="h-7 w-7 bg-green-600 hover:bg-green-700 text-white"
+                                  disabled={savingQuote}
+                                  onClick={() => saveRepairQuote(repair, quotingRepair.value)}>
+                                  {savingQuote ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7"
+                                  onClick={() => setQuotingRepair(null)}>
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : repair.quoted_price != null ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-bold text-green-600">
+                                  ${repair.quoted_price.toLocaleString('es-AR')}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setQuotingRepair({ id: repair.id, value: repair.quoted_price!.toString() })}
+                                  className="text-muted-foreground hover:text-foreground transition-colors">
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 gap-1 text-xs border-dashed"
+                                onClick={() => setQuotingRepair({ id: repair.id, value: '' })}>
+                                <DollarSign className="h-3 w-3" /> Cotizar
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -962,322 +1137,12 @@ const Admin = () => {
               </TabsContent>
 
               {/* Products Tab */}
+              <TabsContent value="inventory">
+                <InventoryModule />
+              </TabsContent>
+
               <TabsContent value="products">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                  {/* Add Product Form — sticky */}
-                  <div className="bg-card rounded-2xl border border-border p-6 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-y-auto hide-scrollbar">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <Plus className="h-5 w-5" />
-                        {editingProductId ? 'Editar Producto' : 'Agregar Producto'}
-                      </h3>
-                      {editingProductId && (
-                        <Button variant="ghost" size="sm" onClick={cancelEditingProduct}>
-                          Cancelar
-                        </Button>
-                      )}
-                    </div>
-                    <form onSubmit={handleSaveProduct} className="space-y-4">
-                      <CreatableResourceSelector
-                        tableName="categories"
-                        label="Categoría"
-                        placeholder="Seleccionar o crear categoría"
-                        value={newProduct.category_id}
-                        onValueChange={(val) => setNewProduct({ ...newProduct, category_id: val })}
-                        filter={(item) => {
-                          const name = item.name.toLowerCase();
-                          return !name.includes('celular') &&
-                            !name.includes('smartphone') &&
-                            !name.includes('iphone') &&
-                            !name.includes('samsung') &&
-                            !name.includes('funda') &&
-                            !name.includes('case');
-                        }}
-                      />
-
-                      <div className="space-y-2">
-                        <Label htmlFor="name">Nombre</Label>
-                        <Input
-                          id="name"
-                          value={newProduct.name}
-                          onChange={(e) => { const v = e.target.value; setNewProduct(prev => ({ ...prev, name: v })); }}
-                          required
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="price">Precio ($)</Label>
-                          <Input
-                            id="price"
-                            type="number"
-                            step="0.01"
-                            value={newProduct.price}
-                            onChange={(e) => { const v = e.target.value; setNewProduct(prev => ({ ...prev, price: v })); }}
-                            required
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="stock">Stock</Label>
-                          <Input
-                            id="stock"
-                            type="number"
-                            min="0"
-                            value={newProduct.stock}
-                            onChange={(e) => { const v = e.target.value; setNewProduct(prev => ({ ...prev, stock: v })); }}
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="image_url">Imagen del Producto</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id="image_url"
-                            type="url"
-                            placeholder="URL de la imagen"
-                            value={newProduct.image_url}
-                            onChange={(e) => setNewProduct({ ...newProduct, image_url: e.target.value })}
-                            className="flex-1"
-                          />
-                          <div className="relative">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleImageUpload(e, false)}
-                              className="hidden"
-                              id="file-upload"
-                              disabled={uploadingImage}
-                            />
-                            <Label
-                              htmlFor="file-upload"
-                              className={`flex h-10 w-10 items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground cursor-pointer ${uploadingImage ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            >
-                              {uploadingImage ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Upload className="h-4 w-4" />
-                              )}
-                            </Label>
-                          </div>
-                        </div>
-                        {newProduct.image_url && (
-                          <div className="mt-2 relative aspect-video rounded-lg overflow-hidden border border-border">
-                            <img src={newProduct.image_url} alt="Preview" className="object-cover w-full h-full" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Additional Images Section */}
-                      <div className="space-y-2">
-                        <Label>Imágenes Adicionales</Label>
-                        <div className="grid grid-cols-4 gap-4">
-                          {newProduct.additional_images?.map((img, index) => (
-                            <div key={index} className="relative group aspect-square rounded-lg overflow-hidden border bg-background">
-                              <img src={img} alt={`Adicional ${index}`} className="w-full h-full object-cover" />
-                              <button
-                                type="button"
-                                onClick={() => removeAdditionalImage(index)}
-                                className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
-
-                          <div className="relative aspect-square flex items-center justify-center border-2 border-dashed rounded-lg hover:bg-accent/50 transition-colors cursor-pointer">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleImageUpload(e, true)}
-                              className="absolute inset-0 opacity-0 cursor-pointer"
-                              disabled={uploadingImage}
-                            />
-                            {uploadingImage ? (
-                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                            ) : (
-                              <div className="text-center">
-                                <Plus className="h-6 w-6 mx-auto text-muted-foreground" />
-                                <span className="text-xs text-muted-foreground">Agregar</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Etiquetas</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            value={newProduct.newTagInput}
-                            onChange={(e) => setNewProduct({ ...newProduct, newTagInput: e.target.value })}
-                            placeholder="Ej: Oferta, Nuevo, Gaming..."
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                if (newProduct.newTagInput.trim()) {
-                                  setNewProduct({
-                                    ...newProduct,
-                                    tags: [...newProduct.tags, newProduct.newTagInput.trim()],
-                                    newTagInput: ''
-                                  });
-                                }
-                              }
-                            }}
-                          />
-                          <Button
-                            type="button"
-                            onClick={() => {
-                              if (newProduct.newTagInput.trim()) {
-                                setNewProduct({
-                                  ...newProduct,
-                                  tags: [...newProduct.tags, newProduct.newTagInput.trim()],
-                                  newTagInput: ''
-                                });
-                              }
-                            }}
-                            variant="outline"
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {newProduct.tags.map((tag, index) => (
-                            <span key={index} className="bg-secondary text-secondary-foreground px-2 py-1 rounded-md text-sm flex items-center gap-1">
-                              {tag}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNewProduct({
-                                    ...newProduct,
-                                    tags: newProduct.tags.filter((_, i) => i !== index)
-                                  });
-                                }}
-                                className="hover:text-destructive"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="description">Descripción</Label>
-                        <Textarea
-                          id="description"
-                          value={newProduct.description}
-                          onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
-                          rows={3}
-                        />
-                      </div>
-                      <Button type="submit" className="w-full" disabled={savingProduct}>
-                        {savingProduct ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : (
-                          <Plus className="h-4 w-4 mr-2" />
-                        )}
-                        {editingProductId ? 'Actualizar Producto' : 'Agregar Producto'}
-                      </Button>
-                    </form>
-                  </div>
-
-                  {/* Products Table */}
-                  <div className="lg:col-span-2 bg-card rounded-2xl border border-border overflow-hidden">
-                    <div className="p-6 border-b border-border space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold">Inventario de Productos</h3>
-                        <span className="text-muted-foreground text-sm">
-                          {products.filter(product => {
-                            const catName = product.category?.name?.toLowerCase() || '';
-                            return !catName.includes('celular') &&
-                              !catName.includes('smartphone') &&
-                              !catName.includes('iphone') &&
-                              !catName.includes('samsung') &&
-                              !catName.includes('funda') &&
-                              !catName.includes('case');
-                          }).length} productos (excluye celulares y fundas)
-                        </span>
-                      </div>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Buscar por nombre, categoría..."
-                          value={productSearch}
-                          onChange={(e) => setProductSearch(e.target.value)}
-                          className="pl-9"
-                        />
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Producto</TableHead>
-                            <TableHead>Categoría</TableHead>
-                            <TableHead>Precio</TableHead>
-                            <TableHead>Stock</TableHead>
-                            <TableHead>Acciones</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {products
-                            .filter(product => {
-                              const catName = product.category?.name?.toLowerCase() || '';
-                              const excluded = catName.includes('celular') || catName.includes('smartphone') ||
-                                catName.includes('iphone') || catName.includes('samsung') ||
-                                catName.includes('funda') || catName.includes('case');
-                              if (excluded) return false;
-                              if (!productSearch.trim()) return true;
-                              const q = productSearch.toLowerCase();
-                              return product.name.toLowerCase().includes(q) ||
-                                (product.category?.name?.toLowerCase() || '').includes(q) ||
-                                (product.tags || []).some(t => t.toLowerCase().includes(q));
-                            })
-                            .map((product) => (
-                              <TableRow key={product.id}>
-                                <TableCell>
-                                  <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-lg bg-muted overflow-hidden">
-                                      {product.image_url ? (
-                                        <img
-                                          src={product.image_url}
-                                          alt={product.name}
-                                          className="h-full w-full object-cover"
-                                        />
-                                      ) : (
-                                        <div className="h-full w-full flex items-center justify-center">
-                                          <Package className="h-4 w-4 text-muted-foreground" />
-                                        </div>
-                                      )}
-                                    </div>
-                                    <span className="font-medium">{product.name}</span>
-                                  </div>
-                                </TableCell>
-                                <TableCell>{product.category?.name || 'Sin categoría'}</TableCell>
-                                <TableCell className="font-medium text-primary">
-                                  $ {product.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </TableCell>
-                                <TableCell className={product.stock < 5 ? "text-red-500 font-bold" : ""}>
-                                  {product.stock}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    <Button variant="outline" size="sm" onClick={() => startEditingProduct(product)}>
-                                      <Wrench className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="destructive" size="sm" onClick={() => deleteProduct(product.id)}>
-                                      <X className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                </div>
+                <UnifiedInventory />
               </TabsContent>
 
 
@@ -1366,6 +1231,12 @@ const Admin = () => {
               <TabsContent value="promos">
                 <div className="bg-card rounded-2xl border border-border p-6">
                   <PromoManagement />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="banners">
+                <div className="bg-card rounded-2xl border border-border p-6">
+                  <BannerManagement />
                 </div>
               </TabsContent>
 

@@ -18,6 +18,7 @@ interface Product {
     name: string;
     description: string;
     price: number;
+    price_usd?: number | null;
     stock: number;
     category_id: string;
     image_url: string | null;
@@ -46,6 +47,9 @@ export function SmartphoneManagement() {
 
     // Tag State
     const [tagInput, setTagInput] = useState("");
+
+    // Currency Mode
+    const [currencyMode, setCurrencyMode] = useState<'ARS' | 'USD'>('ARS');
 
     // UI States
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -100,6 +104,7 @@ export function SmartphoneManagement() {
 
     const handleEdit = (product: Product) => {
         setCurrentProduct({ ...product, additional_images: product.additional_images || [], tags: product.tags || [] });
+        setCurrencyMode(product.price_usd != null ? 'USD' : 'ARS');
         setPreviewUrl(product.image_url);
         setImageFile(null);
         setAdditionalFiles([]); // Reset new files
@@ -188,7 +193,8 @@ export function SmartphoneManagement() {
     const handleSave = async () => {
         setSaving(true);
         try {
-            if (!currentProduct.brand_id || !currentProduct.model_id || !currentProduct.price || !currentProduct.stock) {
+            const priceValid = currencyMode === 'USD' ? !!currentProduct.price_usd : !!currentProduct.price;
+            if (!currentProduct.brand_id || !currentProduct.model_id || !priceValid || !currentProduct.stock) {
                 toast({ title: "Faltan datos", description: "Completa los campos obligatorios.", variant: "destructive" });
                 setSaving(false);
                 return;
@@ -225,7 +231,8 @@ export function SmartphoneManagement() {
             const payload = {
                 name,
                 description: currentProduct.description || '',
-                price: currentProduct.price,
+                price: currencyMode === 'ARS' ? currentProduct.price : (currentProduct.price || 0),
+                price_usd: currencyMode === 'USD' ? (currentProduct.price_usd ?? null) : null,
                 stock: currentProduct.stock,
                 image_url: finalImageUrl,
                 additional_images: finalAdditionalImages,
@@ -288,6 +295,7 @@ export function SmartphoneManagement() {
 
     const clearForm = () => {
         setCurrentProduct({ additional_images: [], tags: [], stock: 0 });
+        setCurrencyMode('ARS');
         setPreviewUrl(null);
         setImageFile(null);
         setAdditionalFiles([]);
@@ -460,7 +468,16 @@ export function SmartphoneManagement() {
                                         <TableCell className="text-sm text-muted-foreground">
                                             {product.capacity} • {product.color} • {product.condition}
                                         </TableCell>
-                                        <TableCell>${product.price}</TableCell>
+                                        <TableCell>
+                                            {product.price_usd != null ? (
+                                                <div>
+                                                    <span className="text-green-600 font-medium">USD {product.price_usd}</span>
+                                                    <span className="ml-1 text-xs text-muted-foreground">(${product.price.toLocaleString('es-AR')})</span>
+                                                </div>
+                                            ) : (
+                                                <span>${product.price.toLocaleString('es-AR')}</span>
+                                            )}
+                                        </TableCell>
                                         <TableCell>{product.stock}</TableCell>
                                         <TableCell>
                                             <div className="flex items-center gap-2">
@@ -552,12 +569,35 @@ export function SmartphoneManagement() {
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <Label>Precio ($)</Label>
-                                    <Input
-                                        type="number"
-                                        value={currentProduct.price || ''}
-                                        onChange={e => setCurrentProduct({ ...currentProduct, price: Number(e.target.value) })}
-                                    />
+                                    <div className="flex items-center justify-between">
+                                        <Label>{currencyMode === 'USD' ? 'Precio (USD)' : 'Precio ($)'}</Label>
+                                        <div className="flex rounded-md overflow-hidden border text-xs">
+                                            <button
+                                                type="button"
+                                                className={`px-2 py-0.5 ${currencyMode === 'ARS' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'}`}
+                                                onClick={() => setCurrencyMode('ARS')}
+                                            >ARS</button>
+                                            <button
+                                                type="button"
+                                                className={`px-2 py-0.5 ${currencyMode === 'USD' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground'}`}
+                                                onClick={() => setCurrencyMode('USD')}
+                                            >USD</button>
+                                        </div>
+                                    </div>
+                                    {currencyMode === 'ARS' ? (
+                                        <Input
+                                            type="number"
+                                            value={currentProduct.price || ''}
+                                            onChange={e => setCurrentProduct({ ...currentProduct, price: Number(e.target.value) })}
+                                        />
+                                    ) : (
+                                        <Input
+                                            type="number"
+                                            placeholder="ej: 150"
+                                            value={currentProduct.price_usd ?? ''}
+                                            onChange={e => setCurrentProduct({ ...currentProduct, price_usd: e.target.value === '' ? null : Number(e.target.value) })}
+                                        />
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Stock</Label>
