@@ -64,11 +64,19 @@ export const DollarSettings = () => {
   const refreshRate = useCallback(async (type?: string, silent = false) => {
     const dollarType = type || settings?.dollar_type || 'blue';
     try {
-      const res = await supabase.functions.invoke('get-dollar-rate', {
-        body: { type: dollarType },
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/get-dollar-rate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ type: dollarType }),
       });
-      if (res.error) throw new Error(res.error.message || 'No se pudo conectar con DolarAPI');
-      const json = res.data;
+      if (!res.ok) throw new Error(`Error ${res.status}: ${res.statusText}`);
+      const json = await res.json();
       const newRate = Number(json.venta);
       if (!newRate || isNaN(newRate)) throw new Error('Respuesta inválida de DolarAPI');
 
