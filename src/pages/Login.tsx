@@ -25,18 +25,18 @@ const Login = () => {
 
     // Check lockout status on mount and when it changes
     useEffect(() => {
-        const storedLockout = localStorage.getItem('loginLockoutUntil');
+        const storedLockout = sessionStorage.getItem('loginLockoutUntil');
         if (storedLockout) {
             const lockoutTime = parseInt(storedLockout, 10);
             if (Date.now() < lockoutTime) {
                 setLockoutUntil(lockoutTime);
             } else {
-                localStorage.removeItem('loginLockoutUntil');
+                sessionStorage.removeItem('loginLockoutUntil');
                 setFailedAttempts(0);
             }
         }
 
-        const storedAttempts = localStorage.getItem('loginFailedAttempts');
+        const storedAttempts = sessionStorage.getItem('loginFailedAttempts');
         if (storedAttempts) {
             setFailedAttempts(parseInt(storedAttempts, 10));
         }
@@ -50,16 +50,16 @@ const Login = () => {
         if (timeRemaining <= 0) {
             setLockoutUntil(null);
             setFailedAttempts(0);
-            localStorage.removeItem('loginLockoutUntil');
-            localStorage.removeItem('loginFailedAttempts');
+            sessionStorage.removeItem('loginLockoutUntil');
+            sessionStorage.removeItem('loginFailedAttempts');
             return;
         }
 
         const timer = setTimeout(() => {
             setLockoutUntil(null);
             setFailedAttempts(0);
-            localStorage.removeItem('loginLockoutUntil');
-            localStorage.removeItem('loginFailedAttempts');
+            sessionStorage.removeItem('loginLockoutUntil');
+            sessionStorage.removeItem('loginFailedAttempts');
         }, timeRemaining);
 
         return () => clearTimeout(timer);
@@ -95,12 +95,12 @@ const Login = () => {
         if (error) {
             const newAttempts = failedAttempts + 1;
             setFailedAttempts(newAttempts);
-            localStorage.setItem('loginFailedAttempts', newAttempts.toString());
+            sessionStorage.setItem('loginFailedAttempts', newAttempts.toString());
 
             if (newAttempts >= 5) {
                 const lockoutTime = Date.now() + 5 * 60 * 1000; // 5 minutes
                 setLockoutUntil(lockoutTime);
-                localStorage.setItem('loginLockoutUntil', lockoutTime.toString());
+                sessionStorage.setItem('loginLockoutUntil', lockoutTime.toString());
 
                 toast({
                     title: 'Cuenta bloqueada temporalmente',
@@ -120,8 +120,8 @@ const Login = () => {
             // Reset on successful login
             setFailedAttempts(0);
             setLockoutUntil(null);
-            localStorage.removeItem('loginLockoutUntil');
-            localStorage.removeItem('loginFailedAttempts');
+            sessionStorage.removeItem('loginLockoutUntil');
+            sessionStorage.removeItem('loginFailedAttempts');
             toast({
                 title: 'Bienvenido',
                 description: 'Has iniciado sesión correctamente.',

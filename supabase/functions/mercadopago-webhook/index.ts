@@ -1,6 +1,61 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ── Webhook signature verification ────────────────────────────────────────────
+// MercadoPago signs each webhook with HMAC-SHA256.
+// Requires MERCADOPAGO_WEBHOOK_SECRET env var (set in Supabase secrets).
+// Reference: https://www.mercadopago.com.ar/developers/en/docs/your-integrations/notifications/webhooks
+async function verifyMercadoPagoSignature(req: Request, dataId: string): Promise<boolean> {
+  const secret = Deno.env.get("MERCADOPAGO_WEBHOOK_SECRET");
+  if (!secret) {
+    console.warn("MERCADOPAGO_WEBHOOK_SECRET not set — skipping signature verification");
+    return true; // allow through but log warning so operator knows to set it
+  }
+
+  const xSignature = req.headers.get("x-signature");
+  const xRequestId = req.headers.get("x-request-id") || "";
+
+  if (!xSignature) {
+    console.error("Missing x-signature header");
+    return false;
+  }
+
+  // Parse ts and v1 from header (format: "ts=<timestamp>,v1=<hash>")
+  const parts = Object.fromEntries(
+    xSignature.split(",").map((part) => part.split("=").map((s) => s.trim()) as [string, string])
+  );
+  const ts = parts["ts"];
+  const v1 = parts["v1"];
+  if (!ts || !v1) {
+    console.error("Malformed x-signature header");
+    return false;
+  }
+
+  // Build signed manifest
+  const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts}`;
+
+  // Compute HMAC-SHA256
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(manifest));
+  const computedHash = Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  if (computedHash !== v1) {
+    console.error("Signature mismatch — possible forged webhook");
+    return false;
+  }
+
+  return true;
+}
+
 const ALLOWED_ORIGINS = [
   "https://nictech.vercel.app",
   "https://www.nictech.vercel.app",
@@ -244,13 +299,22 @@ serve(async (req) => {
     const id = url.searchParams.get("id") || url.searchParams.get("data.id");
 
     if (topic !== "payment") {
+      let bodyId: string | undefined;
       try {
         const body = await req.json();
         if (body.type === "payment" && body.data && body.data.id) {
-          return processPayment(body.data.id, req);
+          bodyId = String(body.data.id);
         }
       } catch (_e) {
         // ignore JSON parse error
+      }
+
+      if (bodyId) {
+        const valid = await verifyMercadoPagoSignature(req, bodyId);
+        if (!valid) {
+          return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(req) });
+        }
+        return processPayment(bodyId, req);
       }
 
       if (!id) {
@@ -259,6 +323,10 @@ serve(async (req) => {
     }
 
     if (id) {
+      const valid = await verifyMercadoPagoSignature(req, id);
+      if (!valid) {
+        return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(req) });
+      }
       return processPayment(id, req);
     }
 
@@ -301,7 +369,7 @@ async function processPayment(paymentId: string, req: Request) {
   const emailAlreadySent = existingOrder?.email_sent || false;
   const shouldDecrementStock = status === "approved" && !stockAlreadyDecremented;
 
-  // 3. Upsert order
+  // 3. Upsert order (status + data only, stock_decremented handled atomically below)
   const { error: dbError } = await supabase
     .from("orders")
     .upsert({
@@ -311,7 +379,6 @@ async function processPayment(paymentId: string, req: Request) {
       items,
       payer,
       updated_at: new Date().toISOString(),
-      stock_decremented: stockAlreadyDecremented || shouldDecrementStock,
     }, { onConflict: "payment_id" });
 
   if (dbError) {
@@ -319,15 +386,21 @@ async function processPayment(paymentId: string, req: Request) {
     throw dbError;
   }
 
-  // 4. Decrement stock if approved and not yet done
+  // 4. Decrement stock using an atomic conditional UPDATE to prevent race conditions.
+  // Only the process that flips stock_decremented from false → true will proceed.
+  // Concurrent calls will get 0 rows back and skip decrement.
   if (shouldDecrementStock) {
-    const { data: recheckOrder } = await supabase
+    const { data: claimed, error: claimError } = await supabase
       .from("orders")
-      .select("stock_decremented")
+      .update({ stock_decremented: true })
       .eq("payment_id", String(paymentId))
-      .single();
+      .eq("stock_decremented", false)
+      .select("payment_id");
 
-    if (recheckOrder?.stock_decremented) {
+    if (claimError) {
+      console.error("Error claiming stock decrement lock:", claimError);
+    } else if (claimed && claimed.length > 0) {
+      // This process won the atomic claim — safe to decrement
       let itemsToProcess = items;
       if (items.length === 0 && metadata.items) {
         try { itemsToProcess = JSON.parse(metadata.items); } catch (_e) { /* ignore */ }
@@ -342,6 +415,8 @@ async function processPayment(paymentId: string, req: Request) {
           if (rpcError) console.error(`Error decrementing stock for ${item.id}:`, rpcError);
         }
       }
+    } else {
+      console.log(`Stock for payment ${paymentId} already claimed by another process — skipping`);
     }
   }
 

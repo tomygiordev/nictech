@@ -127,10 +127,8 @@ serve(async (req) => {
       origin = origin.slice(0, -1);
     }
 
-    // Validate origin: only accept HTTPS in production, allow localhost for dev
-    const validOrigin = (origin && (origin.startsWith("https://") || origin.startsWith("http://localhost")))
-      ? origin
-      : "https://nictech.vercel.app";
+    // Validate origin strictly against allowlist — prevents open redirect after payment
+    const validOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : "https://nictech.vercel.app";
 
     // IMPORTANT: Mercado Pago sometimes dislikes localhost for auto_return
     // We strictly format the back_urls here.

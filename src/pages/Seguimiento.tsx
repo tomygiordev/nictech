@@ -31,6 +31,8 @@ interface RepairLog {
   is_public: boolean;
 }
 
+const SEARCH_COOLDOWN_MS = 3000; // 3 seconds between searches
+
 const Seguimiento = () => {
   const [searchValue, setSearchValue] = useState('');
   const [repairs, setRepairs] = useState<Repair[]>([]);
@@ -38,6 +40,7 @@ const Seguimiento = () => {
   const [logs, setLogs] = useState<RepairLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [lastSearchTime, setLastSearchTime] = useState(0);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +53,19 @@ const Seguimiento = () => {
       });
       return;
     }
+
+    const now = Date.now();
+    const elapsed = now - lastSearchTime;
+    if (elapsed < SEARCH_COOLDOWN_MS) {
+      const secondsLeft = Math.ceil((SEARCH_COOLDOWN_MS - elapsed) / 1000);
+      toast({
+        title: 'Demasiadas búsquedas',
+        description: `Por favor esperá ${secondsLeft} segundo${secondsLeft !== 1 ? 's' : ''} antes de buscar de nuevo.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    setLastSearchTime(now);
 
     setLoading(true);
     setSearched(true);
