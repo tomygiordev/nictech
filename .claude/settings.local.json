@@ -18,7 +18,16 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "mcp__supabase__execute_sql",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const l = require\\(''''lucide-react''''\\); console.log\\(typeof l.ImagePlay\\)\")",
+      "Bash(grep -E \"^.*error.*$|TS[0-9]\")",
+      "Bash(npx supabase:*)",
+      "mcp__supabase__deploy_edge_function",
+      "Bash(curl:*)",
+      "Bash(sort -t'|' -k2 -rn)",
+      "Bash(find /c/Users/Gime/Desktop/nictech -name .env* -type f)",
+      "Bash(grep -r VITE_SUPABASE /c/Users/Gime/Desktop/nictech --include=*.ts --include=*.tsx --include=*.js)",
+      "Bash(find C:UsersGimeDesktopnictechsupabase -name *.sql)"
     ]
   },
   "enableAllProjectMcpServers": true,

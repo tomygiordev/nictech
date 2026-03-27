@@ -32,16 +32,16 @@ export const Layout = ({ children }: LayoutProps) => {
         </Suspense>
       )}
       <div
-        className="overflow-hidden py-2.5 group"
+        className="overflow-hidden py-2 group"
         role="marquee"
         aria-label="Información destacada"
-        style={{ background: 'linear-gradient(135deg, #f97316 0%, #f47820 50%, #f97316 100%)' }}
+        style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 50%, #f59e0b 100%)' }}
       >
         <div className="flex w-max whitespace-nowrap animate-marquee group-hover:[animation-play-state:paused] group-focus-within:[animation-play-state:paused] motion-reduce:animate-none gap-0">
           {[...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS].map((item, i) => (
-            <span key={i} className="text-xs sm:text-sm font-extrabold uppercase tracking-wide text-white inline-flex items-center">
+            <span key={i} className="text-xs font-semibold tracking-widest uppercase text-white inline-flex items-center" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
               <span className="px-8">{item}</span>
-              <span className="opacity-40">·</span>
+              <span className="opacity-30">✦</span>
             </span>
           ))}
         </div>
