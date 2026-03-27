@@ -114,7 +114,7 @@ export const CartSlideOver = () => {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-9 w-9"
                           onClick={() => updateQuantity(item.id, item.quantity - 1)}
                         >
                           <Minus className="h-3 w-3" />
@@ -125,7 +125,7 @@ export const CartSlideOver = () => {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-7 w-7"
+                          className="h-9 w-9"
                           onClick={() => updateQuantity(item.id, item.quantity + 1)}
                           disabled={item.quantity >= item.maxStock}
                         >
@@ -134,7 +134,7 @@ export const CartSlideOver = () => {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 ml-auto text-destructive hover:text-destructive"
+                          className="h-9 w-9 ml-auto text-destructive hover:text-destructive"
                           onClick={() => removeFromCart(item.id)}
                         >
                           <Trash2 className="h-3 w-3" />

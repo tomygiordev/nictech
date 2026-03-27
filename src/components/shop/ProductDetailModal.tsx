@@ -390,7 +390,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                     </button>
 
                     {/* Imagen centrada — pantalla completa */}
-                    <div className="flex-1 flex items-center justify-center px-16 py-8">
+                    <div className="flex-1 flex items-center justify-center px-4 sm:px-16 py-8">
                         {images[currentImageIndex] && (
                             <img
                                 src={images[currentImageIndex]}
@@ -398,7 +398,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                 onClick={(e) => e.stopPropagation()}
                                 className="select-none"
                                 style={{
-                                    maxWidth: 'calc(100vw - 160px)',
+                                    maxWidth: 'calc(100vw - 2rem)',
                                     maxHeight: 'calc(100vh - 120px)',
                                     objectFit: 'contain',
                                     borderRadius: '8px',

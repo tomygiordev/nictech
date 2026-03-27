@@ -592,7 +592,7 @@ const Tienda = () => {
                   </p>
 
                   <Select value={sortOrder} onValueChange={(value: any) => setSortOrder(value)}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-[140px] sm:w-[180px]">
                       <SelectValue placeholder="Ordenar por" />
                     </SelectTrigger>
                     <SelectContent>
