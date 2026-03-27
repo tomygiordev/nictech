@@ -717,6 +717,7 @@ export const VariantManagement = () => {
                                 models={smartphones}
                                 selectedModelIds={newVariantData.modelIds}
                                 onSelectionChange={(ids) => setNewVariantData({ ...newVariantData, modelIds: ids })}
+                                onModelCreated={(model) => setSmartphones(prev => [...prev, model])}
                                 placeholder="Seleccionar uno o más modelos..."
                             />
                         </div>

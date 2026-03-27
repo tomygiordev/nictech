@@ -589,6 +589,7 @@ export const CaseManagement = () => {
                                         models={smartphones}
                                         selectedModelIds={newCaseData.modelIds}
                                         onSelectionChange={(ids) => setNewCaseData({ ...newCaseData, modelIds: ids })}
+                                        onModelCreated={(model) => setSmartphones(prev => [...prev, model])}
                                         placeholder="Seleccionar uno o más modelos..."
                                     />
                                 </div>
