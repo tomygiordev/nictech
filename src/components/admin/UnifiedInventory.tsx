@@ -133,15 +133,7 @@ export const UnifiedInventory = () => {
   const [selectedType, setSelectedType] = useState<ProductType | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Phone edit state
-  const [phoneEdit, setPhoneEdit] = useState({
-    brand_id: '', brand_name: '', model_id: '', model_name: '',
-    capacity: '', color: '', condition: 'Nuevo',
-    priceCurrency: 'ARS' as 'ARS' | 'USD', price: '', price_usd: '',
-    stock: '',
-  });
-
-  // Generic / case / variant product-level edit state (also used for ADD)
+  // Unified form state (ADD + EDIT for all product types)
   const [form, setForm] = useState({
     name: '', category_id: '', description: '',
     priceCurrency: 'ARS' as 'ARS' | 'USD', price: '', price_usd: '',
@@ -149,6 +141,9 @@ export const UnifiedInventory = () => {
     image_url: '', image_file: null as File | null,
     additional_images: [] as string[], additional_image_files: [] as File[],
     tags: [] as string[], tagInput: '',
+    // Phone-specific fields
+    brand_id: '', brand_name: '', model_id: '', model_name: '',
+    capacity: '', color: '', condition: 'Nuevo',
   });
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -198,6 +193,12 @@ export const UnifiedInventory = () => {
 
   useEffect(() => { fetchAll(); }, []);
 
+  // ── Phone category helper ─────────────────────────────────────────────
+  const isPhoneCategory = (catId: string) => {
+    const cat = categories.find(c => c.id === catId);
+    return cat ? PHONE_KEYWORDS.some(k => cat.name.toLowerCase().includes(k)) : false;
+  };
+
   // ── Select product ────────────────────────────────────────────────────
   const selectProduct = async (p: InventoryProduct) => {
     const type = getType(p, variantIds);
@@ -206,46 +207,36 @@ export const UnifiedInventory = () => {
     setEditVariants([]);
     setVariantStockEdits({});
 
-    if (type === 'phone') {
-      const hasUsd = p.price_usd != null;
-      setPhoneEdit({
-        brand_id: p.brand_id || '',
-        brand_name: p.brand_name || '',
-        model_id: p.model_id || '',
-        model_name: p.model_name || '',
-        capacity: p.capacity || '',
-        color: p.color || '',
-        condition: p.condition || 'Nuevo',
-        priceCurrency: hasUsd ? 'USD' : 'ARS',
-        price: hasUsd ? '' : p.price.toString(),
-        price_usd: hasUsd ? p.price_usd!.toString() : '',
-        stock: p.stock.toString(),
-      });
-    } else {
-      const hasUsd = p.price_usd != null;
-      setForm({
-        name: p.name, category_id: p.category_id,
-        description: p.description || '',
-        priceCurrency: hasUsd ? 'USD' : 'ARS',
-        price: hasUsd ? '' : p.price.toString(),
-        price_usd: hasUsd ? p.price_usd!.toString() : '',
-        stock: p.stock.toString(),
-        image_url: p.image_url || '', image_file: null,
-        additional_images: p.additional_images || [],
-        additional_image_files: [],
-        tags: p.tags || [], tagInput: '',
-      });
+    const hasUsd = p.price_usd != null;
+    setForm({
+      name: p.name, category_id: p.category_id,
+      description: p.description || '',
+      priceCurrency: hasUsd ? 'USD' : 'ARS',
+      price: hasUsd ? '' : p.price.toString(),
+      price_usd: hasUsd ? p.price_usd!.toString() : '',
+      stock: p.stock.toString(),
+      image_url: p.image_url || '', image_file: null,
+      additional_images: p.additional_images || [],
+      additional_image_files: [],
+      tags: p.tags || [], tagInput: '',
+      brand_id: p.brand_id || '',
+      brand_name: p.brand_name || '',
+      model_id: p.model_id || '',
+      model_name: p.model_name || '',
+      capacity: p.capacity || '',
+      color: p.color || '',
+      condition: p.condition || 'Nuevo',
+    });
 
-      if (type === 'case' || type === 'variant') {
-        setLoadingVariants(true);
-        const { data } = await (supabase as any)
-          .from('product_variants').select('id, color, stock, image_url')
-          .eq('product_id', p.id).order('color');
-        const rows = (data || []) as ProductVariantRow[];
-        setEditVariants(rows);
-        setVariantStockEdits(Object.fromEntries(rows.map(v => [v.id, v.stock.toString()])));
-        setLoadingVariants(false);
-      }
+    if (type === 'case' || type === 'variant') {
+      setLoadingVariants(true);
+      const { data } = await (supabase as any)
+        .from('product_variants').select('id, color, stock, image_url')
+        .eq('product_id', p.id).order('color');
+      const rows = (data || []) as ProductVariantRow[];
+      setEditVariants(rows);
+      setVariantStockEdits(Object.fromEntries(rows.map(v => [v.id, v.stock.toString()])));
+      setLoadingVariants(false);
     }
   };
 
@@ -260,71 +251,61 @@ export const UnifiedInventory = () => {
       stock: '', image_url: '', image_file: null,
       additional_images: [], additional_image_files: [],
       tags: [], tagInput: '',
+      brand_id: '', brand_name: '', model_id: '', model_name: '',
+      capacity: '', color: '', condition: 'Nuevo',
     });
   };
 
-  // ── Save phone ────────────────────────────────────────────────────────
-  const savePhone = async () => {
-    setSaving(true);
-    try {
-      const priceUsd = phoneEdit.priceCurrency === 'USD' ? parseFloat(phoneEdit.price_usd) || null : null;
-      const price = phoneEdit.priceCurrency === 'ARS'
-        ? parseFloat(phoneEdit.price) || 0
-        : (priceUsd && dollarRate ? Math.round(priceUsd * dollarRate) : 0);
-      const name = [phoneEdit.brand_name, phoneEdit.model_name, phoneEdit.capacity, phoneEdit.color, `(${phoneEdit.condition})`]
-        .filter(Boolean).join(' ').replace(/\s+/g, ' ');
-
-      const { error } = await (supabase as any).from('products').update({
-        name, price, price_usd: priceUsd,
-        stock: parseInt(phoneEdit.stock) || 0,
-        brand_id: phoneEdit.brand_id || null,
-        model_id: phoneEdit.model_id || null,
-        capacity: phoneEdit.capacity || null,
-        color: phoneEdit.color || null,
-        condition: phoneEdit.condition || null,
-      }).eq('id', selectedId);
-      if (error) throw error;
-      toast({ title: 'Celular actualizado' });
-      clearSelection(); fetchAll();
-    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
-    setSaving(false);
-  };
-
-  // ── Save generic / case / variant product ────────────────────────────
+  // ── Save product (all types) ──────────────────────────────────────────
   const saveGeneric = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setSaving(true);
     try {
-      let finalImage = form.image_url;
-      if (form.image_file) finalImage = await uploadImageFile(form.image_file);
-
-      const existingUrls = form.additional_images.filter(u => !u.startsWith('blob:'));
-      const newUrls = await Promise.all(form.additional_image_files.map(uploadImageFile));
-      const allImages = [...existingUrls, ...newUrls];
-
       const priceUsd = form.priceCurrency === 'USD' ? parseFloat(form.price_usd) || null : null;
       const price = form.priceCurrency === 'ARS'
         ? parseFloat(form.price) || 0
         : (priceUsd && dollarRate ? Math.round(priceUsd * dollarRate) : 0);
 
+      const isPhone = isPhoneCategory(form.category_id);
+
+      let finalName = form.name;
+      const phonePayload: Record<string, any> = {};
+
+      if (isPhone) {
+        finalName = [form.brand_name, form.model_name, form.capacity, form.color, form.condition ? `(${form.condition})` : '']
+          .filter(Boolean).join(' ').replace(/\s+/g, ' ');
+        phonePayload.brand_id = form.brand_id || null;
+        phonePayload.model_id = form.model_id || null;
+        phonePayload.capacity = form.capacity || null;
+        phonePayload.color = form.color || null;
+        phonePayload.condition = form.condition || null;
+      }
+
+      let finalImage = form.image_url;
+      if (form.image_file) finalImage = await uploadImageFile(form.image_file);
+      const existingUrls = form.additional_images.filter(u => !u.startsWith('blob:'));
+      const newUrls = await Promise.all(form.additional_image_files.map(uploadImageFile));
+      const allImages = [...existingUrls, ...newUrls];
+
       const payload: any = {
-        name: form.name, category_id: form.category_id,
+        name: finalName, category_id: form.category_id,
         price, price_usd: priceUsd,
         stock: parseInt(form.stock) || 0,
         description: form.description || null,
         image_url: finalImage || null,
         additional_images: allImages,
         tags: form.tags,
+        ...phonePayload,
       };
 
       if (selectedId) {
         const { error } = await (supabase as any).from('products').update(payload).eq('id', selectedId);
         if (error) throw error;
-        toast({ title: 'Producto actualizado' });
+        toast({ title: isPhone ? 'Celular actualizado' : 'Producto actualizado' });
       } else {
         const { error } = await (supabase as any).from('products').insert(payload);
         if (error) throw error;
-        toast({ title: 'Producto agregado' });
+        toast({ title: isPhone ? 'Celular agregado' : 'Producto agregado' });
       }
       clearSelection(); fetchAll();
     } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
@@ -384,67 +365,6 @@ export const UnifiedInventory = () => {
   // ─────────────────────────────────────────────────────────────────────
 
   const renderLeftPanel = () => {
-    // ── Phone edit ───────────────────────────────────────────────────
-    if (selectedType === 'phone') return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-base flex items-center gap-2">
-            <Smartphone className="h-4 w-4 text-blue-600" /> Editar Celular
-          </h3>
-          <Button variant="ghost" size="sm" onClick={clearSelection}><X className="h-4 w-4" /></Button>
-        </div>
-
-        <BrandModelSelector
-          selectedBrandId={phoneEdit.brand_id}
-          selectedModelId={phoneEdit.model_id}
-          onBrandChange={(id, name) => setPhoneEdit(f => ({ ...f, brand_id: id, brand_name: name, model_id: '', model_name: '' }))}
-          onModelChange={(id, name) => setPhoneEdit(f => ({ ...f, model_id: id, model_name: name }))}
-        />
-
-        <div className="grid grid-cols-2 gap-3">
-          <CreatableAttributeSelector tableName="capacities" label="Capacidad"
-            selectedValue={phoneEdit.capacity}
-            onValueChange={v => setPhoneEdit(f => ({ ...f, capacity: v }))} placeholder="Ej: 128GB" />
-          <CreatableAttributeSelector tableName="colors" label="Color"
-            selectedValue={phoneEdit.color}
-            onValueChange={v => setPhoneEdit(f => ({ ...f, color: v }))} placeholder="Ej: Negro" />
-        </div>
-
-        <div className="space-y-1">
-          <Label>Estado</Label>
-          <Select value={phoneEdit.condition} onValueChange={v => setPhoneEdit(f => ({ ...f, condition: v }))}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Nuevo">Nuevo</SelectItem>
-              <SelectItem value="Usado">Usado</SelectItem>
-              <SelectItem value="Reacondicionado">Reacondicionado</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label>Precio</Label>
-            <PriceToggle currency={phoneEdit.priceCurrency}
-              onToggle={c => setPhoneEdit(f => ({ ...f, priceCurrency: c }))}
-              value={phoneEdit.priceCurrency === 'USD' ? phoneEdit.price_usd : phoneEdit.price}
-              onChange={v => setPhoneEdit(f => phoneEdit.priceCurrency === 'USD' ? { ...f, price_usd: v } : { ...f, price: v })}
-              rate={dollarRate} />
-          </div>
-          <div className="space-y-1">
-            <Label>Stock</Label>
-            <Input type="number" min="0" value={phoneEdit.stock}
-              onChange={e => setPhoneEdit(f => ({ ...f, stock: e.target.value }))} />
-          </div>
-        </div>
-
-        <Button className="w-full" onClick={savePhone} disabled={saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-          Guardar Cambios
-        </Button>
-      </div>
-    );
-
     // ── Case / Variant edit ──────────────────────────────────────────
     if (selectedType === 'case' || selectedType === 'variant') return (
       <div className="space-y-4">
@@ -510,13 +430,14 @@ export const UnifiedInventory = () => {
       </div>
     );
 
-    // ── Generic: add or edit ─────────────────────────────────────────
+    // ── Generic / Phone: add or edit ────────────────────────────────
+    const isPhone = isPhoneCategory(form.category_id);
     return (
       <form onSubmit={saveGeneric} className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-base flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            {selectedId ? 'Editar Producto' : 'Agregar Producto'}
+            {isPhone ? <Smartphone className="h-4 w-4 text-blue-600" /> : <Plus className="h-4 w-4" />}
+            {selectedId ? (isPhone ? 'Editar Celular' : 'Editar Producto') : (isPhone ? 'Agregar Celular' : 'Agregar Producto')}
           </h3>
           {selectedId && (
             <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>Cancelar</Button>
@@ -526,17 +447,47 @@ export const UnifiedInventory = () => {
         <CreatableResourceSelector tableName="categories" label="Categoría"
           placeholder="Seleccionar o crear categoría"
           value={form.category_id}
-          onValueChange={v => setForm(f => ({ ...f, category_id: v }))}
-          filter={(item: any) => {
-            const n = item.name.toLowerCase();
-            return !PHONE_KEYWORDS.some(k => n.includes(k)) && !CASE_KEYWORDS.some(k => n.includes(k));
-          }}
+          onValueChange={v => setForm(f => ({ ...f, category_id: v, brand_id: '', brand_name: '', model_id: '', model_name: '', capacity: '', color: '', condition: 'Nuevo' }))}
         />
 
-        <div className="space-y-1">
-          <Label>Nombre</Label>
-          <Input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        </div>
+        {/* Phone-specific fields */}
+        {isPhone && (
+          <>
+            <BrandModelSelector
+              selectedBrandId={form.brand_id}
+              selectedModelId={form.model_id}
+              onBrandChange={(id, name) => setForm(f => ({ ...f, brand_id: id, brand_name: name, model_id: '', model_name: '' }))}
+              onModelChange={(id, name) => setForm(f => ({ ...f, model_id: id, model_name: name }))}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <CreatableAttributeSelector tableName="capacities" label="Capacidad"
+                selectedValue={form.capacity}
+                onValueChange={v => setForm(f => ({ ...f, capacity: v }))} placeholder="Ej: 128GB" />
+              <CreatableAttributeSelector tableName="colors" label="Color"
+                selectedValue={form.color}
+                onValueChange={v => setForm(f => ({ ...f, color: v }))} placeholder="Ej: Negro" />
+            </div>
+            <div className="space-y-1">
+              <Label>Estado</Label>
+              <Select value={form.condition} onValueChange={v => setForm(f => ({ ...f, condition: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Nuevo">Nuevo</SelectItem>
+                  <SelectItem value="Usado">Usado</SelectItem>
+                  <SelectItem value="Reacondicionado">Reacondicionado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+
+        {/* Name input — only for non-phone products */}
+        {!isPhone && (
+          <div className="space-y-1">
+            <Label>Nombre</Label>
+            <Input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
@@ -605,7 +556,7 @@ export const UnifiedInventory = () => {
 
         <Button type="submit" className="w-full" disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-          {selectedId ? 'Actualizar' : 'Agregar Producto'}
+          {selectedId ? 'Actualizar' : (isPhone ? 'Agregar Celular' : 'Agregar Producto')}
         </Button>
       </form>
     );
@@ -630,7 +581,7 @@ export const UnifiedInventory = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* ── Left panel ──────────────────────────────────────── */}
-        <div className="bg-card rounded-2xl border border-border p-5 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-y-auto hide-scrollbar">
+        <div className="bg-card rounded-2xl border border-border p-5">
           {renderLeftPanel()}
         </div>
 

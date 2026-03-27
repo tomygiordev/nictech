@@ -17,7 +17,6 @@ import { toast } from '@/hooks/use-toast';
 import { generateTrackingCode } from '@/utils/generateTrackingCode';
 import { CaseManagement } from '@/components/admin/CaseManagement';
 import { VariantManagement } from '@/components/admin/VariantManagement';
-import { SmartphoneManagement } from '@/components/admin/SmartphoneManagement';
 import { BlogManagement } from '@/components/admin/BlogManagement';
 import { PromoManagement } from '@/components/admin/PromoManagement';
 import { BannerManagement } from '@/components/admin/BannerManagement';
@@ -874,7 +873,6 @@ const Admin = () => {
                   { value: 'repairs',     label: 'Reparaciones',  icon: Wrench },
                   { value: 'inventory',   label: 'Inventario',    icon: BarChart3 },
                   { value: 'products',    label: 'Productos',     icon: Package },
-                  { value: 'smartphones', label: 'Celulares',     icon: Smartphone },
                   { value: 'cases',       label: 'Fundas',        icon: Smartphone },
                   { value: 'variants',    label: 'Variantes',     icon: Package },
                   { value: 'orders',      label: 'Ventas Online', icon: Package },
@@ -909,7 +907,6 @@ const Admin = () => {
                 { value: 'repairs',     label: 'Reparaciones',  icon: Wrench },
                 { value: 'inventory',   label: 'Inventario',    icon: BarChart3 },
                 { value: 'products',    label: 'Productos',     icon: Package },
-                { value: 'smartphones', label: 'Celulares',     icon: Smartphone },
                 { value: 'cases',       label: 'Fundas',        icon: Smartphone },
                 { value: 'variants',    label: 'Variantes',     icon: Package },
                 { value: 'orders',      label: 'Ventas Online', icon: Package },
@@ -1158,11 +1155,6 @@ const Admin = () => {
                     </div>
                   </div>
                 </div>
-              </TabsContent>
-
-              {/* Smartphones Tab */}
-              <TabsContent value="smartphones">
-                <SmartphoneManagement />
               </TabsContent>
 
               {/* Products Tab */}
