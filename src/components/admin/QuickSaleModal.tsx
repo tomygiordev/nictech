@@ -476,52 +476,65 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
 
             {/* Search bar */}
             <div className="p-3 border-b border-border bg-muted/20 relative">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <input
-                  ref={searchRef}
-                  type="text"
-                  placeholder="Buscar producto por nombre o categoría..."
-                  value={query}
-                  onChange={e => { setQuery(e.target.value); if (selected) { setSelected(null); setVariants([]); setSelVariant(null); } }}
-                  className="w-full pl-9 pr-9 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-ring"
-                  autoComplete="off"
-                />
-                {searching
-                  ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
-                  : selected
-                    ? <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-green-500" />
-                    : null}
-              </div>
-
-              {/* Dropdown */}
-              {showResults && (
-                <div className="absolute left-3 right-3 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl z-50 overflow-hidden max-h-72 overflow-y-auto">
-                  {results.length === 0 && !searching
-                    ? <p className="text-sm text-muted-foreground px-3 py-3">Sin resultados para "{query}"</p>
-                    : results.map(r => (
-                      <button key={r.id} type="button"
-                        onClick={() => selectProduct(r)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-muted transition-colors text-left border-b border-border/40 last:border-0">
-                        <ProductThumb url={r.image_url} size={9} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{r.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {r.category_name}
-                            {r.has_variants
-                              ? <span className="ml-1.5 text-purple-600 font-medium">variantes</span>
-                              : <span className="ml-1.5">· {r.stock} en stock</span>}
-                          </p>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          {r.price_usd != null
-                            ? <><p className="text-sm font-bold text-green-600">USD {r.price_usd}</p>
-                               <p className="text-xs text-muted-foreground">${r.price.toLocaleString('es-AR')}</p></>
-                            : <p className="text-sm font-bold">${r.price.toLocaleString('es-AR')}</p>}
-                        </div>
-                      </button>
-                    ))}
+              {selected ? (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-green-500/50 bg-green-500/5">
+                  <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  <span className="text-sm font-medium flex-1 truncate">{selected.name}</span>
+                  <button
+                    type="button"
+                    onClick={clearSelection}
+                    className="flex-shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
+                    title="Cambiar producto"
+                  >
+                    <X className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
                 </div>
+              ) : (
+                <>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <input
+                      ref={searchRef}
+                      type="text"
+                      placeholder="Buscar producto por nombre o categoria..."
+                      value={query}
+                      onChange={e => setQuery(e.target.value)}
+                      className="w-full pl-9 pr-9 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-ring"
+                      autoComplete="off"
+                    />
+                    {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />}
+                  </div>
+
+                  {/* Dropdown */}
+                  {showResults && (
+                    <div className="absolute left-3 right-3 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl z-50 overflow-hidden max-h-72 overflow-y-auto">
+                      {results.length === 0 && !searching
+                        ? <p className="text-sm text-muted-foreground px-3 py-3">Sin resultados para "{query}"</p>
+                        : results.map(r => (
+                          <button key={r.id} type="button"
+                            onClick={() => selectProduct(r)}
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-muted transition-colors text-left border-b border-border/40 last:border-0">
+                            <ProductThumb url={r.image_url} size={9} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{r.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {r.category_name}
+                                {r.has_variants
+                                  ? <span className="ml-1.5 text-purple-600 font-medium">variantes</span>
+                                  : <span className="ml-1.5">· {r.stock} en stock</span>}
+                              </p>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              {r.price_usd != null
+                                ? <><p className="text-sm font-bold text-green-600">USD {r.price_usd}</p>
+                                   <p className="text-xs text-muted-foreground">${r.price.toLocaleString('es-AR')}</p></>
+                                : <p className="text-sm font-bold">${r.price.toLocaleString('es-AR')}</p>}
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

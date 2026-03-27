@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -862,49 +863,77 @@ const Admin = () => {
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : (
+            <>
+            {/* Floating Vertical Nav Capsule */}
+            <nav
+              aria-label="Modulos admin"
+              className="fixed left-4 top-1/2 -translate-y-1/2 z-40 group hidden md:flex"
+            >
+              <div className="relative flex flex-col items-stretch bg-secondary text-secondary-foreground rounded-[2rem] py-3 px-2 gap-0.5 shadow-2xl border border-white/10 overflow-hidden transition-all duration-300 ease-in-out w-12 group-hover:w-52">
+                {([
+                  { value: 'repairs',     label: 'Reparaciones',  icon: Wrench },
+                  { value: 'inventory',   label: 'Inventario',    icon: BarChart3 },
+                  { value: 'products',    label: 'Productos',     icon: Package },
+                  { value: 'smartphones', label: 'Celulares',     icon: Smartphone },
+                  { value: 'cases',       label: 'Fundas',        icon: Smartphone },
+                  { value: 'variants',    label: 'Variantes',     icon: Package },
+                  { value: 'orders',      label: 'Ventas Online', icon: Package },
+                  { value: 'promos',      label: 'Promos',        icon: Tag },
+                  { value: 'banners',     label: 'Banners',       icon: ImagePlay },
+                  { value: 'blog',        label: 'Blog',          icon: MessageSquare },
+                ] as const).map(({ value, label, icon: Icon }) => (
+                  <button
+                    key={value}
+                    onClick={() => setActiveTab(value)}
+                    title={label}
+                    className={cn(
+                      'flex items-center gap-3 rounded-2xl px-2 py-2.5 transition-all duration-200 text-left min-w-0',
+                      'hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                      activeTab === value
+                        ? 'bg-primary text-primary-foreground shadow-inner'
+                        : 'text-secondary-foreground/80'
+                    )}
+                  >
+                    <Icon className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-sm font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 delay-75 truncate">
+                      {label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </nav>
+
+            {/* Mobile tabs (small screens only) */}
+            <div className="flex flex-wrap justify-center gap-2 mb-6 md:hidden">
+              {([
+                { value: 'repairs',     label: 'Reparaciones',  icon: Wrench },
+                { value: 'inventory',   label: 'Inventario',    icon: BarChart3 },
+                { value: 'products',    label: 'Productos',     icon: Package },
+                { value: 'smartphones', label: 'Celulares',     icon: Smartphone },
+                { value: 'cases',       label: 'Fundas',        icon: Smartphone },
+                { value: 'variants',    label: 'Variantes',     icon: Package },
+                { value: 'orders',      label: 'Ventas Online', icon: Package },
+                { value: 'promos',      label: 'Promos',        icon: Tag },
+                { value: 'banners',     label: 'Banners',       icon: ImagePlay },
+                { value: 'blog',        label: 'Blog',          icon: MessageSquare },
+              ] as const).map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  onClick={() => setActiveTab(value)}
+                  className={cn(
+                    'flex items-center gap-2 h-10 px-4 rounded-lg text-sm font-medium transition-all',
+                    activeTab === value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-foreground hover:bg-muted'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="flex flex-wrap justify-center md:justify-start gap-2 bg-transparent p-0 mb-6 h-auto w-full">
-                <TabsTrigger value="repairs" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <Wrench className="h-4 w-4" />
-                  Reparaciones
-                </TabsTrigger>
-                <TabsTrigger value="inventory" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <BarChart3 className="h-4 w-4" />
-                  Inventario
-                </TabsTrigger>
-                <TabsTrigger value="products" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <Package className="h-4 w-4" />
-                  Productos
-                </TabsTrigger>
-                <TabsTrigger value="smartphones" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <Smartphone className="h-4 w-4" />
-                  Celulares
-                </TabsTrigger>
-                <TabsTrigger value="cases" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <Smartphone className="h-4 w-4" />
-                  Fundas
-                </TabsTrigger>
-                <TabsTrigger value="variants" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <Package className="h-4 w-4" />
-                  Variantes
-                </TabsTrigger>
-                <TabsTrigger value="orders" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <Package className="h-4 w-4" />
-                  Ventas Online
-                </TabsTrigger>
-                <TabsTrigger value="promos" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <Tag className="h-4 w-4" />
-                  Promos
-                </TabsTrigger>
-                <TabsTrigger value="banners" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <ImagePlay className="h-4 w-4" />
-                  Banners
-                </TabsTrigger>
-                <TabsTrigger value="blog" className="flex items-center gap-2 flex-grow md:flex-grow-0 basis-[45%] md:basis-auto justify-center h-10 px-4 bg-muted/50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all">
-                  <MessageSquare className="h-4 w-4" />
-                  Blog
-                </TabsTrigger>
-              </TabsList>
 
               {/* Repairs Tab */}
               <TabsContent value="repairs">
@@ -1244,6 +1273,7 @@ const Admin = () => {
                 <BlogManagement />
               </TabsContent>
             </Tabs>
+            </>
           )}
         </main>
       </div>
