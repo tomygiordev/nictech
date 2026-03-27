@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag, Trash2, ImagePlay, BarChart3, DollarSign, Pencil } from 'lucide-react';
+import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag, Trash2, ImagePlay, BarChart3, DollarSign, Pencil, LayoutDashboard } from 'lucide-react';
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { supabase } from '@/integrations/supabase/client';
@@ -24,6 +24,7 @@ import { RepairStatusSelect, useRepairStatuses } from '@/components/admin/Repair
 import { DollarSettings, useDollarRate } from '@/components/admin/DollarSettings';
 import { UnifiedInventory } from '@/components/admin/UnifiedInventory';
 import { InventoryModule } from '@/components/admin/InventoryModule';
+import { DashboardModule } from '@/components/admin/DashboardModule';
 import { useAuth } from '@/contexts/AuthContext';
 
 
@@ -870,12 +871,12 @@ const Admin = () => {
             >
               <div className="relative flex flex-col items-stretch bg-secondary text-secondary-foreground rounded-[2rem] py-3 px-2 gap-0.5 shadow-2xl border border-white/10 overflow-hidden transition-all duration-300 ease-in-out w-12 group-hover:w-52">
                 {([
+                  { value: 'dashboard',   label: 'Dashboard',     icon: LayoutDashboard },
                   { value: 'repairs',     label: 'Reparaciones',  icon: Wrench },
                   { value: 'inventory',   label: 'Inventario',    icon: BarChart3 },
                   { value: 'products',    label: 'Productos',     icon: Package },
                   { value: 'cases',       label: 'Fundas',        icon: Smartphone },
                   { value: 'variants',    label: 'Variantes',     icon: Package },
-                  { value: 'orders',      label: 'Ventas Online', icon: Package },
                   { value: 'promos',      label: 'Promos',        icon: Tag },
                   { value: 'banners',     label: 'Banners',       icon: ImagePlay },
                   { value: 'blog',        label: 'Blog',          icon: MessageSquare },
@@ -904,12 +905,12 @@ const Admin = () => {
             {/* Mobile tabs (small screens only) */}
             <div className="flex flex-wrap justify-center gap-2 mb-6 md:hidden">
               {([
+                { value: 'dashboard',   label: 'Dashboard',     icon: LayoutDashboard },
                 { value: 'repairs',     label: 'Reparaciones',  icon: Wrench },
                 { value: 'inventory',   label: 'Inventario',    icon: BarChart3 },
                 { value: 'products',    label: 'Productos',     icon: Package },
                 { value: 'cases',       label: 'Fundas',        icon: Smartphone },
                 { value: 'variants',    label: 'Variantes',     icon: Package },
-                { value: 'orders',      label: 'Ventas Online', icon: Package },
                 { value: 'promos',      label: 'Promos',        icon: Tag },
                 { value: 'banners',     label: 'Banners',       icon: ImagePlay },
                 { value: 'blog',        label: 'Blog',          icon: MessageSquare },
@@ -931,6 +932,11 @@ const Admin = () => {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+
+              {/* Dashboard Tab */}
+              <TabsContent value="dashboard">
+                <DashboardModule />
+              </TabsContent>
 
               {/* Repairs Tab */}
               <TabsContent value="repairs">
@@ -1175,78 +1181,6 @@ const Admin = () => {
 
               <TabsContent value="variants">
                 <VariantManagement />
-              </TabsContent>
-
-              <TabsContent value="orders">
-                <div className="bg-card rounded-2xl border border-border overflow-hidden">
-                  <div className="p-6 border-b border-border">
-                    <h3 className="text-lg font-semibold">Historial de Ventas Online</h3>
-                    <p className="text-muted-foreground text-sm">{orders.length} órdenes registradas</p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Fecha</TableHead>
-                          <TableHead>ID Pago / Ref</TableHead>
-                          <TableHead>Cliente</TableHead>
-                          <TableHead>Items</TableHead>
-                          <TableHead>Total</TableHead>
-                          <TableHead>Estado</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {orders.map((order) => (
-                          <TableRow key={order.id}>
-                            <TableCell className="whitespace-nowrap">
-                              {new Date(order.created_at).toLocaleString('es-PE')}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">
-                              {order.payment_id}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-col gap-1">
-                                <span className="font-bold">{order.payer?.name || order.payer?.first_name || 'Sin Nombre'}</span>
-                                <span className="text-sm text-foreground">{order.payer?.email || '-'}</span>
-                                {order.payer?.phone?.number && (
-                                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                    📞 {order.payer.phone.area_code}{order.payer.phone.number}
-                                  </span>
-                                )}
-                                {order.payer?.identification?.number && (
-                                  <span className="text-xs text-muted-foreground">
-                                    DNI: {order.payer.identification.number}
-                                  </span>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-col gap-1 text-sm">
-                                {Array.isArray(order.items) && order.items.map((item: any, idx: number) => (
-                                  <div key={idx} className="flex gap-2">
-                                    <span className="font-bold">{item.quantity}x</span>
-                                    <span>{item.title || item.name || 'Producto'}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </TableCell>
-                            <TableCell className="font-bold">
-                              $ {Number(order.total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                            </TableCell>
-                            <TableCell>
-                              <span className={`px-2 py-1 rounded text-xs font-medium border capitalize ${order.status === 'approved' ? 'bg-green-100 text-green-800 border-green-200' :
-                                order.status === 'pending' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
-                                  'bg-red-100 text-red-800 border-red-200'
-                                }`}>
-                                {order.status === 'approved' ? 'Aprobado' : order.status}
-                              </span>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
               </TabsContent>
 
               <TabsContent value="promos">
