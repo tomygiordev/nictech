@@ -27,7 +27,11 @@
       "Bash(sort -t'|' -k2 -rn)",
       "Bash(find /c/Users/Gime/Desktop/nictech -name .env* -type f)",
       "Bash(grep -r VITE_SUPABASE /c/Users/Gime/Desktop/nictech --include=*.ts --include=*.tsx --include=*.js)",
-      "Bash(find C:UsersGimeDesktopnictechsupabase -name *.sql)"
+      "Bash(find C:UsersGimeDesktopnictechsupabase -name *.sql)",
+      "mcp__supabase__get_logs",
+      "mcp__supabase__get_project_url",
+      "mcp__supabase__get_publishable_keys",
+      "mcp__supabase__list_edge_functions"
     ]
   },
   "enableAllProjectMcpServers": true,
