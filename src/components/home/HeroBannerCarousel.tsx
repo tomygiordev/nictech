@@ -67,18 +67,8 @@ export const HeroBannerCarousel = () => {
 
   if (loading || banners.length === 0) return null;
 
-  const handleBannerClick = (banner: Banner) => {
-    if (banner.link_url) {
-      // Si es una URL interna (empieza con /), navegar con el router
-      if (banner.link_url.startsWith('/')) {
-        navigate(banner.link_url);
-      } else {
-        window.open(banner.link_url, '_blank', 'noopener,noreferrer');
-      }
-    } else {
-      // Por defecto, llevar a promos en la tienda
-      navigate('/tienda?nombre=Promos');
-    }
+  const handleBannerClick = () => {
+    navigate('/tienda?nombre=Promos');
   };
 
   return (
@@ -96,10 +86,10 @@ export const HeroBannerCarousel = () => {
               'absolute inset-0 transition-opacity duration-700 ease-in-out cursor-pointer',
               i === current ? 'opacity-100 z-10' : 'opacity-0 z-0'
             )}
-            onClick={() => handleBannerClick(banner)}
+            onClick={handleBannerClick}
             role="link"
             tabIndex={i === current ? 0 : -1}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleBannerClick(banner); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleBannerClick(); }}
           >
             <img
               src={banner.image_url}
