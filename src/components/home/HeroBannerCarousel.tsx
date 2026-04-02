@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
@@ -12,6 +13,7 @@ interface Banner {
 }
 
 export const HeroBannerCarousel = () => {
+  const navigate = useNavigate();
   const [banners, setBanners] = useState<Banner[]>([]);
   const [current, setCurrent] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -65,37 +67,46 @@ export const HeroBannerCarousel = () => {
 
   if (loading || banners.length === 0) return null;
 
-  const Wrapper = banners[current]?.link_url ? 'a' : 'div';
-  const wrapperProps = banners[current]?.link_url
-    ? { href: banners[current].link_url!, target: '_blank' as const, rel: 'noopener noreferrer' }
-    : {};
+  const handleBannerClick = (banner: Banner) => {
+    if (banner.link_url) {
+      // Si es una URL interna (empieza con /), navegar con el router
+      if (banner.link_url.startsWith('/')) {
+        navigate(banner.link_url);
+      } else {
+        window.open(banner.link_url, '_blank', 'noopener,noreferrer');
+      }
+    } else {
+      // Por defecto, llevar a promos en la tienda
+      navigate('/tienda?nombre=Promos');
+    }
+  };
 
   return (
     <div className="relative w-full overflow-hidden bg-secondary">
-      <div className="relative aspect-[21/9] sm:aspect-[21/7] md:aspect-[21/6] max-h-[480px] w-full">
+      {/*
+        Aspect ratio único: 16/5 (3.2:1) — ideal para banners de 1920x600px.
+        Se adapta a cualquier ancho de pantalla sin saltos entre breakpoints.
+        max-h limita la altura en pantallas muy grandes.
+      */}
+      <div className="relative w-full" style={{ aspectRatio: '16 / 5', maxHeight: '540px' }}>
         {banners.map((banner, i) => (
           <div
             key={banner.id}
             className={cn(
-              'absolute inset-0 transition-opacity duration-700 ease-in-out',
+              'absolute inset-0 transition-opacity duration-700 ease-in-out cursor-pointer',
               i === current ? 'opacity-100 z-10' : 'opacity-0 z-0'
             )}
+            onClick={() => handleBannerClick(banner)}
+            role="link"
+            tabIndex={i === current ? 0 : -1}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleBannerClick(banner); }}
           >
-            {banner.link_url ? (
-              <a href={banner.link_url} target="_blank" rel="noopener noreferrer" className="block h-full w-full">
-                <img
-                  src={banner.image_url}
-                  alt={banner.alt_text || 'Banner'}
-                  className="h-full w-full object-cover"
-                />
-              </a>
-            ) : (
-              <img
-                src={banner.image_url}
-                alt={banner.alt_text || 'Banner'}
-                className="h-full w-full object-cover"
-              />
-            )}
+            <img
+              src={banner.image_url}
+              alt={banner.alt_text || 'Banner promocional'}
+              className="h-full w-full object-cover object-center"
+              draggable={false}
+            />
           </div>
         ))}
 
@@ -103,15 +114,15 @@ export const HeroBannerCarousel = () => {
         {banners.length > 1 && (
           <>
             <button
-              onClick={goPrev}
-              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
+              onClick={(e) => { e.stopPropagation(); goPrev(); }}
+              className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
               aria-label="Banner anterior"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
             <button
-              onClick={goNext}
-              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
+              onClick={(e) => { e.stopPropagation(); goNext(); }}
+              className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
               aria-label="Banner siguiente"
             >
               <ChevronRight className="h-5 w-5" />
@@ -121,11 +132,11 @@ export const HeroBannerCarousel = () => {
 
         {/* Dots indicator */}
         {banners.length > 1 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex gap-2">
+          <div className="absolute bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 z-20 flex gap-2">
             {banners.map((_, i) => (
               <button
                 key={i}
-                onClick={() => goTo(i)}
+                onClick={(e) => { e.stopPropagation(); goTo(i); }}
                 className={cn(
                   'h-2.5 rounded-full transition-all duration-300',
                   i === current ? 'w-8 bg-white' : 'w-2.5 bg-white/50 hover:bg-white/70'

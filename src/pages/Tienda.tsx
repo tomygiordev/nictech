@@ -5,7 +5,7 @@ import {
   Search, Loader2, Package, LayoutGrid,
   Smartphone, Headphones, Cable, BatteryCharging,
   Gift, Monitor, ShieldCheck, Speaker, Layers,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Percent
 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
@@ -478,6 +478,26 @@ const Tienda = () => {
                     />
 
                     <div className="flex gap-1 sm:gap-2 w-max px-8">
+                      {/* "Promos" Button — always first */}
+                      <button
+                        ref={(el) => {
+                          if (el) buttonRefs.current.set('__promos__', el);
+                        }}
+                        onClick={() => setSelectedCategory('__promos__')}
+                        className={`
+                          group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
+                          transition-all duration-200 whitespace-nowrap select-none
+                          focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none
+                          ${selectedCategory === '__promos__'
+                            ? 'text-primary bg-primary/10'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                          }
+                        `}
+                      >
+                        <Percent className={`h-4 w-4 transition-transform duration-200 ${selectedCategory === '__promos__' ? 'scale-110' : 'group-hover:scale-110'}`} />
+                        Promos
+                      </button>
+
                       {/* "Todas" Button */}
                       <button
                         ref={(el) => {
