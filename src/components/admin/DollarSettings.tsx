@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { DollarSign, RefreshCw, Clock, AlertTriangle, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { calculateOriginalUsdPrice } from '@/lib/pricing';
 
 interface DollarSettingsData {
   rate: number;
@@ -87,14 +88,25 @@ export const DollarSettings = () => {
 
       const { data: usdProducts } = await supabase
         .from('products')
-        .select('id, price_usd')
+        .select('id, price, price_usd, original_price')
         .not('price_usd', 'is', null) as any;
 
       if (usdProducts && usdProducts.length > 0) {
         for (const p of usdProducts) {
+          const restoredOriginalUsd = calculateOriginalUsdPrice({
+            price: p.price,
+            priceUsd: p.price_usd,
+            originalPrice: p.original_price,
+          });
+
           await supabase
             .from('products')
-            .update({ price: Math.round(p.price_usd * newRate) } as any)
+            .update({
+              price: Math.round(p.price_usd * newRate),
+              original_price: restoredOriginalUsd != null
+                ? Math.round(restoredOriginalUsd * newRate)
+                : p.original_price,
+            } as any)
             .eq('id', p.id);
         }
       }

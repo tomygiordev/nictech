@@ -3,6 +3,7 @@ import { ShoppingCart, Package, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
+import { calculateOriginalUsdPrice } from '@/lib/pricing';
 
 interface ProductCardProps {
   id: string;
@@ -30,6 +31,11 @@ export const ProductCard = React.memo(({
   tags,
 }: ProductCardProps) => {
   const { addToCart } = useCart();
+  const originalUsdPrice = calculateOriginalUsdPrice({
+    price,
+    priceUsd: price_usd,
+    originalPrice: original_price,
+  });
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -118,6 +124,11 @@ export const ProductCard = React.memo(({
           <div>
             {price_usd != null ? (
               <>
+                {originalUsdPrice != null && (
+                  <span className="text-sm text-muted-foreground line-through block">
+                    USD {originalUsdPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                )}
                 <span className="text-2xl font-bold text-green-700">
                   USD {price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>

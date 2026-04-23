@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { getVariantColor, isLightColor } from '@/lib/colors';
+import { calculateOriginalUsdPrice, hasActiveSale } from '@/lib/pricing';
 
 interface Product {
     id: string;
@@ -179,6 +180,14 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
     if (!product) return null;
 
+    const originalUsdPrice = hasActiveSale(product.sale_expires_at)
+        ? calculateOriginalUsdPrice({
+            price: product.price,
+            priceUsd: product.price_usd,
+            originalPrice: product.original_price,
+        })
+        : null;
+
     const renderAddToCartFooter = (isMobile: boolean) => (
         <div className={cn(
             "pt-4 md:pt-6 border-t border-border/50 bg-background shrink-0 shadow-[0_-10px_20px_-15px_rgba(0,0,0,0.1)]",
@@ -298,6 +307,11 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                 <div className="mb-6">
                                     {product.price_usd != null ? (
                                         <>
+                                            {originalUsdPrice != null && (
+                                                <p className="text-base text-muted-foreground line-through">
+                                                    USD {originalUsdPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </p>
+                                            )}
                                             <span className="text-2xl md:text-3xl font-bold text-green-700">
                                                 USD {product.price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </span>
@@ -306,7 +320,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                     ) : (
                                         <>
                                             {product.original_price != null &&
-                                             (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date()) && (
+                                             hasActiveSale(product.sale_expires_at) && (
                                                 <p className="text-base text-muted-foreground line-through">
                                                     $ {product.original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </p>

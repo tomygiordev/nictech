@@ -31,7 +31,10 @@
       "mcp__supabase__get_logs",
       "mcp__supabase__get_project_url",
       "mcp__supabase__get_publishable_keys",
-      "mcp__supabase__list_edge_functions"
+      "mcp__supabase__list_edge_functions",
+      "Bash(find /c/Users/Gime/Desktop/nictech -type d -name *migrat* -o -type d -name *supabase*)",
+      "Bash(grep -r \"promos\\\\|Promos\\\\|__promos__\" C:/Users/Gime/Desktop/nictech/src --include=*.tsx --include=*.ts)",
+      "Bash(find \"C:/Users/Gime/Desktop/nictech/src\" -name \"*router\\\\|*route\\\\|*app*\" -type f)"
     ]
   },
   "enableAllProjectMcpServers": true,

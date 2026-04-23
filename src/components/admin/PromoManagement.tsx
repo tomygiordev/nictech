@@ -7,11 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { Tag, Search, X, Percent, DollarSign, Loader2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { calculateDiscountPercentage, calculateOriginalUsdPrice } from '@/lib/pricing';
 
 interface Product {
   id: string;
   name: string;
   price: number;
+  price_usd?: number | null;
   original_price: number | null;
   sale_expires_at: string | null;
   image_url: string | null;
@@ -40,7 +42,7 @@ export const PromoManagement = () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('products' as any)
-      .select('id, name, price, original_price, sale_expires_at, image_url, category:categories(name)')
+      .select('id, name, price, price_usd, original_price, sale_expires_at, image_url, category:categories(name)')
       .eq('is_active', true)
       .order('name', { ascending: true });
 
@@ -65,18 +67,47 @@ export const PromoManagement = () => {
     );
   }, [products, search]);
 
-  const computedNewPrice = useMemo(() => {
+  const computedPrices = useMemo(() => {
     if (!selectedProduct || !discountValue) return null;
+
     const val = parseFloat(discountValue);
     if (isNaN(val) || val <= 0) return null;
+
+    const currentArsPrice = selectedProduct.price;
+    const currentUsdPrice = selectedProduct.price_usd;
+
     if (mode === 'percent') {
       if (val >= 100) return null;
+
       // Use original_price as base when product already has a promo, to avoid compounding discounts
-      const basePrice = selectedProduct.original_price ?? selectedProduct.price;
-      return basePrice * (1 - val / 100);
+      const baseArsPrice = selectedProduct.original_price ?? currentArsPrice;
+      const discountedArsPrice = baseArsPrice * (1 - val / 100);
+      const discountedUsdPrice = currentUsdPrice != null && currentArsPrice > 0
+        ? currentUsdPrice * (discountedArsPrice / currentArsPrice)
+        : null;
+
+      return {
+        ars: discountedArsPrice,
+        usd: discountedUsdPrice,
+      };
     }
-    return val;
+
+    if (currentUsdPrice != null) {
+      const exchangeRatio = currentArsPrice / currentUsdPrice;
+      return {
+        ars: val * exchangeRatio,
+        usd: val,
+      };
+    }
+
+    return {
+      ars: val,
+      usd: null,
+    };
   }, [selectedProduct, discountValue, mode]);
+
+  const computedNewPrice = computedPrices?.ars ?? null;
+  const computedNewPriceUsd = computedPrices?.usd ?? null;
 
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
@@ -84,9 +115,13 @@ export const PromoManagement = () => {
     setExpiresAt('');
     // If already has a promo, pre-fill
     if (product.original_price != null) {
-      const existingDiscount = ((product.original_price - product.price) / product.original_price * 100).toFixed(0);
+      const existingDiscount = calculateDiscountPercentage({
+        originalPrice: product.original_price,
+        price: product.price,
+      });
+
       setMode('percent');
-      setDiscountValue(existingDiscount);
+      setDiscountValue(existingDiscount?.toString() ?? '');
       if (product.sale_expires_at) {
         // Convert to local datetime-local format
         const d = new Date(product.sale_expires_at);
@@ -109,12 +144,16 @@ export const PromoManagement = () => {
 
     // Use the base price (original_price if already has promo, else current price)
     const basePrice = selectedProduct.original_price ?? selectedProduct.price;
+    const nextUsdPrice = selectedProduct.price_usd != null && computedNewPriceUsd != null
+      ? Math.round(computedNewPriceUsd * 100) / 100
+      : selectedProduct.price_usd ?? null;
 
     const { error } = await supabase
       .from('products' as any)
       .update({
         original_price: basePrice,
         price: Math.round(computedNewPrice * 100) / 100,
+        price_usd: nextUsdPrice,
         sale_expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
       } as any)
       .eq('id', selectedProduct.id);
@@ -135,10 +174,17 @@ export const PromoManagement = () => {
     if (!product.original_price) return;
     setSaving(true);
 
+    const restoredUsdPrice = calculateOriginalUsdPrice({
+      price: product.price,
+      priceUsd: product.price_usd,
+      originalPrice: product.original_price,
+    });
+
     const { error } = await supabase
       .from('products' as any)
       .update({
         price: product.original_price,
+        price_usd: restoredUsdPrice != null ? Math.round(restoredUsdPrice * 100) / 100 : product.price_usd ?? null,
         original_price: null,
         sale_expires_at: null,
       } as any)
@@ -173,10 +219,16 @@ export const PromoManagement = () => {
         ) : (
           <div className="grid gap-3">
             {activePromos.map(product => {
-              const discount = product.original_price
-                ? Math.round((product.original_price - product.price) / product.original_price * 100)
-                : 0;
+              const discount = calculateDiscountPercentage({
+                originalPrice: product.original_price,
+                price: product.price,
+              }) ?? 0;
               const expired = product.sale_expires_at && new Date(product.sale_expires_at) < new Date();
+              const originalUsdPrice = calculateOriginalUsdPrice({
+                price: product.price,
+                priceUsd: product.price_usd,
+                originalPrice: product.original_price,
+              });
               return (
                 <div
                   key={product.id}
@@ -193,10 +245,14 @@ export const PromoManagement = () => {
                       <p className="font-medium text-sm truncate">{product.name}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-muted-foreground line-through text-xs">
-                          ${product.original_price?.toLocaleString('es-AR')}
+                          {product.price_usd != null && originalUsdPrice != null
+                            ? `USD ${originalUsdPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : `$${product.original_price?.toLocaleString('es-AR')}`}
                         </span>
                         <span className="text-primary font-bold text-sm">
-                          ${product.price.toLocaleString('es-AR')}
+                          {product.price_usd != null
+                            ? `USD ${product.price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : `$${product.price.toLocaleString('es-AR')}`}
                         </span>
                         <Badge className="text-[10px] px-1.5 py-0 bg-green-500/15 text-green-700 border-green-300">
                           -{discount}%
@@ -271,7 +327,9 @@ export const PromoManagement = () => {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate">{product.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    ${product.price.toLocaleString('es-AR')}
+                    {product.price_usd != null
+                      ? `USD ${product.price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : `$${product.price.toLocaleString('es-AR')}`}
                     {product.original_price && (
                       <span className="ml-2 text-green-600 font-medium">• Con promo</span>
                     )}
@@ -302,11 +360,21 @@ export const PromoManagement = () => {
               <p className="text-xs text-muted-foreground">
                 Precio actual:{' '}
                 <span className="font-semibold text-foreground">
-                  ${selectedProduct.price.toLocaleString('es-AR')}
+                  {selectedProduct.price_usd != null
+                    ? `USD ${selectedProduct.price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : `$${selectedProduct.price.toLocaleString('es-AR')}`}
                 </span>
                 {selectedProduct.original_price && (
                   <span className="ml-2 text-muted-foreground line-through">
-                    (original: ${selectedProduct.original_price.toLocaleString('es-AR')})
+                    (original:{' '}
+                    {selectedProduct.price_usd != null
+                      ? `USD ${(calculateOriginalUsdPrice({
+                          price: selectedProduct.price,
+                          priceUsd: selectedProduct.price_usd,
+                          originalPrice: selectedProduct.original_price,
+                        }) ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : `$${selectedProduct.original_price.toLocaleString('es-AR')}`}
+                    )
                   </span>
                 )}
               </p>
@@ -347,20 +415,25 @@ export const PromoManagement = () => {
               {/* Value input */}
               <div>
                 <Label htmlFor="discount-value" className="mb-1.5 block">
-                  {mode === 'percent' ? 'Porcentaje de descuento (%)' : 'Nuevo precio ($)'}
+                  {mode === 'percent'
+                    ? 'Porcentaje de descuento (%)'
+                    : `Nuevo precio (${selectedProduct.price_usd != null ? 'USD' : '$'})`}
                 </Label>
                 <Input
                   id="discount-value"
                   type="number"
                   min="0"
                   max={mode === 'percent' ? 99 : undefined}
-                  placeholder={mode === 'percent' ? 'ej: 20' : 'ej: 15000'}
+                  placeholder={mode === 'percent' ? 'ej: 20' : selectedProduct.price_usd != null ? 'ej: 499.99' : 'ej: 15000'}
                   value={discountValue}
                   onChange={e => setDiscountValue(e.target.value)}
                 />
                 {computedNewPrice !== null && (
                   <p className="text-xs text-green-600 font-medium mt-1.5">
-                    Precio con descuento: ${computedNewPrice.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    Precio con descuento:{' '}
+                    {selectedProduct.price_usd != null && computedNewPriceUsd != null
+                      ? `USD ${computedNewPriceUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : `$${computedNewPrice.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </p>
                 )}
               </div>
