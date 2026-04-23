@@ -246,6 +246,9 @@ export const BannerManagement = () => {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-end">
           <div className="sm:col-span-2 lg:col-span-1">
             <Label className="mb-1.5 block">Imagen</Label>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Resolución recomendada: 1920 x 600 px
+            </p>
             <div className="flex gap-2">
               <Input
                 placeholder="URL de imagen"

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Wrench, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { HeroBannerCarousel } from '@/components/home/HeroBannerCarousel';
 
 export const HeroSection = () => {
   return (
@@ -13,8 +14,10 @@ export const HeroSection = () => {
         }} />
       </div>
 
-      <div className="container-main relative">
-        <div className="py-20 lg:py-32 text-center lg:text-left">
+      <div className="container-main relative py-4 sm:py-6 lg:py-8">
+        <HeroBannerCarousel />
+
+        <div className="pt-16 pb-20 lg:pt-20 lg:pb-28 text-center lg:text-left">
           <div className="max-w-3xl mx-auto lg:mx-0">
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm text-white/90 text-sm mb-6 animate-fade-in">

@@ -12,6 +12,10 @@ interface Banner {
   sort_order: number;
 }
 
+interface CarouselSettings {
+  interval_seconds: number | null;
+}
+
 export const HeroBannerCarousel = () => {
   const navigate = useNavigate();
   const [banners, setBanners] = useState<Banner[]>([]);
@@ -31,13 +35,13 @@ export const HeroBannerCarousel = () => {
           .from('carousel_settings')
           .select('interval_seconds')
           .eq('id', 1)
-          .single(),
+          .single<CarouselSettings>(),
       ]);
       if (bannersRes.data && bannersRes.data.length > 0) {
         setBanners(bannersRes.data as Banner[]);
       }
       if (settingsRes.data) {
-        setIntervalSeconds((settingsRes.data as any).interval_seconds ?? 5);
+        setIntervalSeconds(settingsRes.data.interval_seconds ?? 5);
       }
       setLoading(false);
     };
@@ -67,75 +71,68 @@ export const HeroBannerCarousel = () => {
 
   if (loading || banners.length === 0) return null;
 
-  const handleBannerClick = () => {
+  const handleBannerClick = (banner: Banner) => {
+    if (banner.link_url?.trim()) {
+      if (banner.link_url.startsWith('/')) {
+        navigate(banner.link_url);
+        return;
+      }
+
+      window.open(banner.link_url, '_self');
+      return;
+    }
+
     navigate('/tienda?nombre=Promos');
   };
 
   return (
-    <div className="relative w-full overflow-hidden bg-secondary">
-      {/*
-        Aspect ratio único: 16/5 (3.2:1) — ideal para banners de 1920x600px.
-        Se adapta a cualquier ancho de pantalla sin saltos entre breakpoints.
-        max-h limita la altura en pantallas muy grandes.
-      */}
-      <div className="relative w-full" style={{ aspectRatio: '16 / 5', maxHeight: '540px' }}>
-        {banners.map((banner, i) => (
-          <div
-            key={banner.id}
-            className={cn(
-              'absolute inset-0 transition-opacity duration-700 ease-in-out cursor-pointer',
-              i === current ? 'opacity-100 z-10' : 'opacity-0 z-0'
-            )}
-            onClick={handleBannerClick}
-            role="link"
-            tabIndex={i === current ? 0 : -1}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleBannerClick(); }}
-          >
-            <img
-              src={banner.image_url}
-              alt={banner.alt_text || 'Banner promocional'}
-              className="h-full w-full object-cover object-center"
-              draggable={false}
-            />
-          </div>
-        ))}
-
-        {/* Navigation arrows */}
-        {banners.length > 1 && (
-          <>
-            <button
-              onClick={(e) => { e.stopPropagation(); goPrev(); }}
-              className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
-              aria-label="Banner anterior"
+    <div className="relative mx-auto w-full max-w-[1920px]">
+      <div className="relative aspect-[16/5] w-full overflow-hidden bg-[hsl(var(--primary))] sm:rounded-[28px]">
+          {banners.map((banner, i) => (
+            <div
+              key={banner.id}
+              className={cn(
+                'absolute inset-0 cursor-pointer transition-opacity duration-700 ease-in-out',
+                i === current ? 'opacity-100 z-10' : 'opacity-0 z-0'
+              )}
+              onClick={() => handleBannerClick(banner)}
+              role="link"
+              tabIndex={i === current ? 0 : -1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleBannerClick(banner);
+              }}
             >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); goNext(); }}
-              className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
-              aria-label="Banner siguiente"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </>
-        )}
-
-        {/* Dots indicator */}
-        {banners.length > 1 && (
-          <div className="absolute bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 z-20 flex gap-2">
-            {banners.map((_, i) => (
-              <button
-                key={i}
-                onClick={(e) => { e.stopPropagation(); goTo(i); }}
-                className={cn(
-                  'h-2.5 rounded-full transition-all duration-300',
-                  i === current ? 'w-8 bg-white' : 'w-2.5 bg-white/50 hover:bg-white/70'
-                )}
-                aria-label={`Ir a banner ${i + 1}`}
+              <img
+                src={banner.image_url}
+                alt={banner.alt_text || 'Banner promocional'}
+                className="h-full w-full object-cover object-center"
+                draggable={false}
               />
-            ))}
-          </div>
-        )}
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/35 via-transparent to-slate-950/45" />
+              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/45 to-transparent sm:h-32" />
+            </div>
+          ))}
+
+          {/* Navigation arrows */}
+          {banners.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); goPrev(); }}
+                className="absolute bottom-3 left-3 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-md transition-colors hover:bg-black/45 sm:bottom-auto sm:left-5 sm:top-1/2 sm:h-11 sm:w-11 sm:-translate-y-1/2 lg:left-6"
+                aria-label="Banner anterior"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); goNext(); }}
+                className="absolute bottom-3 right-3 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-md transition-colors hover:bg-black/45 sm:bottom-auto sm:right-5 sm:top-1/2 sm:h-11 sm:w-11 sm:-translate-y-1/2 lg:right-6"
+                aria-label="Banner siguiente"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          )}
+
       </div>
     </div>
   );
