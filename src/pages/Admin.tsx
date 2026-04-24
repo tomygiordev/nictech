@@ -126,11 +126,16 @@ const RepairLogsDialog = ({ repair, onQuoteSaved }: RepairLogsDialogProps) => {
       await (supabase as any).from('inventory_movements').delete()
         .eq('channel', 'Reparación').like('notes', `%${trackingCode}%`);
     }
-    await (supabase as any).from('inventory_movements').insert({
+    const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
       product_id: null, variant_id: null, type: 'sale', quantity: 1, unit_price: price,
       channel: 'Reparación',
       notes: `${trackingCode} · ${repair.client_name ?? repair.client_dni} · ${repair.device_brand ?? ''} ${repair.device_model}`.trim(),
     });
+    if (movementError) {
+      toast({ title: 'Error al registrar movimiento', description: movementError.message, variant: 'destructive' });
+      setSavingQuoteLocal(false);
+      return;
+    }
     onQuoteSaved(repairId, price);
     toast({ title: 'Cotización guardada', description: `$${price.toLocaleString('es-AR')}` });
     setSavingQuoteLocal(false);
@@ -497,7 +502,7 @@ const Admin = () => {
     }
 
     // Record in inventory history
-    await (supabase as any).from('inventory_movements').insert({
+    const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
       product_id: null,
       variant_id: null,
       type: 'sale',
@@ -506,6 +511,11 @@ const Admin = () => {
       channel: 'Reparación',
       notes: `${repair.tracking_code} · ${repair.client_name ?? repair.client_dni} · ${repair.device_brand ?? ''} ${repair.device_model}`.trim(),
     });
+    if (movementError) {
+      toast({ title: 'Error al registrar movimiento', description: movementError.message, variant: 'destructive' });
+      setSavingQuote(false);
+      return;
+    }
 
     setRepairs(prev => prev.map(r => r.id === repair.id ? { ...r, quoted_price: price } : r));
     setQuotingRepair(null);

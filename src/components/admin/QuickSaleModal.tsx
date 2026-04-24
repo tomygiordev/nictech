@@ -427,7 +427,7 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
           onSaleComplete(item.productId, newStock);
         }
 
-        await (supabase as any).from('inventory_movements').insert({
+        const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
           product_id: item.productId,
           variant_id: item.variantId ?? null,
           type: 'sale',
@@ -436,6 +436,7 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
           channel,
           notes: notes || null,
         });
+        if (movementError) throw movementError;
       } catch (e: any) {
         toast({ title: `Error en "${item.name}"`, description: e.message, variant: 'destructive' });
       }

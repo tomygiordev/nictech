@@ -401,7 +401,7 @@ export function QuickRestockModal({ open, onClose, onRestockComplete, variantPro
           onRestockComplete(item.productId, newStock);
         }
 
-        await (supabase as any).from('inventory_movements').insert({
+        const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
           product_id: item.productId,
           variant_id: item.variantId ?? null,
           type: 'restock',
@@ -410,6 +410,7 @@ export function QuickRestockModal({ open, onClose, onRestockComplete, variantPro
           channel: supplier || null,
           notes: notes || null,
         });
+        if (movementError) throw movementError;
       } catch (e: any) {
         toast({ title: `Error en "${item.name}"`, description: e.message, variant: 'destructive' });
       }

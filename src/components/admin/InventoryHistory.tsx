@@ -27,6 +27,18 @@ interface Movement {
   variant_color: string | null;
 }
 
+interface MovementRow {
+  id: string;
+  type: 'restock' | 'sale';
+  quantity: number;
+  unit_price: number | null;
+  channel: string | null;
+  notes: string | null;
+  created_at: string;
+  product_id: string | null;
+  variant_id: string | null;
+}
+
 type DateRange = 'today' | 'week' | 'month' | 'all';
 type TypeFilter = 'all' | 'sale' | 'restock';
 
@@ -614,7 +626,7 @@ export const InventoryHistory = () => {
   const [loading, setLoading] = useState(true);
 
   // Filters
-  const [dateRange, setDateRange] = useState<DateRange>('week');
+  const [dateRange, setDateRange] = useState<DateRange>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -624,24 +636,76 @@ export const InventoryHistory = () => {
     setLoading(true);
     let q = (supabase as any)
       .from('inventory_movements')
-      .select('id, type, quantity, unit_price, channel, notes, created_at, products(name, image_url), product_variants(color)')
+      .select('id, type, quantity, unit_price, channel, notes, created_at, product_id, variant_id')
       .order('created_at', { ascending: false })
       .limit(500);
 
     const bound = getDateBound(dateRange);
     if (bound) q = q.gte('created_at', bound);
 
-    const { data } = await q;
-    if (data) {
-      setMovements(data.map((m: any) => ({
-        id: m.id, type: m.type, quantity: m.quantity,
-        unit_price: m.unit_price, channel: m.channel, notes: m.notes,
-        created_at: m.created_at,
-        product_name: m.products?.name ?? (m.channel === 'Reparación' ? 'Servicio de reparación' : 'Producto eliminado'),
-        product_image: m.products?.image_url ?? null,
-        variant_color: m.product_variants?.color ?? null,
-      })));
+    const { data, error } = await q;
+    if (error) {
+      console.error('Error fetching inventory movements:', error);
+      toast({
+        title: 'No se pudo cargar el historial',
+        description: 'Revisá los permisos o la consulta de movimientos.',
+        variant: 'destructive',
+      });
+      setMovements([]);
+      setLoading(false);
+      return;
     }
+
+    const rows = (data ?? []) as MovementRow[];
+    const productIds = [...new Set(rows.map((movement) => movement.product_id).filter(Boolean))];
+    const variantIds = [...new Set(rows.map((movement) => movement.variant_id).filter(Boolean))];
+
+    const [
+      { data: products, error: productsError },
+      { data: variants, error: variantsError },
+    ] = await Promise.all([
+      productIds.length
+        ? (supabase as any).from('products').select('id, name, image_url').in('id', productIds)
+        : Promise.resolve({ data: [], error: null }),
+      variantIds.length
+        ? (supabase as any).from('product_variants').select('id, color').in('id', variantIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (productsError || variantsError) {
+      console.error('Error enriching inventory movements:', { productsError, variantsError });
+    }
+
+    const productMap = new Map(
+      ((products ?? []) as Array<{ id: string; name: string; image_url: string | null }>).map((product) => [
+        product.id,
+        product,
+      ]),
+    );
+    const variantMap = new Map(
+      ((variants ?? []) as Array<{ id: string; color: string | null }>).map((variant) => [
+        variant.id,
+        variant.color,
+      ]),
+    );
+
+    setMovements(rows.map((movement) => {
+      const product = movement.product_id ? productMap.get(movement.product_id) : undefined;
+      const variantColor = movement.variant_id ? variantMap.get(movement.variant_id) ?? null : null;
+
+      return {
+        id: movement.id,
+        type: movement.type,
+        quantity: movement.quantity,
+        unit_price: movement.unit_price,
+        channel: movement.channel,
+        notes: movement.notes,
+        created_at: movement.created_at,
+        product_name: product?.name ?? (movement.channel === 'Reparación' ? 'Servicio de reparación' : 'Producto eliminado'),
+        product_image: product?.image_url ?? null,
+        variant_color: variantColor,
+      };
+    }));
     setLoading(false);
   };
 

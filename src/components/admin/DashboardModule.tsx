@@ -28,6 +28,11 @@ interface KpiData {
 
 interface SalePoint { date: string; total: number; orders: number }
 interface RepairStatusPoint { status: string; count: number }
+interface InventoryMovementSale {
+  quantity: number;
+  unit_price: number | string | null;
+  created_at: string;
+}
 interface RecentRepair {
   id: string; tracking_code: string; client_name: string | null;
   device_brand: string | null; device_model: string;
@@ -37,6 +42,7 @@ interface RecentOrder {
   id: string; total: number; status: string; created_at: string; payer: { first_name?: string; last_name?: string; email?: string } | null;
 }
 interface CriticalProduct { id: string; name: string; stock: number; category: string | null }
+type DashboardDateRange = 'today' | 'week' | 'month' | 'all';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -49,6 +55,18 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const FALLBACK_COLOR = '#94a3b8';
+const DATE_RANGE_LABELS: Record<DashboardDateRange, string> = {
+  today: 'Hoy',
+  week: 'Esta semana',
+  month: 'Este mes',
+  all: 'Todo',
+};
+const DATE_TABS: Array<{ key: DashboardDateRange; label: string }> = [
+  { key: 'today', label: 'Hoy' },
+  { key: 'week', label: 'Esta semana' },
+  { key: 'month', label: 'Este mes' },
+  { key: 'all', label: 'Todo' },
+];
 
 const fmt = (n: number) =>
   n.toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
@@ -62,6 +80,55 @@ const fmtShort = (n: number) => {
 function trend(current: number, previous: number) {
   if (previous === 0) return null;
   return Math.round(((current - previous) / previous) * 100);
+}
+
+function startOfToday() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return now;
+}
+
+function getRangeStart(range: DashboardDateRange): string | null {
+  const today = startOfToday();
+  if (range === 'today') return today.toISOString();
+  if (range === 'week') {
+    const day = today.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    today.setDate(today.getDate() + diff);
+    return today.toISOString();
+  }
+  if (range === 'month') {
+    return new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
+  }
+  return null;
+}
+
+function getPreviousRange(range: DashboardDateRange): { start: string; end: string } | null {
+  const today = startOfToday();
+
+  if (range === 'today') {
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return { start: yesterday.toISOString(), end: today.toISOString() };
+  }
+
+  if (range === 'week') {
+    const currentWeekStart = new Date(today);
+    const day = currentWeekStart.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    currentWeekStart.setDate(currentWeekStart.getDate() + diff);
+    const previousWeekStart = new Date(currentWeekStart);
+    previousWeekStart.setDate(previousWeekStart.getDate() - 7);
+    return { start: previousWeekStart.toISOString(), end: currentWeekStart.toISOString() };
+  }
+
+  if (range === 'month') {
+    const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    const previousMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    return { start: previousMonthStart.toISOString(), end: currentMonthStart.toISOString() };
+  }
+
+  return null;
 }
 
 function fillDays(data: SalePoint[], days = 30): SalePoint[] {
@@ -142,38 +209,33 @@ export const DashboardModule = () => {
   const [criticalProducts, setCriticalProducts] = useState<CriticalProduct[]>([]);
   const [loading, setLoading]       = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [dateRange, setDateRange] = useState<DashboardDateRange>('month');
 
   const load = useCallback(async () => {
     setLoading(true);
 
     const now = new Date();
-    const startThisMonth  = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const startLastMonth  = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
-    const endLastMonth    = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString();
-    const thirtyDaysAgo   = new Date(Date.now() - 30 * 864e5).toISOString();
+    const rangeStart = getRangeStart(dateRange);
+    const previousRange = getPreviousRange(dateRange);
 
     // Parallel fetches
     const [
-      { data: ordersAll },
-      { data: salesRaw },
+      { data: salesAll },
       { data: repairsAll },
-      { data: productsZero },
+      { count: zeroStockCount },
       { data: productsCritical },
-      { data: totalProductsRes },
+      { count: totalProductsCount },
       { data: recentRepairsData },
       { data: recentOrdersData },
     ] = await Promise.all([
-      // All approved orders for KPI
-      supabase.from('orders').select('total, created_at').eq('status', 'approved'),
-      // Sales by day last 30 days
-      supabase.rpc
-        ? supabase.from('orders')
-            .select('total, created_at')
-            .eq('status', 'approved')
-            .gte('created_at', thirtyDaysAgo)
-        : supabase.from('orders').select('total, created_at').eq('status', 'approved').gte('created_at', thirtyDaysAgo),
+      // All sales movements for KPI
+      supabase.from('inventory_movements').select('quantity, unit_price, created_at').eq('type', 'sale'),
       // All non-deleted repairs
-      supabase.from('repairs').select('status, created_at').neq('is_deleted', true),
+      supabase
+        .from('repairs')
+        .select('id, tracking_code, client_name, device_brand, device_model, status, created_at')
+        .neq('is_deleted', true)
+        .order('created_at', { ascending: false }),
       // Zero stock products
       supabase.from('products').select('id', { count: 'exact', head: true }).eq('stock', 0),
       // Critical stock (1-4)
@@ -185,33 +247,39 @@ export const DashboardModule = () => {
       // Total products count
       supabase.from('products').select('id', { count: 'exact', head: true }),
       // Recent repairs
-      supabase.from('repairs')
+      supabase
+        .from('repairs')
         .select('id, tracking_code, client_name, device_brand, device_model, status, created_at')
         .neq('is_deleted', true)
-        .order('created_at', { ascending: false })
-        .limit(6),
+        .order('created_at', { ascending: false }),
       // Recent orders
       supabase.from('orders')
         .select('id, total, status, created_at, payer')
-        .order('created_at', { ascending: false })
-        .limit(5),
+        .order('created_at', { ascending: false }),
     ]);
 
     // ── KPI calculations ──────────────────────────────────────────────────────
-    const approved = (ordersAll ?? []).filter(o => true); // already filtered by eq
-    const revenueThisMonth = (ordersAll ?? [])
-      .filter(o => o.created_at >= startThisMonth)
-      .reduce((s, o) => s + Number(o.total), 0);
-    const revenueLastMonth = (ordersAll ?? [])
-      .filter(o => o.created_at >= startLastMonth && o.created_at <= endLastMonth)
-      .reduce((s, o) => s + Number(o.total), 0);
-    const ordersThisMonth = (ordersAll ?? []).filter(o => o.created_at >= startThisMonth).length;
-    const ordersLastMonth = (ordersAll ?? [])
-      .filter(o => o.created_at >= startLastMonth && o.created_at <= endLastMonth).length;
+    const allSales = (salesAll ?? []) as InventoryMovementSale[];
+    const filteredSales = rangeStart
+      ? allSales.filter((movement) => movement.created_at >= rangeStart)
+      : allSales;
+    const previousSales = previousRange
+      ? allSales.filter((movement) => movement.created_at >= previousRange.start && movement.created_at < previousRange.end)
+      : [];
 
-    const repairs = repairsAll ?? [];
-    const activeRepairs = repairs.filter(r => r.status !== 'Finalizado').length;
-    const finishedThisMonth = repairs.filter(r => r.status === 'Finalizado' && r.created_at && r.created_at >= startThisMonth).length;
+    const revenueThisMonth = filteredSales
+      .reduce((sum, movement) => sum + movement.quantity * Number(movement.unit_price ?? 0), 0);
+    const revenueLastMonth = previousSales
+      .reduce((sum, movement) => sum + movement.quantity * Number(movement.unit_price ?? 0), 0);
+    const ordersThisMonth = filteredSales.length;
+    const ordersLastMonth = previousSales.length;
+
+    const repairs = (repairsAll ?? []) as RecentRepair[];
+    const filteredRepairs = rangeStart
+      ? repairs.filter((repair) => repair.created_at >= rangeStart)
+      : repairs;
+    const activeRepairs = filteredRepairs.filter((repair) => repair.status !== 'Finalizado').length;
+    const finishedThisMonth = filteredRepairs.filter((repair) => repair.status === 'Finalizado').length;
 
     setKpi({
       revenueThisMonth,
@@ -220,26 +288,30 @@ export const DashboardModule = () => {
       ordersLastMonth,
       activeRepairs,
       finishedThisMonth,
-      zeroStock: (productsZero as any)?.length ?? 0,
+      zeroStock: zeroStockCount ?? 0,
       criticalStock: (productsCritical ?? []).length,
-      totalProducts: (totalProductsRes as any)?.length ?? 0,
+      totalProducts: totalProductsCount ?? 0,
     });
 
     // ── Sales by day ──────────────────────────────────────────────────────────
     const dayMap = new Map<string, { total: number; orders: number }>();
-    for (const o of (salesRaw ?? [])) {
-      const key = o.created_at.slice(0, 10);
+    for (const movement of filteredSales) {
+      const key = movement.created_at.slice(0, 10);
       const prev = dayMap.get(key) ?? { total: 0, orders: 0 };
-      dayMap.set(key, { total: prev.total + Number(o.total), orders: prev.orders + 1 });
+      dayMap.set(key, {
+        total: prev.total + movement.quantity * Number(movement.unit_price ?? 0),
+        orders: prev.orders + 1,
+      });
     }
-    const salesPoints: SalePoint[] = Array.from(dayMap.entries())
+    const salesPoints = Array.from(dayMap.entries())
       .map(([date, v]) => ({ date, ...v }))
       .sort((a, b) => a.date.localeCompare(b.date));
-    setSalesByDay(fillDays(salesPoints, 30));
+    const chartDays = dateRange === 'today' ? 1 : dateRange === 'week' ? 7 : dateRange === 'month' ? now.getDate() : null;
+    setSalesByDay(chartDays ? fillDays(salesPoints, chartDays) : salesPoints);
 
     // ── Repairs by status ─────────────────────────────────────────────────────
     const statusMap = new Map<string, number>();
-    for (const r of repairs) {
+    for (const r of filteredRepairs) {
       statusMap.set(r.status, (statusMap.get(r.status) ?? 0) + 1);
     }
     setRepairStatus(
@@ -249,14 +321,21 @@ export const DashboardModule = () => {
     );
 
     // ── Recent repairs ────────────────────────────────────────────────────────
-    setRecentRepairs((recentRepairsData ?? []) as RecentRepair[]);
+    setRecentRepairs(
+      ((recentRepairsData ?? []) as RecentRepair[])
+        .filter((repair) => !rangeStart || repair.created_at >= rangeStart)
+        .slice(0, 6)
+    );
 
     // ── Recent orders ─────────────────────────────────────────────────────────
     setRecentOrders(
-      (recentOrdersData ?? []).map((o: any) => ({
-        ...o,
-        payer: typeof o.payer === 'object' ? o.payer : null,
-      }))
+      (recentOrdersData ?? [])
+        .filter((order: any) => !rangeStart || order.created_at >= rangeStart)
+        .slice(0, 5)
+        .map((o: any) => ({
+          ...o,
+          payer: typeof o.payer === 'object' ? o.payer : null,
+        }))
     );
 
     // ── Critical products ─────────────────────────────────────────────────────
@@ -271,7 +350,7 @@ export const DashboardModule = () => {
 
     setLastUpdated(new Date());
     setLoading(false);
-  }, []);
+  }, [dateRange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -299,12 +378,13 @@ export const DashboardModule = () => {
   const revTrend = trend(kpi!.revenueThisMonth, kpi!.revenueLastMonth);
   const ordTrend = trend(kpi!.ordersThisMonth, kpi!.ordersLastMonth);
   const hasAnySales = salesByDay.some(d => d.total > 0);
+  const periodLabel = DATE_RANGE_LABELS[dateRange];
 
   return (
     <div className="space-y-6">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Activity className="h-5 w-5 text-primary" />
@@ -316,36 +396,55 @@ export const DashboardModule = () => {
             </p>
           )}
         </div>
-        <Button size="sm" variant="outline" onClick={load} className="gap-2">
-          <RefreshCw className="h-3.5 w-3.5" />
-          Actualizar
-        </Button>
+        <div className="flex flex-col gap-3 items-start lg:items-end">
+          <div className="flex rounded-2xl border border-border bg-muted/30 p-1 flex-wrap gap-1">
+            {DATE_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setDateRange(tab.key)}
+                className={cn(
+                  'rounded-xl px-4 py-2 text-sm font-medium transition-colors',
+                  dateRange === tab.key
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-background'
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <Button size="sm" variant="outline" onClick={load} className="gap-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
-          title="Ingresos del mes"
+          title={`Ingresos · ${periodLabel}`}
           value={fmtShort(kpi!.revenueThisMonth)}
-          sub={kpi!.ordersThisMonth > 0 ? `${kpi!.ordersThisMonth} ${kpi!.ordersThisMonth === 1 ? 'orden' : 'órdenes'}` : 'Sin ventas aún'}
+          sub={kpi!.ordersThisMonth > 0 ? `${kpi!.ordersThisMonth} ${kpi!.ordersThisMonth === 1 ? 'venta' : 'ventas'} registradas` : 'Sin ventas en el período'}
           icon={<DollarSign className="h-4 w-4 text-green-600" />}
           iconBg="bg-green-100 dark:bg-green-900/30"
-          trendValue={revTrend}
-          trendLabel="vs mes anterior"
+          trendValue={dateRange === 'all' ? null : revTrend}
+          trendLabel={dateRange === 'today' ? 'vs ayer' : dateRange === 'week' ? 'vs semana anterior' : 'vs mes anterior'}
         />
         <KpiCard
-          title="Órdenes aprobadas"
+          title="Ventas registradas"
           value={String(kpi!.ordersThisMonth)}
-          sub="este mes"
+          sub={periodLabel}
           icon={<ShoppingCart className="h-4 w-4 text-blue-600" />}
           iconBg="bg-blue-100 dark:bg-blue-900/30"
-          trendValue={ordTrend}
-          trendLabel="vs mes anterior"
+          trendValue={dateRange === 'all' ? null : ordTrend}
+          trendLabel={dateRange === 'today' ? 'vs ayer' : dateRange === 'week' ? 'vs semana anterior' : 'vs mes anterior'}
         />
         <KpiCard
-          title="Reparaciones activas"
+          title={`Reparaciones · ${periodLabel}`}
           value={String(kpi!.activeRepairs)}
-          sub={kpi!.finishedThisMonth > 0 ? `${kpi!.finishedThisMonth} finalizadas este mes` : 'En curso'}
+          sub={kpi!.finishedThisMonth > 0 ? `${kpi!.finishedThisMonth} finalizadas en el período` : 'Sin finalizadas en el período'}
           icon={<Wrench className="h-4 w-4 text-violet-600" />}
           iconBg="bg-violet-100 dark:bg-violet-900/30"
           trendValue={null}
@@ -367,7 +466,7 @@ export const DashboardModule = () => {
         <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-5">
           <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-primary" />
-            Ventas online — últimos 30 días
+            Ventas registradas — {periodLabel}
           </h3>
           {hasAnySales ? (
             <ResponsiveContainer width="100%" height={200}>
@@ -399,7 +498,7 @@ export const DashboardModule = () => {
           ) : (
             <div className="h-[200px] flex flex-col items-center justify-center text-muted-foreground gap-2">
               <ShoppingCart className="h-10 w-10 opacity-20" />
-              <p className="text-sm">Sin ventas en los últimos 30 días</p>
+              <p className="text-sm">Sin ventas en este período</p>
             </div>
           )}
         </div>
@@ -408,7 +507,7 @@ export const DashboardModule = () => {
         <div className="bg-card border border-border rounded-2xl p-5">
           <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
             <Wrench className="h-4 w-4 text-primary" />
-            Estado de reparaciones
+            Estado de reparaciones — {periodLabel}
           </h3>
           {repairStatus.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
@@ -449,7 +548,7 @@ export const DashboardModule = () => {
           ) : (
             <div className="h-[200px] flex flex-col items-center justify-center text-muted-foreground gap-2">
               <Wrench className="h-10 w-10 opacity-20" />
-              <p className="text-sm">Sin reparaciones registradas</p>
+              <p className="text-sm">Sin reparaciones en este período</p>
             </div>
           )}
         </div>
@@ -462,7 +561,7 @@ export const DashboardModule = () => {
         <div className="bg-card border border-border rounded-2xl p-5">
           <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
             <Clock className="h-4 w-4 text-primary" />
-            Últimas reparaciones
+            Últimas reparaciones — {periodLabel}
           </h3>
           {recentRepairs.length > 0 ? (
             <div className="space-y-2">
@@ -484,7 +583,7 @@ export const DashboardModule = () => {
           ) : (
             <div className="py-8 flex flex-col items-center text-muted-foreground gap-2">
               <Wrench className="h-8 w-8 opacity-20" />
-              <p className="text-sm">Sin reparaciones registradas</p>
+              <p className="text-sm">Sin reparaciones en este período</p>
             </div>
           )}
         </div>
@@ -531,7 +630,7 @@ export const DashboardModule = () => {
       <div className="bg-card border border-border rounded-2xl p-5">
         <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
           <ShoppingCart className="h-4 w-4 text-primary" />
-          Últimas órdenes
+          Últimas órdenes — {periodLabel}
         </h3>
         {recentOrders.length > 0 ? (
           <div className="overflow-x-auto">
@@ -569,7 +668,7 @@ export const DashboardModule = () => {
         ) : (
           <div className="py-8 flex flex-col items-center text-muted-foreground gap-2">
             <ShoppingCart className="h-8 w-8 opacity-20" />
-            <p className="text-sm">Sin órdenes registradas</p>
+            <p className="text-sm">Sin órdenes en este período</p>
           </div>
         )}
       </div>

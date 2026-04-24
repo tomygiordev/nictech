@@ -212,7 +212,7 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
           await (supabase as any).from('product_variants').update({ stock: newStock }).eq('id', variantId);
 
           // Record movement
-          await (supabase as any).from('inventory_movements').insert({
+          const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
             product_id: product.id,
             variant_id: variantId,
             type: mode,
@@ -221,6 +221,7 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
             channel: mode === 'sale' ? channel : null,
             notes: notes || null,
           });
+          if (movementError) throw movementError;
         }
 
         // Update product-level stock = sum of variant stocks
@@ -238,7 +239,7 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
         const newStock = Math.max(0, product.stock + delta);
 
         await (supabase as any).from('products').update({ stock: newStock }).eq('id', product.id);
-        await (supabase as any).from('inventory_movements').insert({
+        const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
           product_id: product.id,
           variant_id: null,
           type: mode,
@@ -247,6 +248,7 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
           channel: mode === 'sale' ? channel : null,
           notes: notes || null,
         });
+        if (movementError) throw movementError;
 
         onDone(product.id, newStock);
       }
