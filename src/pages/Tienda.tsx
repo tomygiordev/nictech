@@ -420,8 +420,16 @@ const Tienda = () => {
       </Helmet>
       <Layout>
         {/* Header */}
-        <section className="bg-muted/50 py-6 sm:py-8">
-          <div className="container-main">
+        <section className="shop-header-surface relative isolate overflow-hidden bg-muted/50 py-6 sm:py-8">
+          <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+            <div className="shop-header-bottom-glow absolute inset-x-0 bottom-0 h-32 sm:h-36" />
+            <div className="shop-header-grid absolute inset-0" />
+            <div className="shop-header-corner-glow absolute -left-20 -top-24 h-72 w-72 rounded-full" />
+            <div className="shop-header-warm-glow absolute -right-24 -top-20 h-72 w-72 rounded-full" />
+            <div className="shop-header-noise absolute inset-0" />
+          </div>
+
+          <div className="container-main relative z-10">
             <div className="text-center max-w-2xl mx-auto">
               <h1 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
                 Nuestra Tienda
@@ -430,16 +438,19 @@ const Tienda = () => {
                 Encuentra los mejores productos de tecnología con garantía
               </p>
 
-              {/* Search */}
-              <div className="relative max-w-md mx-auto mb-6">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Buscar productos..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-12 h-12 rounded-xl"
-                />
+              {/* Search bar */}
+              <div className="relative max-w-md mx-auto mb-8 group">
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-xl blur opacity-0 group-focus-within:opacity-100 transition duration-300 pointer-events-none" />
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
+                  <Input
+                    type="search"
+                    placeholder="Buscar celulares, fundas, cargadores..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-12 h-12 rounded-xl bg-card/80 backdrop-blur-sm border-border hover:border-border/80 focus-visible:ring-primary focus-visible:border-primary/50 transition-all duration-200 shadow-sm"
+                  />
+                </div>
               </div>
 
               {/* Promos y Combos Quick Access (Emil Kowalski dynamic premium design) */}
@@ -449,17 +460,20 @@ const Tienda = () => {
                   type="button"
                   onClick={() => setSelectedCategory(selectedCategory === '__promos__' ? null : '__promos__')}
                   className={cn(
-                    "group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border transition-all duration-200 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none",
+                    "group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden",
                     selectedCategory === '__promos__'
-                      ? "bg-primary/10 border-primary text-primary font-bold"
-                      : "bg-card border-border text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/30 hover:text-foreground"
+                      ? "bg-primary/5 border-primary text-primary font-bold shadow-[0_0_20px_-3px_rgba(0,91,213,0.15)]"
+                      : "bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground"
                   )}
                 >
+                  {selectedCategory === '__promos__' && (
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-0.5 rounded-b bg-primary animate-pulse" />
+                  )}
                   <div className={cn(
-                    "flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-200",
-                    selectedCategory === '__promos__' ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground"
+                    "flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-250",
+                    selectedCategory === '__promos__' ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground"
                   )}>
-                    <Percent className="h-6 w-6 transition-transform duration-200 group-hover:scale-110" />
+                    <Percent className="h-5 w-5 transition-transform duration-250 group-hover:scale-110" />
                   </div>
                   <span className="text-xs tracking-wider uppercase font-semibold">Promos</span>
                 </button>
@@ -469,17 +483,20 @@ const Tienda = () => {
                   type="button"
                   onClick={() => setSelectedCategory(selectedCategory === '__combos__' ? null : '__combos__')}
                   className={cn(
-                    "group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border transition-all duration-200 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none",
+                    "group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden",
                     selectedCategory === '__combos__'
-                      ? "bg-primary/10 border-primary text-primary font-bold"
-                      : "bg-card border-border text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/30 hover:text-foreground"
+                      ? "bg-primary/5 border-primary text-primary font-bold shadow-[0_0_20px_-3px_rgba(0,91,213,0.15)]"
+                      : "bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground"
                   )}
                 >
+                  {selectedCategory === '__combos__' && (
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-0.5 rounded-b bg-primary animate-pulse" />
+                  )}
                   <div className={cn(
-                    "flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-200",
-                    selectedCategory === '__combos__' ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground"
+                    "flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-250",
+                    selectedCategory === '__combos__' ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground"
                   )}>
-                    <Gift className="h-6 w-6 transition-transform duration-200 group-hover:scale-110" />
+                    <Gift className="h-5 w-5 transition-transform duration-250 group-hover:scale-110" />
                   </div>
                   <span className="text-xs tracking-wider uppercase font-semibold">Combos</span>
                 </button>

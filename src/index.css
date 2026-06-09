@@ -349,3 +349,90 @@
     opacity: 1;
   }
 }
+
+/* Modern SaaS Background Effects (Linear/Vercel inspired) */
+@keyframes beam {
+  0% {
+    stroke-dashoffset: 1200;
+  }
+  100% {
+    stroke-dashoffset: -1200;
+  }
+}
+
+@keyframes float-blob-1 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(50px, -40px) scale(1.15);
+  }
+  66% {
+    transform: translate(-30px, 30px) scale(0.9);
+  }
+}
+
+@keyframes float-blob-2 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(-50px, 60px) scale(1.2);
+  }
+}
+
+.animate-beam {
+  animation: beam 10s linear infinite;
+}
+
+.animate-blob-1 {
+  animation: float-blob-1 20s ease-in-out infinite;
+}
+
+.animate-blob-2 {
+  animation: float-blob-2 24s ease-in-out infinite;
+}
+
+.noise-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+.shop-header-surface {
+  background:
+    radial-gradient(circle at 14% 8%, hsl(var(--primary) / 0.055), transparent 16rem),
+    radial-gradient(circle at 88% 8%, hsl(38 92% 50% / 0.05), transparent 15rem),
+    linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted) / 0.5) 100%);
+}
+
+.shop-header-bottom-glow {
+  background:
+    linear-gradient(0deg, hsl(var(--primary) / 0.16) 0%, hsl(var(--primary) / 0.08) 48%, transparent 100%),
+    radial-gradient(ellipse at center bottom, hsl(var(--primary) / 0.18), transparent 58%);
+}
+
+.shop-header-grid {
+  background-image:
+    linear-gradient(to right, hsl(var(--secondary) / 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--primary) / 0.08) 1px, transparent 1px);
+  background-position: center top;
+  background-size: 56px 56px;
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 76%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0%, black 76%, transparent 100%);
+}
+
+.shop-header-corner-glow {
+  background: hsl(var(--primary) / 0.14);
+  filter: blur(58px);
+}
+
+.shop-header-warm-glow {
+  background: hsl(38 92% 50% / 0.08);
+  filter: blur(60px);
+}
+
+.shop-header-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='0.42' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+  opacity: 0.035;
+}
