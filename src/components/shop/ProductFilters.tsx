@@ -1,4 +1,4 @@
-import { SlidersHorizontal, X } from 'lucide-react';
+import { SlidersHorizontal, X, Percent, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { cn } from '@/lib/utils';
@@ -100,7 +100,70 @@ export const ProductFilters = ({
             )}
           </div>
 
-          {/* Categories removed - now rendered horizontally in Tienda.tsx */}
+          {/* Categories Filter */}
+          <div className="mb-8">
+            <h4 className="text-sm font-medium text-foreground mb-3">Categorías</h4>
+            <div className="space-y-1 max-h-[280px] overflow-y-auto pr-2 custom-scrollbar">
+              <button
+                onClick={() => onCategoryChange(null)}
+                className={cn(
+                  "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none",
+                  !selectedCategory
+                    ? "bg-primary/10 text-primary font-semibold"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                Todas las categorías
+              </button>
+              
+              <button
+                onClick={() => onCategoryChange('__promos__')}
+                className={cn(
+                  "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none flex items-center gap-2",
+                  selectedCategory === '__promos__'
+                    ? "bg-primary/10 text-primary font-semibold"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Percent className="h-3.5 w-3.5" />
+                Promociones
+              </button>
+
+              <button
+                onClick={() => onCategoryChange('__combos__')}
+                className={cn(
+                  "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none flex items-center gap-2",
+                  selectedCategory === '__combos__'
+                    ? "bg-primary/10 text-primary font-semibold"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Gift className="h-3.5 w-3.5" />
+                Combos
+              </button>
+
+              {categories
+                .filter(category => {
+                  const name = category.name.toLowerCase();
+                  return name !== 'promos' && name !== 'promociones' && name !== 'combos';
+                })
+                .map((category) => (
+                  <button
+                    key={category.id}
+                    onClick={() => onCategoryChange(category.id)}
+                    className={cn(
+                      "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none",
+                      selectedCategory === category.id
+                        ? "bg-primary/10 text-primary font-semibold"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {category.name}
+                  </button>
+                ))
+              }
+            </div>
+          </div>
 
           {/* Brand Filter - shown first */}
           {brands && brands.length > 0 && onBrandChange && (
@@ -110,9 +173,9 @@ export const ProductFilters = ({
                 <button
                   onClick={() => onBrandChange(null)}
                   className={cn(
-                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none",
                     !selectedBrand
-                      ? "bg-primary/10 text-primary font-medium"
+                      ? "bg-primary/10 text-primary font-semibold"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
@@ -124,9 +187,9 @@ export const ProductFilters = ({
                       key={brand.id}
                       onClick={() => onBrandChange(brand.id)}
                       className={cn(
-                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none",
                         selectedBrand === brand.id
-                          ? "bg-primary/10 text-primary font-medium"
+                          ? "bg-primary/10 text-primary font-semibold"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
@@ -146,9 +209,9 @@ export const ProductFilters = ({
                 <button
                   onClick={() => onModelChange(null)}
                   className={cn(
-                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none",
                     !selectedModel
-                      ? "bg-primary/10 text-primary font-medium"
+                      ? "bg-primary/10 text-primary font-semibold"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
@@ -160,9 +223,9 @@ export const ProductFilters = ({
                       key={model.id}
                       onClick={() => onModelChange(model.id)}
                       className={cn(
-                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                        "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none",
                         selectedModel === model.id
-                          ? "bg-primary/10 text-primary font-medium"
+                          ? "bg-primary/10 text-primary font-semibold"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
@@ -182,9 +245,9 @@ export const ProductFilters = ({
                 <button
                   onClick={() => onConditionChange(null)}
                   className={cn(
-                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                    "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none",
                     !selectedCondition
-                      ? "bg-primary/10 text-primary font-medium"
+                      ? "bg-primary/10 text-primary font-semibold"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
@@ -195,9 +258,9 @@ export const ProductFilters = ({
                     key={condition}
                     onClick={() => onConditionChange(condition)}
                     className={cn(
-                      "w-full text-left px-3 py-2 rounded-lg text-sm transition-colors",
+                      "w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-100 ease-out-default active:scale-[0.98] select-none",
                       selectedCondition === condition
-                        ? "bg-primary/10 text-primary font-medium"
+                        ? "bg-primary/10 text-primary font-semibold"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >

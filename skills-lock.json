@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "emilkowal-animations": {
+      "source": "pproenca/dot-skills",
+      "sourceType": "github",
+      "skillPath": "skills/.experimental/emilkowal-animations/SKILL.md",
+      "computedHash": "f945576c4e815ae3a986f4314d27385f59804a4ff1e2de521d836ce282e8d639"
+    },
     "find-skills": {
       "source": "vercel-labs/skills",
       "sourceType": "github",

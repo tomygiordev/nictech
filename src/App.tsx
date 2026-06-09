@@ -24,6 +24,8 @@ const Login = lazy(() => import("./pages/Login"));
 const Checkout = lazy(() => import("./pages/Checkout"));
 const TerminosCondiciones = lazy(() => import("./pages/TerminosCondiciones"));
 const PoliticasPrivacidad = lazy(() => import("./pages/PoliticasPrivacidad"));
+const Promos = lazy(() => import("./pages/Promos"));
+const Combos = lazy(() => import("./pages/Combos"));
 
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -54,8 +56,10 @@ const App = () => (
               <ErrorBoundary>
               <Suspense fallback={<PageLoader />}>
               <Routes>
-                <Route path="/" element={<Index />} />
+                <Route path="/" element={<Tienda />} />
                 <Route path="/tienda" element={<Tienda />} />
+                <Route path="/promos" element={<Promos />} />
+                <Route path="/combos" element={<Combos />} />
                 <Route path="/checkout" element={<Checkout />} />
                 <Route path="/servicios" element={<Servicios />} />
                 <Route path="/seguimiento" element={<Seguimiento />} />

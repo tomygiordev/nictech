@@ -18,7 +18,6 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { supabase } from '@/integrations/supabase/client';
 
 const navLinks = [
-  { href: '/', label: 'Inicio' },
   { href: '/servicios', label: 'Servicios' },
   { href: '/seguimiento', label: 'Seguimiento' },
   { href: '/blog', label: 'Blog' },
@@ -88,11 +87,11 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
   );
 
   const isActive = (href: string) => location.pathname === href;
-  const isTienda = location.pathname === '/tienda';
+  const isTienda = location.pathname === '/' || location.pathname === '/tienda';
 
   const linkClass = (active: boolean) =>
     cn(
-      'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+      'px-3 py-2 rounded-lg text-sm font-medium transition-all duration-100 ease-out-default active:scale-[0.97] select-none',
       active
         ? 'bg-primary/10 text-primary'
         : 'text-muted-foreground hover:text-foreground hover:bg-muted'
@@ -124,8 +123,9 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
+                  onClick={() => navigate('/')}
                   className={cn(
-                    'px-3 py-2 h-auto text-sm font-medium gap-1',
+                    'px-3 py-2 h-auto text-sm font-medium gap-1 transition-all duration-100 ease-out-default active:scale-[0.97] select-none',
                     isTienda ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
@@ -180,14 +180,14 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
 
             {/* Promos y Combos como links especiales */}
             <Link
-              to="/tienda?nombre=Promos"
-              className="px-3 py-2 rounded-lg text-sm font-medium transition-colors text-primary/80 hover:text-primary hover:bg-primary/5"
+              to="/promos"
+              className="px-3 py-2 rounded-lg text-sm font-medium transition-all duration-100 ease-out-default active:scale-[0.97] text-primary/80 hover:text-primary hover:bg-primary/5 select-none"
             >
               Promos
             </Link>
             <Link
-              to="/tienda?nombre=Combos"
-              className="px-3 py-2 rounded-lg text-sm font-medium transition-colors text-primary/80 hover:text-primary hover:bg-primary/5"
+              to="/combos"
+              className="px-3 py-2 rounded-lg text-sm font-medium transition-all duration-100 ease-out-default active:scale-[0.97] text-primary/80 hover:text-primary hover:bg-primary/5 select-none"
             >
               Combos
             </Link>
@@ -209,7 +209,7 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
               </Button>
             )}
 
-            <Button variant="ghost" size="icon" className="relative" onClick={openCart}>
+            <Button variant="ghost" size="icon" className="relative transition-all duration-100 ease-out-default active:scale-[0.93] select-none" onClick={openCart}>
               <ShoppingCart className="h-5 w-5" />
               {totalItems > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -274,12 +274,12 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
                   <div className="pt-2 pb-1 px-3">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Destacados</p>
                   </div>
-                  {[{ href: '/tienda?nombre=Promos', label: 'Promos' }, { href: '/tienda?nombre=Combos', label: 'Combos' }].map((link) => (
+                  {[{ href: '/promos', label: 'Promos' }, { href: '/combos', label: 'Combos' }].map((link) => (
                     <Link
                       key={link.href}
                       to={link.href}
                       onClick={() => setSheetOpen(false)}
-                      className="px-3 py-2 rounded-lg text-sm font-medium text-primary/80 hover:text-primary hover:bg-primary/5 transition-colors pl-6"
+                      className="px-3 py-2 rounded-lg text-sm font-medium text-primary/80 hover:text-primary hover:bg-primary/5 transition-all duration-100 ease-out-default active:scale-[0.97] pl-6 select-none"
                     >
                       {link.label}
                     </Link>

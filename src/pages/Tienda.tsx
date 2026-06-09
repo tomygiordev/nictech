@@ -1,12 +1,8 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import {
-  Search, Loader2, Package, LayoutGrid,
-  Smartphone, Headphones, Cable, BatteryCharging,
-  Gift, Monitor, ShieldCheck, Speaker, Layers,
-  ChevronLeft, ChevronRight, Percent
-} from 'lucide-react';
+import { Search, Loader2, Package, Gift, Percent, ChevronRight } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Layout } from '@/components/layout/Layout';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { ProductCard } from '@/components/shop/ProductCard';
@@ -56,27 +52,6 @@ interface Brand {
   name: string;
 }
 
-// Icon mapping for categories
-const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  smartphone: <Smartphone className="h-4 w-4" />,
-  celular: <Smartphone className="h-4 w-4" />,
-  iphone: <Smartphone className="h-4 w-4" />,
-  auriculares: <Headphones className="h-4 w-4" />,
-  'cables de datos': <Cable className="h-4 w-4" />,
-  cables: <Cable className="h-4 w-4" />,
-  cargadores: <BatteryCharging className="h-4 w-4" />,
-  combos: <Gift className="h-4 w-4" />,
-  computacion: <Monitor className="h-4 w-4" />,
-  fundas: <ShieldCheck className="h-4 w-4" />,
-  parlantes: <Speaker className="h-4 w-4" />,
-  'vidrios templados': <Layers className="h-4 w-4" />,
-};
-
-const getCategoryIcon = (name: string) => {
-  const lower = name.toLowerCase();
-  return CATEGORY_ICONS[lower] || <Package className="h-4 w-4" />;
-};
-
 const Tienda = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
@@ -87,7 +62,7 @@ const Tienda = () => {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 0]);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default' | 'popular'>('default');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'default' | 'popular'>('popular');
   const [clickCounts, setClickCounts] = useState<Map<string, number>>(new Map());
 
   // Pagination State
@@ -101,62 +76,7 @@ const Tienda = () => {
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [selectedCondition, setSelectedCondition] = useState<string | null>(null);
 
-  // Animated indicator state
-  const categoryBarRef = useRef<HTMLDivElement>(null);
-  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
-  const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-
-  const updateIndicator = useCallback(() => {
-    const key = selectedCategory || '__all__';
-    const btn = buttonRefs.current.get(key);
-    const bar = categoryBarRef.current;
-    if (btn && bar) {
-      const barRect = bar.getBoundingClientRect();
-      const btnRect = btn.getBoundingClientRect();
-      setIndicatorStyle({
-        left: btnRect.left - barRect.left + bar.scrollLeft,
-        width: btnRect.width,
-      });
-    }
-  }, [selectedCategory]);
-
-  useEffect(() => {
-    // small delay to allow buttons to render
-    const t = setTimeout(updateIndicator, 50);
-    return () => clearTimeout(t);
-  }, [selectedCategory, categories, updateIndicator]);
-
-  // Scroll arrow visibility
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const checkScrollArrows = useCallback(() => {
-    const el = categoryBarRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 5);
-    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 5);
-  }, []);
-
-  useEffect(() => {
-    checkScrollArrows();
-    const el = categoryBarRef.current;
-    if (el) {
-      el.addEventListener('scroll', checkScrollArrows, { passive: true });
-      window.addEventListener('resize', checkScrollArrows);
-      return () => {
-        el.removeEventListener('scroll', checkScrollArrows);
-        window.removeEventListener('resize', checkScrollArrows);
-      };
-    }
-  }, [categories, checkScrollArrows]);
-
-  const scrollCategories = useCallback((direction: 'left' | 'right') => {
-    const el = categoryBarRef.current;
-    if (!el) return;
-    el.scrollBy({ left: direction === 'left' ? -200 : 200, behavior: 'smooth' });
-  }, []);
-
-  // Check if selected category is smartphone related
+  // Check category relationships
   const isSmartphoneCategory = useMemo(() => {
     if (!selectedCategory) return false;
     const cat = categories.find(c => c.id === selectedCategory);
@@ -232,15 +152,10 @@ const Tienda = () => {
         category: item.category,
         tags: item.tags || [],
         model_id: item.model_id,
-        // @ts-ignore
         brand_id: item.brand_id,
-        // @ts-ignore
         condition: item.condition,
-        // @ts-ignore
         original_price: item.original_price ?? null,
-        // @ts-ignore
         sale_expires_at: item.sale_expires_at ?? null,
-        // @ts-ignore
         price_usd: item.price_usd ?? null,
       }));
       setProducts(formattedProducts);
@@ -252,15 +167,7 @@ const Tienda = () => {
     }
 
     if (categoriesRes.data) {
-      let cats = categoriesRes.data as unknown as Category[];
-      cats.sort((a, b) => {
-        const aIsPhone = a.name.toLowerCase().includes('celular') || a.name.toLowerCase().includes('smartphone') || a.name.toLowerCase().includes('iphone');
-        const bIsPhone = b.name.toLowerCase().includes('celular') || b.name.toLowerCase().includes('smartphone') || b.name.toLowerCase().includes('iphone');
-        if (aIsPhone && !bIsPhone) return -1;
-        if (!aIsPhone && bIsPhone) return 1;
-        return a.name.localeCompare(b.name);
-      });
-      setCategories(cats);
+      setCategories(categoriesRes.data as unknown as Category[]);
     }
 
     if (modelsRes.data) {
@@ -301,7 +208,7 @@ const Tienda = () => {
       .replace(/[\u0300-\u036f]/g, "");
   };
 
-  // Map model_id → brand_id para lookup O(1) — debe ir ANTES de filteredProducts
+  // Map model_id → brand_id
   const modelBrandMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of models) map.set(m.id, m.brand_id);
@@ -311,6 +218,41 @@ const Tienda = () => {
   const filteredProducts = useMemo(() => {
     const normalizedQuery = normalizeText(searchQuery);
     const searchTerms = normalizedQuery.split(/\s+/).filter(Boolean);
+
+    const getPropensityScore = (product: Product) => {
+      let score = clickCounts.get(product.id) || 0;
+
+      // 1. Promo boost: offers have higher sales propensity (boost by 5 points)
+      const hasActivePromo = product.original_price != null &&
+        (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date());
+      if (hasActivePromo) {
+        score += 5;
+      }
+
+      // 2. Scarcity/Sales Velocity boost: low stock (1-5 units) implies high demand or urgency
+      if (product.stock > 0 && product.stock <= 5) {
+        score += (6 - product.stock);
+      }
+
+      // 3. Visual boost: products with images have much higher conversion propensity (boost by 3 points)
+      if (product.image_url) {
+        score += 3;
+      }
+
+      // 4. Category Value Boost: prioritize high-ticket items (Smartphones, PCs, Audio) over cheap accessories
+      const categoryName = product.category?.name.toLowerCase() || '';
+      if (categoryName.includes('smartphone') || categoryName.includes('celular') || categoryName.includes('iphone')) {
+        score += 15;
+      } else if (categoryName.includes('computadora') || categoryName.includes('pc') || categoryName.includes('notebook') || categoryName.includes('laptop')) {
+        score += 12;
+      } else if (categoryName.includes('parlante') || categoryName.includes('audio') || categoryName.includes('auricular')) {
+        score += 8;
+      } else if (categoryName.includes('entretenimiento') || categoryName.includes('consola')) {
+        score += 6;
+      }
+
+      return score;
+    };
 
     const result = products.filter(product => {
       const normalizedName = normalizeText(product.name);
@@ -323,28 +265,29 @@ const Tienda = () => {
         normalizedTags.some(tag => tag.includes(term))
       );
 
-      // Filtro especial para "Promos" - mostrar solo productos con descuentos vigentes
       let matchesCategory = true;
       if (selectedCategory) {
         const isPromos = selectedCategory === '__promos__' ||
           categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'promos';
+        const isCombos = selectedCategory === '__combos__' ||
+          categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'combos';
+
         if (isPromos) {
-          // Promos: solo productos con original_price y descuento no expirado
           const hasActivePromo = product.original_price != null &&
             (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date());
           matchesCategory = hasActivePromo;
+        } else if (isCombos) {
+          matchesCategory = product.category?.name.toLowerCase() === 'combos';
         } else {
           matchesCategory = product.category_id === selectedCategory;
         }
       }
 
       const matchesModel = !selectedModel || product.model_id === selectedModel;
-      // Check brand directly (celulares) OR through model_id (fundas/vidrios/protectors)
       const matchesBrand = !selectedBrand || (
         product.brand_id === selectedBrand ||
         (product.model_id != null && modelBrandMap.get(product.model_id) === selectedBrand)
       );
-      // @ts-ignore
       const matchesCondition = !selectedCondition || product.condition === selectedCondition;
       const matchesTag = !selectedTag || (product.tags || []).includes(selectedTag);
 
@@ -357,9 +300,9 @@ const Tienda = () => {
       if (sortOrder === 'asc') return a.price - b.price;
       if (sortOrder === 'desc') return b.price - a.price;
       if (sortOrder === 'popular') {
-        const aClicks = clickCounts.get(a.id) || 0;
-        const bClicks = clickCounts.get(b.id) || 0;
-        return bClicks - aClicks;
+        const scoreA = getPropensityScore(a);
+        const scoreB = getPropensityScore(b);
+        return scoreB - scoreA;
       }
       return 0;
     });
@@ -376,11 +319,77 @@ const Tienda = () => {
     return Array.from(tagSet).sort();
   }, [products, selectedCategory, isFundaCategory]);
 
-  // Models filtered by selected brand (for fundas/vidrios/protectors)
+  // Models filtered by selected brand and stock availability in the selected category
   const filteredModels = useMemo(() => {
-    if (!selectedBrand) return models;
-    return models.filter(m => m.brand_id === selectedBrand);
-  }, [models, selectedBrand]);
+    const activeModelIds = new Set<string>();
+    
+    for (const p of products) {
+      if (selectedCategory) {
+        const isPromos = selectedCategory === '__promos__' ||
+          categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'promos';
+        const isCombos = selectedCategory === '__combos__' ||
+          categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'combos';
+
+        let matchesCategory = true;
+        if (isPromos) {
+          const hasActivePromo = p.original_price != null &&
+            (!p.sale_expires_at || new Date(p.sale_expires_at) > new Date());
+          matchesCategory = hasActivePromo;
+        } else if (isCombos) {
+          matchesCategory = p.category?.name.toLowerCase() === 'combos';
+        } else {
+          matchesCategory = p.category_id === selectedCategory;
+        }
+
+        if (!matchesCategory) continue;
+      }
+
+      if (p.model_id) {
+        activeModelIds.add(p.model_id);
+      }
+    }
+
+    return models.filter(m => {
+      if (!activeModelIds.has(m.id)) return false;
+      if (selectedBrand && m.brand_id !== selectedBrand) return false;
+      return true;
+    });
+  }, [models, products, selectedCategory, selectedBrand, categories]);
+
+  // Brands filtered by stock availability in the selected category
+  const filteredBrands = useMemo(() => {
+    const activeBrandIds = new Set<string>();
+    for (const p of products) {
+      if (selectedCategory) {
+        const isPromos = selectedCategory === '__promos__' ||
+          categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'promos';
+        const isCombos = selectedCategory === '__combos__' ||
+          categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'combos';
+
+        let matchesCategory = true;
+        if (isPromos) {
+          const hasActivePromo = p.original_price != null &&
+            (!p.sale_expires_at || new Date(p.sale_expires_at) > new Date());
+          matchesCategory = hasActivePromo;
+        } else if (isCombos) {
+          matchesCategory = p.category?.name.toLowerCase() === 'combos';
+        } else {
+          matchesCategory = p.category_id === selectedCategory;
+        }
+
+        if (!matchesCategory) continue;
+      }
+
+      if (p.brand_id) {
+        activeBrandIds.add(p.brand_id);
+      } else if (p.model_id) {
+        const brandId = modelBrandMap.get(p.model_id);
+        if (brandId) activeBrandIds.add(brandId);
+      }
+    }
+
+    return brands.filter(b => activeBrandIds.has(b.id));
+  }, [brands, products, selectedCategory, categories, modelBrandMap]);
 
   // Reset sub-filters when category changes
   useEffect(() => {
@@ -401,6 +410,8 @@ const Tienda = () => {
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
+  const showBanner = !selectedCategory && !selectedBrand && !selectedModel && !searchQuery && !selectedTag;
+
   return (
     <>
       <Helmet>
@@ -409,18 +420,18 @@ const Tienda = () => {
       </Helmet>
       <Layout>
         {/* Header */}
-        <section className="bg-muted/50 py-12">
+        <section className="bg-muted/50 py-6 sm:py-8">
           <div className="container-main">
             <div className="text-center max-w-2xl mx-auto">
               <h1 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
                 Nuestra Tienda
               </h1>
-              <p className="text-muted-foreground text-lg mb-8">
+              <p className="text-muted-foreground text-lg mb-6">
                 Encuentra los mejores productos de tecnología con garantía
               </p>
 
               {/* Search */}
-              <div className="relative max-w-md mx-auto">
+              <div className="relative max-w-md mx-auto mb-6">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   type="search"
@@ -430,6 +441,49 @@ const Tienda = () => {
                   className="pl-12 h-12 rounded-xl"
                 />
               </div>
+
+              {/* Promos y Combos Quick Access (Emil Kowalski dynamic premium design) */}
+              <div className="flex justify-center gap-4 mt-6">
+                {/* Promos Button */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory(selectedCategory === '__promos__' ? null : '__promos__')}
+                  className={cn(
+                    "group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border transition-all duration-200 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none",
+                    selectedCategory === '__promos__'
+                      ? "bg-primary/10 border-primary text-primary font-bold"
+                      : "bg-card border-border text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/30 hover:text-foreground"
+                  )}
+                >
+                  <div className={cn(
+                    "flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-200",
+                    selectedCategory === '__promos__' ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground"
+                  )}>
+                    <Percent className="h-6 w-6 transition-transform duration-200 group-hover:scale-110" />
+                  </div>
+                  <span className="text-xs tracking-wider uppercase font-semibold">Promos</span>
+                </button>
+
+                {/* Combos Button */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory(selectedCategory === '__combos__' ? null : '__combos__')}
+                  className={cn(
+                    "group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border transition-all duration-200 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none",
+                    selectedCategory === '__combos__'
+                      ? "bg-primary/10 border-primary text-primary font-bold"
+                      : "bg-card border-border text-muted-foreground hover:border-muted-foreground/30 hover:bg-muted/30 hover:text-foreground"
+                  )}
+                >
+                  <div className={cn(
+                    "flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-200",
+                    selectedCategory === '__combos__' ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground"
+                  )}>
+                    <Gift className="h-6 w-6 transition-transform duration-200 group-hover:scale-110" />
+                  </div>
+                  <span className="text-xs tracking-wider uppercase font-semibold">Combos</span>
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -438,121 +492,9 @@ const Tienda = () => {
         <section className="py-12">
           <div className="container-main">
 
-            {/* ── Sticky Glassmorphism Category Bar ── */}
-            <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 mb-8">
-              <div className="backdrop-blur-xl bg-background/70 border-b border-border/50 rounded-b-2xl shadow-sm py-3">
-                <div className="relative">
-                  {/* Left Arrow */}
-                  {canScrollLeft && (
-                    <button
-                      onClick={() => scrollCategories('left')}
-                      className="absolute left-0 top-0 bottom-0 z-10 flex items-center pl-1 pr-4 bg-gradient-to-r from-background/90 via-background/60 to-transparent rounded-l-2xl transition-opacity duration-200"
-                      aria-label="Desplazar categorías a la izquierda"
-                    >
-                      <ChevronLeft className="h-5 w-5 text-foreground/70 hover:text-foreground transition-colors" />
-                    </button>
-                  )}
-
-                  {/* Right Arrow */}
-                  {canScrollRight && (
-                    <button
-                      onClick={() => scrollCategories('right')}
-                      className="absolute right-0 top-0 bottom-0 z-10 flex items-center pr-1 pl-4 bg-gradient-to-l from-background/90 via-background/60 to-transparent rounded-r-2xl transition-opacity duration-200"
-                      aria-label="Desplazar categorías a la derecha"
-                    >
-                      <ChevronRight className="h-5 w-5 text-foreground/70 hover:text-foreground transition-colors" />
-                    </button>
-                  )}
-
-                  <div
-                    ref={categoryBarRef}
-                    className="relative overflow-x-auto hide-scrollbar"
-                  >
-                    {/* Animated sliding indicator */}
-                    <div
-                      className="absolute bottom-0 h-[3px] bg-primary rounded-full transition-all duration-300 ease-out"
-                      style={{
-                        left: indicatorStyle.left,
-                        width: indicatorStyle.width,
-                      }}
-                    />
-
-                    <div className="flex gap-1 sm:gap-2 w-max px-8">
-                      {/* "Promos" Button — always first */}
-                      <button
-                        ref={(el) => {
-                          if (el) buttonRefs.current.set('__promos__', el);
-                        }}
-                        onClick={() => setSelectedCategory('__promos__')}
-                        className={`
-                          group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
-                          transition-all duration-200 whitespace-nowrap select-none
-                          focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none
-                          ${selectedCategory === '__promos__'
-                            ? 'text-primary bg-primary/10'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                          }
-                        `}
-                      >
-                        <Percent className={`h-4 w-4 transition-transform duration-200 ${selectedCategory === '__promos__' ? 'scale-110' : 'group-hover:scale-110'}`} />
-                        Promos
-                      </button>
-
-                      {/* "Todas" Button */}
-                      <button
-                        ref={(el) => {
-                          if (el) buttonRefs.current.set('__all__', el);
-                        }}
-                        onClick={() => setSelectedCategory(null)}
-                        className={`
-                          group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
-                          transition-all duration-200 whitespace-nowrap select-none
-                          focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none
-                          ${!selectedCategory
-                            ? 'text-primary bg-primary/10'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                          }
-                        `}
-                      >
-                        <LayoutGrid className={`h-4 w-4 transition-transform duration-200 ${!selectedCategory ? 'scale-110' : 'group-hover:scale-110'}`} />
-                        Todas
-                      </button>
-
-                      {categories.map((category) => {
-                        const isActive = selectedCategory === category.id;
-                        return (
-                          <button
-                            key={category.id}
-                            ref={(el) => {
-                              if (el) buttonRefs.current.set(category.id, el);
-                            }}
-                            onClick={() => setSelectedCategory(category.id)}
-                            className={`
-                              group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
-                              transition-all duration-200 whitespace-nowrap select-none
-                              focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none
-                              ${isActive
-                                ? 'text-primary bg-primary/10'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                              }
-                            `}
-                          >
-                            <span className={`transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
-                              {getCategoryIcon(category.name)}
-                            </span>
-                            {category.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Tag filter pills for Fundas */}
             {isFundaCategory && availableTags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-4">
+              <div className="flex flex-wrap gap-2 mt-4 mb-8">
                 <button
                   onClick={() => setSelectedTag(null)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 outline-none ${
@@ -595,7 +537,7 @@ const Tienda = () => {
                   selectedModel={selectedModel}
                   onModelChange={setSelectedModel}
 
-                  brands={isSmartphoneCategory || isFundaCategory ? brands : []}
+                  brands={isSmartphoneCategory || isFundaCategory ? filteredBrands : []}
                   selectedBrand={selectedBrand}
                   onBrandChange={(brandId) => { setSelectedBrand(brandId); setSelectedModel(null); }}
 
@@ -640,7 +582,7 @@ const Tienda = () => {
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-6">
                       {displayedProducts.map((product) => (
                         <button
                           key={product.id}
@@ -649,7 +591,7 @@ const Tienda = () => {
                             supabase.from('product_clicks').insert({ product_id: product.id });
                             setSelectedProduct(product);
                           }}
-                          className="cursor-pointer text-left w-full"
+                          className="cursor-pointer text-left w-full outline-none transition-all duration-100 ease-out-default active:scale-[0.98]"
                           aria-label={`Ver detalles de ${product.name}`}
                         >
                           <ProductCard

@@ -16,7 +16,11 @@ interface CarouselSettings {
   interval_seconds: number | null;
 }
 
-export const HeroBannerCarousel = () => {
+interface HeroBannerCarouselProps {
+  variant?: 'hero' | 'store';
+}
+
+export const HeroBannerCarousel = ({ variant = 'hero' }: HeroBannerCarouselProps) => {
   const navigate = useNavigate();
   const [banners, setBanners] = useState<Banner[]>([]);
   const [current, setCurrent] = useState(0);
@@ -71,6 +75,8 @@ export const HeroBannerCarousel = () => {
 
   if (loading || banners.length === 0) return null;
 
+  const isStoreVariant = variant === 'store';
+
   const handleBannerClick = (banner: Banner) => {
     if (banner.link_url?.trim()) {
       if (banner.link_url.startsWith('/')) {
@@ -82,12 +88,19 @@ export const HeroBannerCarousel = () => {
       return;
     }
 
-    navigate('/tienda?nombre=Promos');
+    navigate('/promos');
   };
 
   return (
     <div className="relative mx-auto w-full max-w-[1920px]">
-      <div className="relative aspect-[16/5] w-full overflow-hidden bg-[hsl(var(--primary))] sm:rounded-[28px]">
+      <div
+        className={cn(
+          'relative w-full overflow-hidden bg-[hsl(var(--primary))]',
+          isStoreVariant
+            ? 'aspect-[16/7] rounded-2xl border border-border/60 shadow-sm sm:aspect-[16/5.2] lg:aspect-[16/4]'
+            : 'aspect-[16/5] sm:rounded-[28px]'
+        )}
+      >
           {banners.map((banner, i) => (
             <div
               key={banner.id}
@@ -105,11 +118,20 @@ export const HeroBannerCarousel = () => {
               <img
                 src={banner.image_url}
                 alt={banner.alt_text || 'Banner promocional'}
-                className="h-full w-full object-cover object-center"
+                className={cn(
+                  'h-full w-full object-cover',
+                  isStoreVariant ? 'object-center sm:object-center' : 'object-center'
+                )}
                 draggable={false}
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/35 via-transparent to-slate-950/45" />
-              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/45 to-transparent sm:h-32" />
+              <div className={cn(
+                'absolute inset-0 bg-gradient-to-r from-slate-950/35 via-transparent to-slate-950/45',
+                isStoreVariant && 'from-slate-950/25 to-slate-950/35'
+              )} />
+              <div className={cn(
+                'absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/45 to-transparent',
+                isStoreVariant ? 'h-14 sm:h-20' : 'h-24 sm:h-32'
+              )} />
             </div>
           ))}
 
@@ -118,17 +140,27 @@ export const HeroBannerCarousel = () => {
             <>
               <button
                 onClick={(e) => { e.stopPropagation(); goPrev(); }}
-                className="absolute bottom-3 left-3 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-md transition-colors hover:bg-black/45 sm:bottom-auto sm:left-5 sm:top-1/2 sm:h-11 sm:w-11 sm:-translate-y-1/2 lg:left-6"
+                className={cn(
+                  'absolute z-20 flex items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-md transition-colors hover:bg-black/45',
+                  isStoreVariant
+                    ? 'bottom-2 left-2 h-8 w-8 sm:bottom-auto sm:left-4 sm:top-1/2 sm:h-10 sm:w-10 sm:-translate-y-1/2'
+                    : 'bottom-3 left-3 h-10 w-10 sm:bottom-auto sm:left-5 sm:top-1/2 sm:h-11 sm:w-11 sm:-translate-y-1/2 lg:left-6'
+                )}
                 aria-label="Banner anterior"
               >
-                <ChevronLeft className="h-5 w-5" />
+                <ChevronLeft className={cn(isStoreVariant ? 'h-4 w-4 sm:h-5 sm:w-5' : 'h-5 w-5')} />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); goNext(); }}
-                className="absolute bottom-3 right-3 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-md transition-colors hover:bg-black/45 sm:bottom-auto sm:right-5 sm:top-1/2 sm:h-11 sm:w-11 sm:-translate-y-1/2 lg:right-6"
+                className={cn(
+                  'absolute z-20 flex items-center justify-center rounded-full border border-white/20 bg-black/25 text-white backdrop-blur-md transition-colors hover:bg-black/45',
+                  isStoreVariant
+                    ? 'bottom-2 right-2 h-8 w-8 sm:bottom-auto sm:right-4 sm:top-1/2 sm:h-10 sm:w-10 sm:-translate-y-1/2'
+                    : 'bottom-3 right-3 h-10 w-10 sm:bottom-auto sm:right-5 sm:top-1/2 sm:h-11 sm:w-11 sm:-translate-y-1/2 lg:right-6'
+                )}
                 aria-label="Banner siguiente"
               >
-                <ChevronRight className="h-5 w-5" />
+                <ChevronRight className={cn(isStoreVariant ? 'h-4 w-4 sm:h-5 sm:w-5' : 'h-5 w-5')} />
               </button>
             </>
           )}

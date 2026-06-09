@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShoppingCart, Package, MessageCircle } from 'lucide-react';
+import { ShoppingCart, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
@@ -17,6 +17,16 @@ interface ProductCardProps {
   category: string;
   tags?: string[] | null;
 }
+
+const getTagStyle = (index: number) => {
+  if (index % 2 === 0) {
+    // Brand Blue
+    return 'bg-secondary/10 text-secondary border-secondary/20';
+  } else {
+    // Brand Red
+    return 'bg-red-500/10 text-red-800 dark:text-red-300 border-red-500/20';
+  }
+};
 
 export const ProductCard = React.memo(({
   id,
@@ -50,29 +60,29 @@ export const ProductCard = React.memo(({
   };
 
   return (
-    <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover h-full flex flex-col">
+    <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover h-full flex flex-col transition-all duration-300 ease-out-default select-none">
       {/* Image */}
-      <div className="relative aspect-square bg-white overflow-hidden p-2">
+      <div className="relative aspect-square bg-white overflow-hidden p-1.5 sm:p-2">
         {image_url ? (
           <img
             src={image_url}
             alt={name}
             loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-300 ease-out-default group-hover:scale-105"
           />
         ) : (
           <div className="h-full w-full flex items-center justify-center">
-            <Package className="h-16 w-16 text-muted-foreground/30" />
+            <Package className="h-10 w-10 sm:h-16 sm:w-16 text-muted-foreground/30" />
           </div>
         )}
 
         {/* Category badge */}
-        <div className="absolute top-3 left-3 flex flex-col gap-1">
-          <span className="px-3 py-1 rounded-full bg-background/90 backdrop-blur-sm text-xs font-medium text-foreground">
+        <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex flex-col gap-1 z-10">
+          <span className="px-2 py-0.5 sm:px-3 sm:py-1 rounded-full bg-background/90 backdrop-blur-sm text-[9px] sm:text-xs font-medium text-foreground">
             {category}
           </span>
           {original_price != null && (
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold w-fit shadow-sm">
+            <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[8px] sm:text-[10px] font-bold w-fit shadow-sm">
               PROMO
             </span>
           )}
@@ -80,15 +90,15 @@ export const ProductCard = React.memo(({
 
         {/* Stock indicator */}
         {stock <= 5 && stock > 0 && (
-          <div className="absolute top-3 right-3 max-w-[45%]">
-            <span className="px-2 py-1 rounded-full bg-red-600 text-white animate-pulse shadow-sm text-[10px] font-bold leading-tight block text-center">
-              ¡Últimas unidades!
+          <div className="absolute top-2 right-2 sm:top-3 sm:right-3 max-w-[55%] z-10">
+            <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full bg-red-600 text-white animate-pulse shadow-sm text-[8px] sm:text-[10px] font-bold leading-tight block text-center">
+              ¡Últimos!
             </span>
           </div>
         )}
         {stock === 0 && (
-          <div className="absolute inset-0 bg-foreground/50 flex items-center justify-center">
-            <span className="px-4 py-2 rounded-full bg-background text-foreground font-medium">
+          <div className="absolute inset-0 bg-foreground/45 flex items-center justify-center z-10">
+            <span className="px-2.5 py-1 sm:px-4 sm:py-2 rounded-full bg-background text-foreground text-xs sm:font-medium shadow-sm">
               Agotado
             </span>
           </div>
@@ -96,72 +106,78 @@ export const ProductCard = React.memo(({
       </div>
 
       {/* Content */}
-      <div className="p-5 flex flex-col flex-1">
-        <h3 className="font-semibold text-foreground text-lg mb-1 line-clamp-2 group-hover:text-primary transition-colors">
+      <div className="p-3 sm:p-5 flex flex-col flex-1">
+        <h3 className="font-semibold text-foreground text-sm sm:text-lg mb-1 line-clamp-2 group-hover:text-primary transition-colors duration-200">
           {name}
         </h3>
-        {description && (
-          <p className="text-muted-foreground text-sm line-clamp-2 mb-4">
-            {description}
-          </p>
-        )}
+        <div className="mb-3 hidden h-10 sm:block">
+          {description ? (
+            <p className="h-full overflow-hidden text-sm leading-5 text-muted-foreground line-clamp-2">
+              {description}
+            </p>
+          ) : null}
+        </div>
 
         {/* Tags */}
         {tags && tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-4">
-            {tags.slice(0, 3).map((tag, index) => (
-              <span key={index} className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider bg-secondary/50 text-secondary-foreground border border-secondary">
-                {tag}
-              </span>
-            ))}
+          <div className="flex-wrap gap-1.5 mb-3.5 hidden sm:flex">
+            {tags.slice(0, 3).map((tag, index) => {
+              const tagStyle = getTagStyle(index);
+              return (
+                <span key={index} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] uppercase font-bold tracking-wider border ${tagStyle}`}>
+                  <span className="h-1 w-1 rounded-full bg-current mr-1 shrink-0" />
+                  {tag}
+                </span>
+              );
+            })}
             {tags.length > 3 && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] text-muted-foreground">+{tags.length - 3}</span>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-medium bg-muted text-muted-foreground border border-border/40">+{tags.length - 3}</span>
             )}
           </div>
         )}
 
-        <div className="mt-auto flex items-center justify-between pt-4 border-t border-border/50">
-          <div>
+        <div className="mt-auto flex items-center justify-between pt-2.5 sm:pt-4 border-t border-border/50">
+          <div className="min-w-0 flex-1">
             {price_usd != null ? (
               <>
                 {originalUsdPrice != null && (
-                  <span className="text-sm text-muted-foreground line-through block">
+                  <span className="text-[10px] sm:text-sm text-muted-foreground line-through block truncate">
                     USD {originalUsdPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 )}
-                <span className="text-2xl font-bold text-green-700">
+                <span className="text-sm sm:text-2xl font-bold text-green-700 block truncate">
                   USD {price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="text-[9px] sm:text-xs text-muted-foreground mt-0.5 hidden sm:block">
                   Precio en dólares
                 </p>
               </>
             ) : (
               <>
                 {original_price != null && (
-                  <span className="text-sm text-muted-foreground line-through block">
+                  <span className="text-[10px] sm:text-sm text-muted-foreground line-through block truncate">
                     $ {original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 )}
-                <span className="text-2xl font-bold text-primary">
+                <span className="text-sm sm:text-2xl font-bold text-primary block truncate">
                   $ {price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </>
             )}
-            <p className="text-xs text-muted-foreground mt-1">
-              {stock > 0 ? `${stock} disponibles` : 'Sin stock'}
+            <p className="text-[9px] sm:text-xs text-muted-foreground mt-0.5">
+              {stock > 0 ? `${stock} disp.` : 'Sin stock'}
             </p>
           </div>
 
           <Button
             variant="default"
             size="icon"
-            className="rounded-full h-11 w-11 shrink-0 ml-4 hover:bg-primary/90 shadow-sm"
+            className="rounded-full h-8 w-8 sm:h-11 sm:w-11 shrink-0 ml-1.5 sm:ml-4 hover:bg-primary/90 shadow-sm transition-all duration-100 ease-out-default active:scale-[0.93] select-none"
             disabled={stock === 0}
             onClick={handleAddToCart}
             title="Añadir a carrito"
           >
-            <ShoppingCart className="h-5 w-5" />
+            <ShoppingCart className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         </div>
       </div>

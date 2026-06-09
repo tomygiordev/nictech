@@ -38,12 +38,12 @@ export const CartSlideOver = () => {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-50 animate-fade-in"
+        className="fixed inset-0 bg-foreground/20 backdrop-blur-sm z-50 animate-fade-in-backdrop"
         onClick={closeCart}
       />
 
       {/* Slide-over panel */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-background shadow-xl z-50 animate-slide-up">
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-background shadow-xl z-50 animate-slide-in-right">
         <div className="flex flex-col h-full">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-border">
