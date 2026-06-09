@@ -53,6 +53,7 @@ interface Category {
 
 export const Navbar = ({ onSearchOpen }: NavbarProps) => {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const location = useLocation();
   const navigate = useNavigate();
@@ -67,6 +68,14 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
         if (data) setCategories(data as unknown as Category[]);
       });
   }, []);
+
+  // Listen to navigation state to open the dropdown on page change
+  useEffect(() => {
+    if (location.state && (location.state as any).openShopMenu) {
+      setDropdownOpen(true);
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [location]);
 
   // Ordena: Smartphone primero, luego Fundas, luego el resto
   const sortedCategories = [...categories].sort((a, b) => {
@@ -119,11 +128,40 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
             ))}
 
             {/* Tienda Dropdown — categorías dinámicas */}
-            <DropdownMenu>
+            <DropdownMenu
+              open={dropdownOpen}
+              onOpenChange={(open) => {
+                if (!isTienda && open) {
+                  navigate('/', { state: { openShopMenu: true } });
+                  return;
+                }
+                setDropdownOpen(open);
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  onClick={() => navigate('/')}
+                  onPointerDown={(e) => {
+                    if (!isTienda) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      navigate('/', { state: { openShopMenu: true } });
+                    }
+                  }}
+                  onClick={(e) => {
+                    if (!isTienda) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      navigate('/', { state: { openShopMenu: true } });
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (!isTienda && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      navigate('/', { state: { openShopMenu: true } });
+                    }
+                  }}
                   className={cn(
                     'px-3 py-2 h-auto text-sm font-medium gap-1 transition-all duration-100 ease-out-default active:scale-[0.97] select-none',
                     isTienda ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
