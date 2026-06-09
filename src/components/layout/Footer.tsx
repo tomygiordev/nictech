@@ -108,7 +108,7 @@ export const Footer = () => {
               <li className="flex items-start gap-3">
                 <MapPin className="h-4 w-4 mt-0.5 text-primary" />
                 <span className="text-sm text-secondary-foreground/80">
-                  La paz 1214, Urdinarrain, Entre Ríos<br />
+                  Héroes de Malvinas 08, Urdinarrain, Entre Ríos<br />
                   C.5 y C.19, Gilbert, Entre Ríos (sucursal)
                 </span>
               </li>

@@ -101,7 +101,7 @@ export const CartSlideOver = () => {
                         <p className="text-xs text-muted-foreground">Color: {item.variant.color}</p>
                       )}
                       <p className="text-primary font-semibold mt-1">
-                        $ {item.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        $ {item.price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                       </p>
                       {/* Low stock warning */}
                       {item.maxStock <= 3 && item.maxStock > 0 && (

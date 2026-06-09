@@ -309,11 +309,11 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                         <>
                                             {originalUsdPrice != null && (
                                                 <p className="text-base text-muted-foreground line-through">
-                                                    USD {originalUsdPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    USD {originalUsdPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                                                 </p>
                                             )}
                                             <span className="text-2xl md:text-3xl font-bold text-green-700">
-                                                USD {product.price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                USD {product.price_usd.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                                             </span>
                                             <p className="text-xs text-muted-foreground mt-1">Precio en dólares · pago en pesos al tipo de cambio vigente</p>
                                         </>
@@ -322,11 +322,11 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                             {product.original_price != null &&
                                              hasActiveSale(product.sale_expires_at) && (
                                                 <p className="text-base text-muted-foreground line-through">
-                                                    $ {product.original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    $ {product.original_price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                                                 </p>
                                             )}
                                             <span className="text-2xl md:text-3xl font-bold text-primary">
-                                                $ {product.price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                $ {product.price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                                             </span>
                                         </>
                                     )}

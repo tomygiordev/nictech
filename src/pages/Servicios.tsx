@@ -1,7 +1,7 @@
 import { Helmet } from 'react-helmet-async';
 import {
   Smartphone, Sparkles, Laptop, Monitor, ShieldCheck,
-  Wrench, Shield, Zap, Award, MapPin, Phone, Mail, MessageCircle
+  Wrench, Shield, Zap, Award, MapPin, Phone, Mail, MessageCircle, Clock
 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
@@ -301,69 +301,92 @@ export const Servicios = () => {
 
         {/* Contact Section (Reorganizada con Mapa en la página de servicios) */}
         <section className="py-16 bg-muted/30 border-t border-border/50">
-          <div className="container-main max-w-4xl">
+          <div className="container-main max-w-5xl">
             <div className="text-center mb-12">
               <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">Contactanos</h2>
               <p className="text-muted-foreground text-sm">Comunicate con nosotros o visitanos en nuestras sucursales</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-              {/* WhatsApp */}
-              <div className="bg-card p-6 rounded-2xl border border-border shadow-sm flex flex-col items-center text-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-4">
-                  <Phone className="h-5 w-5" />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+              {/* Información de Contacto (Izquierda - 5/12) */}
+              <div className="lg:col-span-5 flex flex-col gap-4">
+                {/* Dirección */}
+                <div className="bg-card p-5 rounded-2xl border border-border shadow-sm flex items-start gap-4 transition-all duration-300 ease-out-default hover:shadow-md">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary flex-shrink-0">
+                    <MapPin className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-foreground text-sm mb-1">Dirección</h4>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      Héroes de Malvinas 08, Urdinarrain, Entre Ríos<br />
+                      C.5 y C.19, Gilbert, Entre Ríos<br />
+                      <span className="text-[10px] font-medium opacity-80">(sucursal con local comercial)</span>
+                    </p>
+                  </div>
                 </div>
-                <h4 className="font-semibold text-foreground text-sm mb-2">WhatsApp</h4>
-                <a
-                  href="https://wa.me/5493446353769"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground text-xs sm:text-sm hover:text-primary transition-colors duration-200"
-                >
-                  +54 9 3446 35-3769
-                </a>
+
+                {/* WhatsApp */}
+                <div className="bg-card p-5 rounded-2xl border border-border shadow-sm flex items-start gap-4 transition-all duration-300 ease-out-default hover:shadow-md">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary flex-shrink-0">
+                    <Phone className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-foreground text-sm mb-1">WhatsApp</h4>
+                    <a
+                      href="https://wa.me/5493446353769"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground text-xs sm:text-sm hover:text-primary transition-colors duration-200"
+                    >
+                      +54 9 3446 35-3769
+                    </a>
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div className="bg-card p-5 rounded-2xl border border-border shadow-sm flex items-start gap-4 transition-all duration-300 ease-out-default hover:shadow-md">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary flex-shrink-0">
+                    <Mail className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-foreground text-sm mb-1">Email</h4>
+                    <a
+                      href="mailto:nictech.urdi@gmail.com"
+                      className="text-muted-foreground text-xs sm:text-sm hover:text-primary transition-colors duration-200"
+                    >
+                      nictech.urdi@gmail.com
+                    </a>
+                  </div>
+                </div>
+
+                {/* Horarios */}
+                <div className="bg-card p-5 rounded-2xl border border-border shadow-sm flex items-start gap-4 transition-all duration-300 ease-out-default hover:shadow-md">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary flex-shrink-0">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-foreground text-sm mb-1">Horarios</h4>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      Lunes a Viernes: 8:00 a 12:00 y 16:00 a 20:00<br />
+                      Sábados: 9:00 a 13:00
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              {/* Dirección */}
-              <div className="bg-card p-6 rounded-2xl border border-border shadow-sm flex flex-col items-center text-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-4">
-                  <MapPin className="h-5 w-5" />
-                </div>
-                <h4 className="font-semibold text-foreground text-sm mb-2">Dirección</h4>
-                <p className="text-muted-foreground text-xs leading-relaxed">
-                  La paz 1214, Urdinarrain, Entre Ríos<br />
-                  C.5 y C.19, Gilbert, Entre Ríos<br />
-                  <span className="text-[10px] text-muted-foreground/80 font-medium">(sucursal comercial)</span>
-                </p>
+              {/* Mapa Google (Derecha - 7/12) */}
+              <div className="lg:col-span-7 rounded-2xl overflow-hidden bg-muted border border-border shadow-sm min-h-[350px] lg:h-auto">
+                <iframe
+                  src="https://maps.google.com/maps?q=H%C3%A9roes%20de%20Malvinas%2008%2C%20Urdinarrain%2C%20Entre%20R%C3%ADos%2C%20Argentina&t=&z=16&ie=UTF8&iwloc=&output=embed"
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0, minHeight: '350px' }}
+                  allowFullScreen={true}
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  title="Ubicación Nictech - Urdinarrain"
+                ></iframe>
               </div>
-
-              {/* Email */}
-              <div className="bg-card p-6 rounded-2xl border border-border shadow-sm flex flex-col items-center text-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary mb-4">
-                  <Mail className="h-5 w-5" />
-                </div>
-                <h4 className="font-semibold text-foreground text-sm mb-2">Email</h4>
-                <a
-                  href="mailto:nictech.urdi@gmail.com"
-                  className="text-muted-foreground text-xs sm:text-sm hover:text-primary transition-colors duration-200"
-                >
-                  nictech.urdi@gmail.com
-                </a>
-              </div>
-            </div>
-
-            {/* Google Map */}
-            <div className="rounded-2xl overflow-hidden bg-muted border border-border shadow-sm h-[320px] w-full">
-              <iframe
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d342.5160463048138!2d-58.92949946250626!3d-32.5342748362853!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x95b0532973e3c1a7%3A0xb85a3859280c0f1a!2sDespensa%20de%20Juan%20Carlos%20orsinger!5e1!3m2!1sen!2sar!4v1770589996889!5m2!1sen!2sar"
-                width="100%"
-                height="100%"
-                style={{ border: 0 }}
-                allowFullScreen={true}
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-                title="Ubicación Nictech - Gilbert"
-              ></iframe>
             </div>
           </div>
         </section>

@@ -142,11 +142,11 @@ export const ProductCard = React.memo(({
               <>
                 {originalUsdPrice != null && (
                   <span className="text-[10px] sm:text-sm text-muted-foreground line-through block truncate">
-                    USD {originalUsdPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    USD {originalUsdPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                   </span>
                 )}
                 <span className="text-sm sm:text-2xl font-bold text-green-700 block truncate">
-                  USD {price_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  USD {price_usd.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
                 <p className="text-[9px] sm:text-xs text-muted-foreground mt-0.5 hidden sm:block">
                   Precio en dólares
@@ -156,11 +156,11 @@ export const ProductCard = React.memo(({
               <>
                 {original_price != null && (
                   <span className="text-[10px] sm:text-sm text-muted-foreground line-through block truncate">
-                    $ {original_price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    $ {original_price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                   </span>
                 )}
                 <span className="text-sm sm:text-2xl font-bold text-primary block truncate">
-                  $ {price.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  $ {price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                 </span>
               </>
             )}
@@ -172,12 +172,12 @@ export const ProductCard = React.memo(({
           <Button
             variant="default"
             size="icon"
-            className="rounded-full h-8 w-8 sm:h-11 sm:w-11 shrink-0 ml-1.5 sm:ml-4 hover:bg-primary/90 shadow-sm transition-all duration-100 ease-out-default active:scale-[0.93] select-none"
+            className="rounded-full h-7 w-7 sm:h-11 sm:w-11 shrink-0 ml-1.5 sm:ml-4 hover:bg-primary/90 shadow-sm transition-all duration-100 ease-out-default active:scale-[0.93] select-none"
             disabled={stock === 0}
             onClick={handleAddToCart}
             title="Añadir a carrito"
           >
-            <ShoppingCart className="h-4 w-4 sm:h-5 sm:w-5" />
+            <ShoppingCart className="h-3.5 w-3.5 sm:h-5 sm:w-5" />
           </Button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Search, Loader2, Package, Gift, Percent, ChevronRight } from 'lucide-react';
+import { Search, Loader2, Package, Gift, Percent, ChevronRight, Wallet, CreditCard, Landmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Layout } from '@/components/layout/Layout';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
@@ -455,51 +455,48 @@ const Tienda = () => {
 
               {/* Promos y Combos Quick Access (Emil Kowalski dynamic premium design) */}
               <div className="flex justify-center gap-4 mt-6">
-                {/* Promos Button */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedCategory(selectedCategory === '__promos__' ? null : '__promos__')}
-                  className={cn(
-                    "group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden",
-                    selectedCategory === '__promos__'
-                      ? "bg-primary/5 border-primary text-primary font-bold shadow-[0_0_20px_-3px_rgba(0,91,213,0.15)]"
-                      : "bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground"
-                  )}
+                {/* Promos Link */}
+                <Link
+                  to="/promos"
+                  className="group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden"
                 >
-                  {selectedCategory === '__promos__' && (
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-0.5 rounded-b bg-primary animate-pulse" />
-                  )}
-                  <div className={cn(
-                    "flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-250",
-                    selectedCategory === '__promos__' ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground"
-                  )}>
+                  <div className="flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-250 bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground">
                     <Percent className="h-5 w-5 transition-transform duration-250 group-hover:scale-110" />
                   </div>
                   <span className="text-xs tracking-wider uppercase font-semibold">Promos</span>
-                </button>
+                </Link>
 
-                {/* Combos Button */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedCategory(selectedCategory === '__combos__' ? null : '__combos__')}
-                  className={cn(
-                    "group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden",
-                    selectedCategory === '__combos__'
-                      ? "bg-primary/5 border-primary text-primary font-bold shadow-[0_0_20px_-3px_rgba(0,91,213,0.15)]"
-                      : "bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground"
-                  )}
+                {/* Combos Link */}
+                <Link
+                  to="/combos"
+                  className="group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden"
                 >
-                  {selectedCategory === '__combos__' && (
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-0.5 rounded-b bg-primary animate-pulse" />
-                  )}
-                  <div className={cn(
-                    "flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-250",
-                    selectedCategory === '__combos__' ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground"
-                  )}>
+                  <div className="flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-250 bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground">
                     <Gift className="h-5 w-5 transition-transform duration-250 group-hover:scale-110" />
                   </div>
                   <span className="text-xs tracking-wider uppercase font-semibold">Combos</span>
-                </button>
+                </Link>
+              </div>
+
+              {/* Medios de Pago representativos */}
+              <div className="flex flex-wrap justify-center items-center gap-x-5 gap-y-2.5 mt-8 text-xs text-muted-foreground/80">
+                <span className="text-[10px] uppercase tracking-wider font-semibold opacity-70">Medios de pago:</span>
+                <div className="flex items-center gap-1.5 bg-card/40 backdrop-blur-sm border border-border/60 px-2.5 py-1 rounded-full">
+                  <Wallet className="h-3.5 w-3.5 text-[#009ee3] flex-shrink-0" />
+                  <span>Mercado Pago</span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-card/40 backdrop-blur-sm border border-border/60 px-2.5 py-1 rounded-full">
+                  <CreditCard className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                  <span>Tarjetas</span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-card/40 backdrop-blur-sm border border-border/60 px-2.5 py-1 rounded-full">
+                  <Landmark className="h-3.5 w-3.5 text-secondary flex-shrink-0" />
+                  <span>Transferencia</span>
+                </div>
+                <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-medium">
+                  <Percent className="h-3.5 w-3.5 flex-shrink-0 animate-pulse" />
+                  <span>10% OFF Transferencia</span>
+                </div>
               </div>
             </div>
           </div>
