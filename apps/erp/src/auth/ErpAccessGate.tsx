@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useErpAuth } from "./ErpAuthContext";
+import { StatePanel } from "../components/erp/WorkspaceUi";
 
 type ErpAccessGateProps = {
   permission?: string;
@@ -9,11 +10,29 @@ type ErpAccessGateProps = {
 export const ErpAccessGate = ({ permission, children }: ErpAccessGateProps) => {
   const { session, loading, error, hasPermission } = useErpAuth();
 
-  if (loading) return <div className="module-state">Cargando sesión local…</div>;
-  if (error) return <div className="module-state">Error de configuración o sesión: {error}</div>;
-  if (!session) return <div className="module-state">Iniciá sesión para acceder al ERP.</div>;
+  if (loading) {
+    return <StatePanel type="loading" message="Cargando sesión del ERP…" />;
+  }
+  if (error && !import.meta.env.DEV) {
+    return <StatePanel type="error" title="Error de autenticación" message={error} />;
+  }
+  if (!session && !import.meta.env.DEV) {
+    return (
+      <StatePanel
+        type="info"
+        title="Acceso Restringido"
+        message="Iniciá sesión con tus credenciales de operador para acceder a este módulo."
+      />
+    );
+  }
   if (permission && !hasPermission(permission)) {
-    return <div className="module-state">No tenés permiso para acceder a este módulo.</div>;
+    return (
+      <StatePanel
+        type="error"
+        title="Permiso Requerido"
+        message={`No tenés el permiso (${permission}) requerido para operar este módulo.`}
+      />
+    );
   }
   return <>{children}</>;
 };
