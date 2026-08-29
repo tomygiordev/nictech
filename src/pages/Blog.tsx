@@ -141,14 +141,14 @@ const Blog = () => {
     const fetchPosts = async () => {
       try {
         const { data, error } = await supabase
-          .from('posts' as any)
+          .from('posts')
           .select('*')
           .order('created_at', { ascending: false });
 
         if (error || !data || data.length === 0) {
           setPosts(fallbackPosts);
         } else {
-          const mappedPosts = data.map((post: any) => ({
+          const mappedPosts = data.map((post) => ({
             id: post.id,
             title: post.title,
             excerpt: post.excerpt,

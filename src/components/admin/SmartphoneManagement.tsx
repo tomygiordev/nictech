@@ -1,4 +1,4 @@
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy product payload shape. */
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -95,7 +95,7 @@ export function SmartphoneManagement() {
             }));
 
             setProducts(formatted);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error(error);
             toast({ title: "Error", description: "No se pudieron cargar los celulares.", variant: "destructive" });
         }
@@ -140,7 +140,7 @@ export function SmartphoneManagement() {
 
             setProducts(prev => prev.filter(p => p.id !== id));
             toast({ title: "Eliminado", description: "El celular y sus fotos han sido eliminados." });
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error(error);
             toast({ title: "Error", description: "No se pudo eliminar.", variant: "destructive" });
         }
@@ -286,9 +286,9 @@ export function SmartphoneManagement() {
 
             setIsFormOpen(false);
             fetchSmartphones();
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error(error);
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+            toast({ title: "Error", description: error instanceof Error ? error.message : "Error desconocido", variant: "destructive" });
         }
         setSaving(false);
     };
@@ -358,8 +358,8 @@ export function SmartphoneManagement() {
             setModelName('');
             setModelBrandId('');
             setModelBrandName('');
-        } catch (err: any) {
-            toast({ title: "Error", description: err.message, variant: "destructive" });
+        } catch (err: unknown) {
+            toast({ title: "Error", description: err instanceof Error ? err.message : "Error desconocido", variant: "destructive" });
         }
         setSavingModel(false);
     };
@@ -705,3 +705,4 @@ export function SmartphoneManagement() {
         </div>
     );
 }
+ 

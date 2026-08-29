@@ -58,7 +58,7 @@ export const BlogManagement = () => {
     const fetchPosts = async () => {
         setLoading(true);
         const { data, error } = await supabase
-            .from("posts" as any)
+            .from("posts")
             .select("*")
             .order("created_at", { ascending: false });
 
@@ -98,7 +98,7 @@ export const BlogManagement = () => {
         let bucketName = "blog_images";
 
         // Check if bucket exists/upload
-        let { error: uploadError } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
             .from(bucketName)
             .upload(filePath, file);
 
@@ -148,7 +148,7 @@ export const BlogManagement = () => {
             }
 
             const { error } = await supabase
-                .from("posts" as any)
+                .from("posts")
                 .insert({
                     title: newPost.title,
                     excerpt: newPost.excerpt,
@@ -180,11 +180,12 @@ export const BlogManagement = () => {
             });
 
             fetchPosts();
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error saving post:", error);
+            const message = error instanceof Error ? error.message : "No se pudo guardar la publicación.";
             toast({
                 title: "Error",
-                description: error.message || "No se pudo guardar la publicación.",
+                description: message,
                 variant: "destructive",
             });
         }
@@ -195,7 +196,7 @@ export const BlogManagement = () => {
         if (!confirm("¿Estás seguro de que deseas eliminar esta publicación?")) return;
 
         const { error } = await supabase
-            .from("posts" as any)
+            .from("posts")
             .delete()
             .eq("id", id);
 

@@ -31,7 +31,7 @@ export const useDollarRate = () => {
       .eq('id', 1)
       .single()
       .then(({ data }) => {
-        if (data) setRate(Number((data as any).rate));
+        if (data) setRate(Number(data.rate));
       });
   }, []);
 
@@ -89,7 +89,7 @@ export const DollarSettings = () => {
       const { data: usdProducts } = await supabase
         .from('products')
         .select('id, price, price_usd, original_price')
-        .not('price_usd', 'is', null) as any;
+        .not('price_usd', 'is', null);
 
       if (usdProducts && usdProducts.length > 0) {
         for (const p of usdProducts) {
@@ -106,7 +106,7 @@ export const DollarSettings = () => {
               original_price: restoredOriginalUsd != null
                 ? Math.round(restoredOriginalUsd * newRate)
                 : p.original_price,
-            } as any)
+            })
             .eq('id', p.id);
         }
       }
@@ -119,8 +119,8 @@ export const DollarSettings = () => {
       }
 
       return newRate;
-    } catch (err: any) {
-      if (!silent) toast({ title: 'Error al actualizar cotización', description: err.message, variant: 'destructive' });
+    } catch (err: unknown) {
+      if (!silent) toast({ title: 'Error al actualizar cotización', description: err instanceof Error ? err.message : 'Error desconocido', variant: 'destructive' });
       return null;
     }
   }, [settings?.dollar_type]);
@@ -141,7 +141,7 @@ export const DollarSettings = () => {
     }, STALE_MS);
 
     return () => clearInterval(interval);
-  }, [settings?.last_updated, settings?.dollar_type]);
+  }, [fetchSettings, refreshRate, settings]);
 
   useEffect(() => {
     fetchSettings();

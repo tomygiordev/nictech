@@ -1,4 +1,4 @@
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy inventory payload shape. */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -191,7 +191,7 @@ function generateOrderPDF(sale: SaleSnapshot) {
     NicTech · Este documento es un comprobante interno de venta
   </div>
 
-  <script>window.onload = () => { window.print(); }<\/script>
+  <script>window.onload = () => { window.print(); }</script>
 </body>
 </html>`;
 
@@ -280,7 +280,7 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
-      const { data } = await (supabase as any)
+      const { data } = await supabase
         .from('products')
         .select('id, name, price, price_usd, stock, image_url, category:categories(name)')
         .ilike('name', `%${query}%`)
@@ -317,7 +317,7 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
 
     if (p.has_variants) {
       setLoadingV(true);
-      const { data } = await (supabase as any)
+      const { data } = await supabase
         .from('product_variants')
         .select('id, color, stock')
         .eq('product_id', p.id)
@@ -399,7 +399,7 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
         if (item.variantId) {
           // Update variant stock
           const newVariantStock = item.availableStock - item.qty;
-          await (supabase as any)
+          await supabase
             .from('product_variants')
             .update({ stock: newVariantStock })
             .eq('id', item.variantId);
@@ -407,12 +407,12 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
           // Recalc product-level stock once per product
           if (!recalcedProducts.has(item.productId)) {
             recalcedProducts.add(item.productId);
-            const { data: allV } = await (supabase as any)
+            const { data: allV } = await supabase
               .from('product_variants')
               .select('stock')
               .eq('product_id', item.productId);
             const totalStock = (allV || []).reduce((s: number, v: any) => s + (v.stock || 0), 0);
-            await (supabase as any)
+            await supabase
               .from('products')
               .update({ stock: totalStock })
               .eq('id', item.productId);
@@ -420,14 +420,14 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
           }
         } else {
           const newStock = item.availableStock - item.qty;
-          await (supabase as any)
+          await supabase
             .from('products')
             .update({ stock: newStock })
             .eq('id', item.productId);
           onSaleComplete(item.productId, newStock);
         }
 
-        const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
+          const { error: movementError } = await supabase.from('inventory_movements').insert({
           product_id: item.productId,
           variant_id: item.variantId ?? null,
           type: 'sale',
@@ -437,8 +437,8 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
           notes: notes || null,
         });
         if (movementError) throw movementError;
-      } catch (e: any) {
-        toast({ title: `Error en "${item.name}"`, description: e.message, variant: 'destructive' });
+      } catch (e: unknown) {
+        toast({ title: `Error en "${item.name}"`, description: e instanceof Error ? e.message : 'Error desconocido', variant: 'destructive' });
       }
     }
 
@@ -857,3 +857,4 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
     </Dialog>
   );
 }
+ 

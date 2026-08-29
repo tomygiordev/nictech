@@ -111,7 +111,7 @@ export function BrandModelSelector({ onBrandChange, onModelChange, selectedBrand
             setOpenBrand(false);
             setBrandSearch("");
             toast({ title: "Marca creada", description: normalizedName });
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo crear la marca.", variant: "destructive" });
         }
     };
@@ -150,7 +150,7 @@ export function BrandModelSelector({ onBrandChange, onModelChange, selectedBrand
             setOpenModel(false);
             setModelSearch("");
             toast({ title: "Modelo creado", description: normalizedName });
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo crear el modelo.", variant: "destructive" });
         }
     };
@@ -166,7 +166,7 @@ export function BrandModelSelector({ onBrandChange, onModelChange, selectedBrand
             setBrands(brands.filter(b => b.id !== id));
             if (selectedBrandId === id) onBrandChange('', '');
             toast({ title: "Marca eliminada" });
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo eliminar. Verifique que no tenga productos asociados.", variant: "destructive" });
         }
     };
@@ -182,7 +182,7 @@ export function BrandModelSelector({ onBrandChange, onModelChange, selectedBrand
             setModels(models.filter(m => m.id !== id));
             if (selectedModelId === id) onModelChange('', '');
             toast({ title: "Modelo eliminado" });
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo eliminar el modelo.", variant: "destructive" });
         }
     };

@@ -47,7 +47,7 @@ export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
 
       if (data && data.length > 0) {
         setSteps(
-          (data as any[]).map((s) => ({
+          data.map((s) => ({
             id: s.name,
             name: s.name,
             icon: ICON_MAP[s.icon] || Circle,

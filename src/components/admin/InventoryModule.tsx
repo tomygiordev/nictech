@@ -1,4 +1,4 @@
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy inventory queries use ungenerated tables. */
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -99,10 +99,10 @@ export const InventoryModule = () => {
     setLoading(true);
     setSelected(new Set());
     const [prodRes, varRes] = await Promise.all([
-      (supabase as any).from('products')
+      supabase.from('products')
         .select('id, name, category_id, price, price_usd, stock, image_url, is_active, category:categories(name)')
         .order('name'),
-      (supabase as any).from('product_variants').select('product_id'),
+      supabase.from('product_variants').select('product_id'),
     ]);
     if (prodRes.data) {
       setProducts(prodRes.data.map((item: any) => ({
@@ -135,7 +135,7 @@ export const InventoryModule = () => {
   // ── Delete ───────────────────────────────────────────────────────
   const deleteProduct = async (id: string, name: string) => {
     if (!window.confirm(`¿Eliminar "${name}"?`)) return;
-    await (supabase as any).from('products').delete().eq('id', id);
+    await supabase.from('products').delete().eq('id', id);
     setProducts(prev => prev.filter(p => p.id !== id));
     setSelected(prev => { const s = new Set(prev); s.delete(id); return s; });
     toast({ title: 'Eliminado', description: name });
@@ -143,7 +143,7 @@ export const InventoryModule = () => {
 
   const bulkDelete = async () => {
     if (!selected.size || !window.confirm(`¿Eliminar ${selected.size} producto(s)?`)) return;
-    for (const id of selected) await (supabase as any).from('products').delete().eq('id', id);
+    for (const id of selected) await supabase.from('products').delete().eq('id', id);
     setProducts(prev => prev.filter(p => !selected.has(p.id)));
     setSelected(new Set());
     toast({ title: `${selected.size} productos eliminados` });
@@ -153,7 +153,7 @@ export const InventoryModule = () => {
     const ids = filtered.filter(p => p.stock === 0).map(p => p.id);
     if (!ids.length) { toast({ title: 'No hay productos sin stock' }); return; }
     if (!window.confirm(`¿Eliminar ${ids.length} producto(s) sin stock?`)) return;
-    for (const id of ids) await (supabase as any).from('products').delete().eq('id', id);
+    for (const id of ids) await supabase.from('products').delete().eq('id', id);
     setProducts(prev => prev.filter(p => !ids.includes(p.id)));
     toast({ title: `${ids.length} productos eliminados` });
   };
@@ -348,7 +348,7 @@ export const InventoryModule = () => {
                     {/* Checkbox */}
                     <td className="px-3 py-2.5">
                       <button type="button"
-                        onClick={() => setSelected(prev => { const s = new Set(prev); s.has(p.id) ? s.delete(p.id) : s.add(p.id); return s; })}
+                         onClick={() => setSelected(prev => { const s = new Set(prev); if (s.has(p.id)) s.delete(p.id); else s.add(p.id); return s; })}
                         className="text-muted-foreground hover:text-foreground">
                         {isSel ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
                       </button>
@@ -447,3 +447,4 @@ export const InventoryModule = () => {
     </div>
   );
 };
+ 

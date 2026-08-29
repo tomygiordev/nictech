@@ -1,4 +1,4 @@
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy selector payload shape. */
 import * as React from "react"
 import { Check, ChevronsUpDown, X, Plus, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -241,3 +241,4 @@ export function MultiModelSelector({
         </div>
     )
 }
+ 

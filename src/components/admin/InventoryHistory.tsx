@@ -26,7 +26,7 @@ interface Movement {
   product_image: string | null;
   variant_color: string | null;
 }
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy Supabase rows lack generated table types. */
 interface MovementRow {
   id: string;
   type: 'restock' | 'sale';
@@ -242,7 +242,7 @@ function generateHistoryPDF(movements: Movement[], stats: ReportStats, meta: Rep
 
   <div class="footer">NicTech · Informe generado el ${genDate} · ${movements.length} movimiento${movements.length !== 1 ? 's' : ''}</div>
 
-  <script>window.onload = () => { window.print(); }<\/script>
+  <script>window.onload = () => { window.print(); }</script>
 </body>
 </html>`;
 
@@ -376,7 +376,7 @@ function generateOrdersPDF(orders: OnlineOrder[], dateRange: DateRange) {
     <tbody>${rows}</tbody>
   </table>
   <div class="footer">NicTech · Reporte generado el ${genDate} · ${orders.length} orden${orders.length !== 1 ? 'es' : ''}</div>
-  <script>window.onload = () => { window.print(); }<\/script>
+  <script>window.onload = () => { window.print(); }</script>
 </body>
 </html>`;
 
@@ -416,7 +416,7 @@ const OnlineSalesView = ({ dateRange }: { dateRange: DateRange }) => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchOrders(); }, [dateRange]);
+  useEffect(() => { fetchOrders(); }, [dateRange, fetchOrders]);
 
   const filtered = useMemo(() => orders.filter(o => {
     if (statusFilter !== 'all' && o.status !== statusFilter) return false;
@@ -634,7 +634,7 @@ export const InventoryHistory = () => {
   // ── Fetch ──────────────────────────────────────────────────────
   const fetchMovements = async () => {
     setLoading(true);
-    let q = (supabase as any)
+    let q = supabase
       .from('inventory_movements')
       .select('id, type, quantity, unit_price, channel, notes, created_at, product_id, variant_id')
       .order('created_at', { ascending: false })
@@ -665,10 +665,10 @@ export const InventoryHistory = () => {
       { data: variants, error: variantsError },
     ] = await Promise.all([
       productIds.length
-        ? (supabase as any).from('products').select('id, name, image_url').in('id', productIds)
+        ? supabase.from('products').select('id, name, image_url').in('id', productIds)
         : Promise.resolve({ data: [], error: null }),
       variantIds.length
-        ? (supabase as any).from('product_variants').select('id, color').in('id', variantIds)
+        ? supabase.from('product_variants').select('id, color').in('id', variantIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -709,11 +709,11 @@ export const InventoryHistory = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchMovements(); }, [dateRange]);
+  useEffect(() => { fetchMovements(); }, [dateRange, fetchMovements]);
 
   const deleteMovement = async (id: string) => {
     if (!window.confirm('¿Eliminar este movimiento del historial?')) return;
-    const { error } = await (supabase as any).from('inventory_movements').delete().eq('id', id);
+    const { error } = await supabase.from('inventory_movements').delete().eq('id', id);
     if (error) { toast({ title: 'Error al eliminar', variant: 'destructive' }); return; }
     setMovements(prev => prev.filter(m => m.id !== id));
   };
@@ -1022,3 +1022,4 @@ export const InventoryHistory = () => {
     </div>
   );
 };
+ 

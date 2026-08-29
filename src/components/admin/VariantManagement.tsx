@@ -1,4 +1,4 @@
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy variant payload shape. */
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -331,7 +331,7 @@ export const VariantManagement = () => {
                 setExpandedVariantItemId((successfulResults[0] as any).id);
             }
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: error.message, variant: "destructive" });
         }
         setCreatingVariant(false);
@@ -347,7 +347,7 @@ export const VariantManagement = () => {
             setNewCatName("");
             fetchInitialData();
             toast({ title: 'Categoría creada', description: 'La categoría se creó correctamente.' });
-        } catch (e: any) {
+        } catch (e: unknown) {
             toast({ title: 'Error', description: e.message, variant: 'destructive' });
         }
         setCreatingVariant(false);
@@ -419,7 +419,7 @@ export const VariantManagement = () => {
             toast({ title: "Variante agregada" });
             setNewVariant({ color: '', stock: '', image_file: null, image_preview: '' });
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error(error);
             toast({ title: "Error", description: "No se pudo agregar la variante.", variant: "destructive" });
         }
@@ -459,7 +459,7 @@ export const VariantManagement = () => {
             setVariantsList(prev => prev.map(c => c.id === editingVariantItem.id ? { ...c, ...updates } : c));
             toast({ title: "Accesorio Actualizado" });
             setEditingVariantItem(null);
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: error.message, variant: "destructive" });
         }
         setCreatingVariant(false);
@@ -511,7 +511,7 @@ export const VariantManagement = () => {
             setEditingVariant(null);
             setEditVariantFile(null);
             setEditVariantPreview(null);
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo actualizar.", variant: "destructive" });
         }
         setSavingVariant(false);
@@ -532,7 +532,7 @@ export const VariantManagement = () => {
                 title: newStatus ? "Variante Activada" : "Variante Inactivada",
                 description: `${variant.color} ahora está ${newStatus ? 'visible' : 'oculta'} en la tienda.`
             });
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo cambiar el estado.", variant: "destructive" });
         }
     };
@@ -584,7 +584,7 @@ export const VariantManagement = () => {
             fetchVariantsList();
             if (expandedVariantItemId) fetchVariants(expandedVariantItemId);
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: error.message, variant: "destructive" });
         }
         setSavingVariant(false);
@@ -610,7 +610,7 @@ export const VariantManagement = () => {
             toast({ title: "Stock actualizado", description: `Se sumaron ${stockAddAmount} unidades a ${stockAddingVariant.color}.` });
             setStockAddingVariant(null);
             setStockAddAmount("1");
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo actualizar el stock.", variant: "destructive" });
         }
         setSavingVariant(false);
@@ -651,7 +651,7 @@ export const VariantManagement = () => {
 
             setVariantsList(prev => prev.map(c => c.id === expandedVariantItemId ? { ...c, image_url: imageUrl } : c));
             toast({ title: "Imagen principal actualizada" });
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error setting main image:", error);
             toast({ title: "Error", description: "No se pudo actualizar la imagen principal.", variant: "destructive" });
         }
@@ -1377,3 +1377,4 @@ export const VariantManagement = () => {
         </div >
     );
 };
+ 

@@ -34,6 +34,12 @@ interface Variant {
     is_active?: boolean;
 }
 
+interface EditableCase {
+    id: string;
+    name: string;
+    price: number;
+}
+
 interface SmartphoneModel {
     id: string;
     name: string; // Brand + Model
@@ -82,7 +88,7 @@ export const CaseManagement = () => {
     const [savingVariant, setSavingVariant] = useState(false);
 
     // Edit States
-    const [editingCase, setEditingCase] = useState<any>(null); // { id, name, price }
+    const [editingCase, setEditingCase] = useState<EditableCase | null>(null);
     const [editingVariant, setEditingVariant] = useState<Variant | null>(null);
     const [editVariantFile, setEditVariantFile] = useState<File | null>(null);
     const [editVariantPreview, setEditVariantPreview] = useState<string | null>(null);
@@ -95,14 +101,14 @@ export const CaseManagement = () => {
         variantId: '',
         newStock: ''
     });
-    const [modalCases, setModalCases] = useState<any[]>([]);
+    const [modalCases, setModalCases] = useState<Product[]>([]);
     const [modalVariants, setModalVariants] = useState<Variant[]>([]);
     const [modalAvailableModels, setModalAvailableModels] = useState<string[]>([]);
 
     useEffect(() => {
         const fetchAvailableModels = async () => {
-            let { data: categories } = await supabase.from('categories' as any).select('id').ilike('name', '%funda%').limit(1);
-            let categoryId = (categories as any)?.[0]?.id;
+            const { data: categories } = await supabase.from('categories').select('id').ilike('name', '%funda%').limit(1);
+            const categoryId = categories?.[0]?.id;
 
             if (categoryId) {
                 const { data } = await supabase
@@ -125,14 +131,14 @@ export const CaseManagement = () => {
         const fetchModalData = async () => {
             if (stockUpdateData.modelId) {
                 // Find cases for this model
-                const { data: catData } = await supabase.from('categories' as any).select('id').ilike('name', '%funda%').single();
+                const { data: catData } = await supabase.from('categories').select('id').ilike('name', '%funda%').single();
                 if (catData) {
                     const { data: products } = await supabase
-                        .from('products' as any)
+                        .from('products')
                         .select('*')
                         .eq('model_id', stockUpdateData.modelId)
-                        .eq('category_id', (catData as any).id);
-                    setModalCases(products as any[] || []);
+                        .eq('category_id', catData.id);
+                    setModalCases(products as Product[] || []);
                 }
             } else {
                 setModalCases([]);
@@ -140,7 +146,7 @@ export const CaseManagement = () => {
 
             if (stockUpdateData.caseId) {
                 const { data: variants } = await supabase
-                    .from('product_variants' as any)
+                    .from('product_variants')
                     .select('*')
                     .eq('product_id', stockUpdateData.caseId)
                     .order('color');
@@ -173,11 +179,11 @@ export const CaseManagement = () => {
         setLoading(true);
         // Fetch models
         const { data: modelsData } = await supabase
-            .from('models' as any)
+            .from('models')
             .select('*, brand:brands(*)');
 
         if (modelsData) {
-            const formatted = (modelsData as any[]).map((m: any) => ({
+            const formatted = modelsData.map((m) => ({
                 id: m.id,
                 name: `${m.brand?.name} ${m.name}`,
                 brand_name: m.brand?.name,
@@ -191,11 +197,11 @@ export const CaseManagement = () => {
     };
 
     const fetchCases = async () => {
-        const { data: categories } = await supabase.from('categories' as any).select('id, name');
-        const caseCategoryIds = (categories as any[])?.filter(c => c.name.toLowerCase().includes('funda') || c.name.toLowerCase().includes('case')).map(c => c.id) || [];
+        const { data: categories } = await supabase.from('categories').select('id, name');
+        const caseCategoryIds = categories?.filter(c => c.name.toLowerCase().includes('funda') || c.name.toLowerCase().includes('case')).map(c => c.id) || [];
 
         let query = supabase
-            .from('products' as any)
+            .from('products')
             .select('*')
             .order('created_at', { ascending: false });
 
@@ -211,11 +217,11 @@ export const CaseManagement = () => {
 
         const { data, error } = await query;
         if (!error && data) {
-            setCases(data as any);
+            setCases(data as Product[]);
 
             // Extract existing Types for autocomplete
             const types = new Set(knownCaseTypes);
-            (data as any[]).forEach((d: any) => {
+            data.forEach((d) => {
                 // Try to extract type from Name "Type ModelName"
                 // This is approximate but helpful
                 // Or checks tags
@@ -229,8 +235,8 @@ export const CaseManagement = () => {
 
     const fetchVariants = async (productId: string) => {
         setLoadingVariants(true);
-        const { data } = await supabase.from('product_variants' as any).select('*').eq('product_id', productId).order('color');
-        setVariants(data as any || []);
+        const { data } = await supabase.from('product_variants').select('*').eq('product_id', productId).order('color');
+        setVariants(data as Variant[] || []);
         setLoadingVariants(false);
     };
 
@@ -243,12 +249,12 @@ export const CaseManagement = () => {
 
         try {
             // Find Fundas category
-            let { data: categories } = await supabase.from('categories' as any).select('id').ilike('name', '%funda%').limit(1);
-            let categoryId = (categories as any)?.[0]?.id;
+            const { data: categories } = await supabase.from('categories').select('id').ilike('name', '%funda%').limit(1);
+            let categoryId = categories?.[0]?.id;
 
             if (!categoryId) {
-                const { data: newCat } = await supabase.from('categories' as any).insert({ name: 'Fundas' }).select().single();
-                categoryId = (newCat as any)?.id;
+                const { data: newCat } = await supabase.from('categories').insert({ name: 'Fundas' }).select().single();
+                categoryId = newCat?.id;
             }
 
             const caseType = newCaseData.type.trim();
@@ -269,7 +275,7 @@ export const CaseManagement = () => {
                         model_id: selectedPhone.id,
                         description: `Funda para ${selectedPhone.name}`,
                         tags: ['Funda', caseType, selectedPhone.brand_name]
-                    } as any)
+                    })
                     .select()
                     .single();
 
@@ -280,21 +286,21 @@ export const CaseManagement = () => {
             const results = await Promise.all(creations);
             const successfulResults = results.filter(r => r !== null);
 
-            setCases(prev => [...successfulResults as any[], ...prev]);
+            setCases(prev => [...successfulResults.filter((result): result is Product => result !== null), ...prev]);
             toast({
                 title: successfulResults.length > 1 ? "Fundas Creadas" : "Funda Creada",
-                description: successfulResults.length > 1 ? `${successfulResults.length} modelos agregados.` : (successfulResults[0] as any).name
+                description: successfulResults.length > 1 ? `${successfulResults.length} modelos agregados.` : successfulResults[0]?.name
             });
 
             setIsCreateDialogOpen(false);
             setNewCaseData({ modelIds: [], type: "", price: "" });
 
             if (successfulResults.length === 1) {
-                setExpandedCaseId((successfulResults[0] as any).id);
+                setExpandedCaseId(successfulResults[0]?.id);
             }
 
-        } catch (error: any) {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+        } catch (error: unknown) {
+            toast({ title: "Error", description: error instanceof Error ? error.message : "No se pudo crear la funda.", variant: "destructive" });
         }
         setCreatingCase(false);
     };
@@ -315,41 +321,41 @@ export const CaseManagement = () => {
             }
 
             const { data: variant, error } = await supabase
-                .from('product_variants' as any)
+                .from('product_variants')
                 .insert({
                     product_id: expandedCaseId,
                     color: newVariant.color,
                     stock: Number(newVariant.stock),
                     image_url: imageUrl
-                } as any)
+                })
                 .select()
                 .single();
 
             if (error) throw error;
 
-            setVariants(prev => [...prev, variant as any]);
+            setVariants(prev => [...prev, variant as Variant]);
 
             // Update Parent Stock & Image
             const currentCase = cases.find(c => c.id === expandedCaseId);
             if (currentCase) {
                 // Calculate EXACT total stock from all variants (including the newly added one)
-                const updatedVariants = [...variants, variant as any];
+                const updatedVariants = [...variants, variant as Variant];
                 const newTotal = updatedVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
-                const updates: any = { stock: newTotal };
+                const updates: { stock: number; image_url?: string } = { stock: newTotal };
 
                 // Set main image if not exists
                 if (!currentCase.image_url && imageUrl) {
                     updates.image_url = imageUrl;
                 }
 
-                await supabase.from('products').update(updates as any).eq('id', expandedCaseId);
+                await supabase.from('products').update(updates).eq('id', expandedCaseId);
                 setCases(prev => prev.map(c => c.id === expandedCaseId ? { ...c, ...updates } : c));
             }
 
             toast({ title: "Variante agregada" });
             setNewVariant({ color: '', stock: '', image_file: null, image_preview: '' });
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error(error);
             toast({ title: "Error", description: "No se pudo agregar la variante.", variant: "destructive" });
         }
@@ -364,15 +370,15 @@ export const CaseManagement = () => {
             const { error } = await supabase.from('products').update({
                 name: editingCase.name,
                 price: Number(editingCase.price)
-            } as any).eq('id', editingCase.id);
+            }).eq('id', editingCase.id);
 
             if (error) throw error;
 
             setCases(prev => prev.map(c => c.id === editingCase.id ? { ...c, name: editingCase.name, price: Number(editingCase.price) } : c));
             toast({ title: "Funda Actualizada" });
             setEditingCase(null);
-        } catch (error: any) {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+        } catch (error: unknown) {
+            toast({ title: "Error", description: error instanceof Error ? error.message : "No se pudo actualizar.", variant: "destructive" });
         }
         setCreatingCase(false);
     };
@@ -396,11 +402,11 @@ export const CaseManagement = () => {
                 imageUrl = data.publicUrl;
             }
 
-            const { error } = await supabase.from('product_variants' as any).update({
+            const { error } = await supabase.from('product_variants').update({
                 color: editingVariant.color,
                 stock: Number(editingVariant.stock),
                 image_url: imageUrl
-            } as any).eq('id', editingVariant.id);
+            } as unknown as { color: string; stock: number; image_url: string | null }).eq('id', editingVariant.id);
 
             if (error) throw error;
 
@@ -413,7 +419,7 @@ export const CaseManagement = () => {
             );
             const newTotalStock = updatedVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
 
-            await supabase.from('products').update({ stock: newTotalStock } as any).eq('id', expandedCaseId);
+            await supabase.from('products').update({ stock: newTotalStock }).eq('id', expandedCaseId);
             setCases(prev => prev.map(c => c.id === expandedCaseId ? { ...c, stock: newTotalStock } : c));
 
             // Update local variants state with the updated one
@@ -423,7 +429,7 @@ export const CaseManagement = () => {
             setEditingVariant(null);
             setEditVariantFile(null);
             setEditVariantPreview(null);
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo actualizar.", variant: "destructive" });
         }
         setSavingVariant(false);
@@ -433,7 +439,7 @@ export const CaseManagement = () => {
         const newStatus = !variant.is_active;
         try {
             const { error } = await supabase
-                .from('product_variants' as any)
+                .from('product_variants')
                 .update({ is_active: newStatus })
                 .eq('id', variant.id);
 
@@ -444,7 +450,7 @@ export const CaseManagement = () => {
                 title: newStatus ? "Variante Activada" : "Variante Inactivada",
                 description: `${variant.color} ahora está ${newStatus ? 'visible' : 'oculta'} en la tienda.`
             });
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: "No se pudo cambiar el estado.", variant: "destructive" });
         }
     };
@@ -461,7 +467,7 @@ export const CaseManagement = () => {
             if (!selectedVariant) throw new Error("Variante no encontrada");
 
             const { error } = await supabase
-                .from('product_variants' as any)
+                .from('product_variants')
                 .update({ stock: Number(stockUpdateData.newStock) })
                 .eq('id', stockUpdateData.variantId);
 
@@ -470,12 +476,12 @@ export const CaseManagement = () => {
             // Recalculate parent stock
             const productId = stockUpdateData.caseId;
             const { data: allVars } = await supabase
-                .from('product_variants' as any)
+                .from('product_variants')
                 .select('stock')
                 .eq('product_id', productId);
 
-            const totalStock = ((allVars as any[]) || []).reduce((acc: number, v: any) => acc + (v.stock || 0), 0);
-            await supabase.from('products').update({ stock: totalStock } as any).eq('id', productId);
+            const totalStock = ((allVars as Variant[] | null) || []).reduce((acc, v) => acc + (v.stock || 0), 0);
+            await supabase.from('products').update({ stock: totalStock }).eq('id', productId);
 
             toast({ title: "Stock actualizado", description: `Se actualizó ${selectedVariant.color} a ${stockUpdateData.newStock} unidades.` });
             setIsBatchStockOpen(false);
@@ -484,8 +490,8 @@ export const CaseManagement = () => {
             fetchCases();
             if (expandedCaseId) fetchVariants(expandedCaseId);
 
-        } catch (error: any) {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+        } catch (error: unknown) {
+            toast({ title: "Error", description: error instanceof Error ? error.message : "No se pudo actualizar el stock.", variant: "destructive" });
         }
         setSavingVariant(false);
     };
@@ -493,7 +499,7 @@ export const CaseManagement = () => {
     const handleDeleteVariant = async (id: string, currentStock: number) => {
         if (!confirm("¿Borrar variante?")) return;
 
-        await supabase.from('product_variants' as any).delete().eq('id', id);
+        await supabase.from('product_variants').delete().eq('id', id);
         setVariants(prev => prev.filter(v => v.id !== id));
 
         if (expandedCaseId) {
@@ -503,7 +509,7 @@ export const CaseManagement = () => {
                 const remainingVariants = variants.filter(v => v.id !== id);
                 const newTotal = remainingVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
 
-                await supabase.from('products').update({ stock: newTotal } as any).eq('id', expandedCaseId);
+                await supabase.from('products').update({ stock: newTotal }).eq('id', expandedCaseId);
                 setCases(prev => prev.map(c => c.id === expandedCaseId ? { ...c, stock: newTotal } : c));
             }
         }
@@ -520,12 +526,12 @@ export const CaseManagement = () => {
 
         if (!expandedCaseId || !imageUrl) return;
         try {
-            const { error } = await supabase.from('products').update({ image_url: imageUrl } as any).eq('id', expandedCaseId);
+            const { error } = await supabase.from('products').update({ image_url: imageUrl }).eq('id', expandedCaseId);
             if (error) throw error;
 
             setCases(prev => prev.map(c => c.id === expandedCaseId ? { ...c, image_url: imageUrl } : c));
             toast({ title: "Imagen principal actualizada" });
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error setting main image:", error);
             toast({ title: "Error", description: "No se pudo actualizar la imagen principal.", variant: "destructive" });
         }

@@ -48,7 +48,7 @@ export const BannerManagement = () => {
       .select('interval_seconds')
       .eq('id', 1)
       .single();
-    if (data) setIntervalSeconds((data as any).interval_seconds ?? 5);
+    if (data) setIntervalSeconds(data.interval_seconds ?? 5);
   };
 
   const handleSaveInterval = async () => {

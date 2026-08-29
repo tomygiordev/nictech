@@ -1,4 +1,4 @@
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy inventory payload shape. */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -183,7 +183,7 @@ function generateRestockPDF(snap: RestockSnapshot) {
     NicTech · ${dateStr}
   </div>
 
-  <script>window.onload = () => { window.print(); }<\/script>
+  <script>window.onload = () => { window.print(); }</script>
 </body>
 </html>`;
 
@@ -411,8 +411,8 @@ export function QuickRestockModal({ open, onClose, onRestockComplete, variantPro
           notes: notes || null,
         });
         if (movementError) throw movementError;
-      } catch (e: any) {
-        toast({ title: `Error en "${item.name}"`, description: e.message, variant: 'destructive' });
+      } catch (e: unknown) {
+        toast({ title: `Error en "${item.name}"`, description: e instanceof Error ? e.message : 'Error desconocido', variant: 'destructive' });
       }
     }
 
@@ -822,3 +822,4 @@ export function QuickRestockModal({ open, onClose, onRestockComplete, variantPro
     </Dialog>
   );
 }
+ 

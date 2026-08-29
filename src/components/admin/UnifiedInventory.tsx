@@ -1,4 +1,4 @@
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy inventory payload shape. */
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -163,11 +163,11 @@ export const UnifiedInventory = () => {
   const fetchAll = async () => {
     setLoading(true);
     const [prodRes, varRes, catRes] = await Promise.all([
-      (supabase as any).from('products')
+      supabase.from('products')
         .select('*, category:categories(*), brands(name), models(name)')
         .order('created_at', { ascending: false }),
-      (supabase as any).from('product_variants').select('product_id'),
-      (supabase as any).from('categories').select('*').order('name'),
+      supabase.from('product_variants').select('product_id'),
+      supabase.from('categories').select('*').order('name'),
     ]);
 
     if (prodRes.data) {
@@ -230,7 +230,7 @@ export const UnifiedInventory = () => {
 
     if (type === 'case' || type === 'variant') {
       setLoadingVariants(true);
-      const { data } = await (supabase as any)
+      const { data } = await supabase
         .from('product_variants').select('id, color, stock, image_url')
         .eq('product_id', p.id).order('color');
       const rows = (data || []) as ProductVariantRow[];
@@ -308,7 +308,7 @@ export const UnifiedInventory = () => {
         toast({ title: isPhone ? 'Celular agregado' : 'Producto agregado' });
       }
       clearSelection(); fetchAll();
-    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
+    } catch (e: unknown) { toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error desconocido', variant: 'destructive' }); }
     setSaving(false);
   };
 
@@ -739,3 +739,4 @@ export const UnifiedInventory = () => {
     </div>
   );
 };
+ 

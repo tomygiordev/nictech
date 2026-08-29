@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy admin payload shape. */
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -145,9 +146,9 @@ const RepairLogsDialog = ({ repair, onQuoteSaved }: RepairLogsDialogProps) => {
     if (open) {
       fetchLogs();
     }
-  }, [open, repairId]);
+  }, [fetchLogs, open, repairId]);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('repair_logs' as any)
@@ -166,7 +167,7 @@ const RepairLogsDialog = ({ repair, onQuoteSaved }: RepairLogsDialogProps) => {
       setLogs(data as any);
     }
     setLoading(false);
-  };
+  }, [repairId]);
 
   const addLog = async () => {
     if (!newLog.trim()) return;
@@ -753,7 +754,7 @@ const Admin = () => {
 
       // Logic for Smartphone Name and Tags
       let finalName = newProduct.name;
-      let finalTags = [...newProduct.tags];
+      const finalTags = [...newProduct.tags];
 
       if (isSmartphoneCategory(newProduct.category_id)) {
         if (smartphoneDetails.brand && smartphoneDetails.model) {
@@ -815,7 +816,7 @@ const Admin = () => {
 
       cancelEditingProduct();
       fetchData();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error al guardar producto:', error);
       toast({
         title: 'Error',
@@ -1218,3 +1219,4 @@ const Admin = () => {
 };
 
 export default Admin;
+ 

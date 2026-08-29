@@ -145,9 +145,15 @@ function fillDays(data: SalePoint[], days = 30): SalePoint[] {
 
 // ─── Custom tooltip ───────────────────────────────────────────────────────────
 
-const SalesTooltip = ({ active, payload, label }: any) => {
+interface SalesTooltipProps {
+  active?: boolean;
+  payload?: Array<{ value?: number }>;
+  label?: string;
+}
+
+const SalesTooltip = ({ active, payload, label }: SalesTooltipProps) => {
   if (!active || !payload?.length) return null;
-  const d = new Date(label + 'T12:00:00');
+  const d = new Date(`${label ?? ''}T12:00:00`);
   const dateStr = d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
   return (
     <div className="bg-card border border-border rounded-xl px-3 py-2 shadow-lg text-sm">
@@ -330,9 +336,9 @@ export const DashboardModule = () => {
     // ── Recent orders ─────────────────────────────────────────────────────────
     setRecentOrders(
       (recentOrdersData ?? [])
-        .filter((order: any) => !rangeStart || order.created_at >= rangeStart)
+        .filter((order) => !rangeStart || order.created_at >= rangeStart)
         .slice(0, 5)
-        .map((o: any) => ({
+        .map((o) => ({
           ...o,
           payer: typeof o.payer === 'object' ? o.payer : null,
         }))
@@ -340,7 +346,7 @@ export const DashboardModule = () => {
 
     // ── Critical products ─────────────────────────────────────────────────────
     setCriticalProducts(
-      (productsCritical ?? []).map((p: any) => ({
+      (productsCritical ?? []).map((p) => ({
         id: p.id,
         name: p.name,
         stock: p.stock,

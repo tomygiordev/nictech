@@ -1,4 +1,4 @@
-
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy inventory payload shape. */
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -145,7 +145,7 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
 
     if (hasVariants) {
       setLoadingVariants(true);
-      (supabase as any)
+      supabase
         .from('product_variants')
         .select('id, color, stock')
         .eq('product_id', product.id)
@@ -157,13 +157,13 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
           setLoadingVariants(false);
         });
     }
-  }, [open, product?.id]);
+  }, [hasVariants, open, product]);
 
   // ── Load history ───────────────────────────────────────────────────
   const loadHistory = useCallback(async () => {
     if (!product) return;
     setLoadingHistory(true);
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from('inventory_movements')
       .select('id, type, quantity, unit_price, channel, notes, created_at, variant_id')
       .eq('product_id', product.id)
@@ -174,7 +174,7 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
     const variantIds = [...new Set((data || []).map((m: any) => m.variant_id).filter(Boolean))];
     let variantColors: Record<string, string> = {};
     if (variantIds.length) {
-      const { data: vd } = await (supabase as any)
+      const { data: vd } = await supabase
         .from('product_variants').select('id, color').in('id', variantIds);
       if (vd) variantColors = Object.fromEntries((vd as any[]).map(v => [v.id, v.color]));
     }
@@ -184,7 +184,7 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
       variant_color: m.variant_id ? variantColors[m.variant_id] ?? null : null,
     })));
     setLoadingHistory(false);
-  }, [product?.id]);
+  }, [product]);
 
   useEffect(() => {
     if (showHistory) loadHistory();
@@ -209,10 +209,10 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
           const newStock = Math.max(0, variant.stock + delta);
 
           // Update variant stock
-          await (supabase as any).from('product_variants').update({ stock: newStock }).eq('id', variantId);
+        await supabase.from('product_variants').update({ stock: newStock }).eq('id', variantId);
 
           // Record movement
-          const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
+          const { error: movementError } = await supabase.from('inventory_movements').insert({
             product_id: product.id,
             variant_id: variantId,
             type: mode,
@@ -225,10 +225,10 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
         }
 
         // Update product-level stock = sum of variant stocks
-        const { data: allVariants } = await (supabase as any)
+        const { data: allVariants } = await supabase
           .from('product_variants').select('stock').eq('product_id', product.id);
         const totalStock = (allVariants || []).reduce((s: number, v: any) => s + (v.stock || 0), 0);
-        await (supabase as any).from('products').update({ stock: totalStock }).eq('id', product.id);
+        await supabase.from('products').update({ stock: totalStock }).eq('id', product.id);
 
         onDone(product.id, totalStock);
       } else {
@@ -238,8 +238,8 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
         const delta = mode === 'restock' ? qty : -qty;
         const newStock = Math.max(0, product.stock + delta);
 
-        await (supabase as any).from('products').update({ stock: newStock }).eq('id', product.id);
-        const { error: movementError } = await (supabase as any).from('inventory_movements').insert({
+        await supabase.from('products').update({ stock: newStock }).eq('id', product.id);
+        const { error: movementError } = await supabase.from('inventory_movements').insert({
           product_id: product.id,
           variant_id: null,
           type: mode,
@@ -256,8 +256,8 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
       const label = mode === 'restock' ? 'Entrada registrada' : 'Venta registrada';
       toast({ title: label, description: product.name });
       onClose();
-    } catch (e: any) {
-      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } catch (e: unknown) {
+      toast({ title: 'Error', description: e instanceof Error ? e.message : 'Error desconocido', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -519,3 +519,4 @@ export function StockMovementModal({ product, open, onClose, onDone }: Props) {
     </Dialog>
   );
 }
+ 

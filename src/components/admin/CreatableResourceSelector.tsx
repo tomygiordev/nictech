@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Check, ChevronsUpDown, Plus, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -40,17 +40,17 @@ export function CreatableResourceSelector({ tableName, label, value, onValueChan
     const [loading, setLoading] = useState(false);
     const [creating, setCreating] = useState(false);
 
-    useEffect(() => {
-        fetchItems();
-    }, [tableName]);
-
-    const fetchItems = async () => {
+    const fetchItems = useCallback(async () => {
         setLoading(true);
-        const { data, error } = await supabase.from(tableName as any).select('id, name').order('name');
+        const { data, error } = await supabase.from(tableName as never).select('id, name').order('name');
         if (error) console.error(`Error fetching ${tableName}:`, error);
         else setItems((data as unknown as Item[]) || []);
         setLoading(false);
-    };
+    }, [tableName]);
+
+    useEffect(() => {
+        fetchItems();
+    }, [fetchItems]);
 
     const createItem = async () => {
         const normalizedName = search.trim();
@@ -62,7 +62,7 @@ export function CreatableResourceSelector({ tableName, label, value, onValueChan
             const formattedName = normalizedName.charAt(0).toUpperCase() + normalizedName.slice(1);
 
             const { data, error } = await supabase
-                .from(tableName as any)
+                .from(tableName as never)
                 .insert({ name: formattedName })
                 .select('id, name')
                 .single();
@@ -75,8 +75,9 @@ export function CreatableResourceSelector({ tableName, label, value, onValueChan
             setOpen(false);
             setSearch("");
             toast({ title: `${label} creado`, description: formattedName });
-        } catch (error: any) {
-            toast({ title: "Error", description: `No se pudo crear ${label}. ${error.message}`, variant: "destructive" });
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Error desconocido';
+            toast({ title: "Error", description: `No se pudo crear ${label}. ${message}`, variant: "destructive" });
         }
         setCreating(false);
     };
@@ -85,10 +86,10 @@ export function CreatableResourceSelector({ tableName, label, value, onValueChan
         e.stopPropagation(); // Prevent selection when clicking delete
         if (!window.confirm(`¿Estás seguro de que deseas eliminar "${name}"? Esto podría afectar a los productos asociados.`)) return;
 
-        const { error } = await supabase.from(tableName as any).delete().eq('id', id);
+        const { error } = await supabase.from(tableName as never).delete().eq('id', id);
 
         if (error) {
-            toast({ title: "Error", description: `No se pudo eliminar. ${error.message}`, variant: "destructive" });
+            toast({ title: "Error", description: `No se pudo eliminar. ${error instanceof Error ? error.message : 'Error desconocido'}`, variant: "destructive" });
         } else {
             setItems(prev => prev.filter(item => item.id !== id));
             if (value === id) {

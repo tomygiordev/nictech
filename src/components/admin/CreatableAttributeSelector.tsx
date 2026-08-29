@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Check, ChevronsUpDown, Plus, Trash2, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,18 +43,18 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
     const [colorTick, setColorTick] = useState(0);
     const isColors = tableName === 'colors';
 
-    useEffect(() => {
-        fetchItems();
-        if (isColors) loadColorsFromDB().then(() => setColorTick(t => t + 1));
-    }, [tableName]);
-
-    const fetchItems = async () => {
+    const fetchItems = useCallback(async () => {
         setLoading(true);
-        const { data, error } = await supabase.from(tableName as any).select('*').order('name');
+        const { data, error } = await supabase.from(tableName as never).select('*').order('name');
         if (error) console.error(`Error fetching ${tableName}:`, error);
         else setItems(data as unknown as Item[] || []);
         setLoading(false);
-    };
+    }, [tableName]);
+
+    useEffect(() => {
+        fetchItems();
+        if (isColors) loadColorsFromDB().then(() => setColorTick(t => t + 1));
+    }, [fetchItems, isColors]);
 
     const createItem = async () => {
         const normalizedName = search.trim();
@@ -74,7 +74,7 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
             }
 
             const { data, error } = await supabase
-                .from(tableName as any)
+                .from(tableName as never)
                 .insert({ name: formattedName })
                 .select()
                 .single();
@@ -82,26 +82,27 @@ export function CreatableAttributeSelector({ tableName, label, onValueChange, se
             if (error) throw error;
 
             setItems(prev => [...prev, data as unknown as Item]);
-            onValueChange((data as any).name); // Return Name
+            onValueChange((data as unknown as Item).name); // Return Name
             setOpen(false);
             setSearch("");
             toast({ title: `${label || 'Ítem'} creado`, description: formattedName });
-        } catch (error: any) {
-            toast({ title: "Error", description: `No se pudo crear ${label}. ${error.message}`, variant: "destructive" });
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Error desconocido';
+            toast({ title: "Error", description: `No se pudo crear ${label}. ${message}`, variant: "destructive" });
         }
     };
 
     const deleteItem = async (id: string, name: string) => {
         if (!confirm(`¿Eliminar "${name}" permanentemente?`)) return;
         try {
-            const { error } = await supabase.from(tableName as any).delete().eq('id', id);
+            const { error } = await supabase.from(tableName as never).delete().eq('id', id);
             if (error) throw error;
             setItems(prev => prev.filter(i => i.id !== id));
             if (selectedValue === name) {
                 onValueChange("");
             }
             toast({ title: "Eliminado", description: `${name} ha sido eliminado.` });
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({ title: "Error", description: `No se pudo eliminar. Puede estar en uso.`, variant: "destructive" });
         }
     };
