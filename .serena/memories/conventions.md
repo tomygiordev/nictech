@@ -1,0 +1,1 @@
+TypeScript has no-any policy and generated Supabase types must not be hand-edited. ERP database changes are forward SQL migrations in `supabase/migrations`, with pgTAP coverage in `supabase/tests`; seed contracts live in `supabase/seed.sql`. Preserve tenant/branch boundaries, permission/RLS gates, append-only facts, idempotency, and audited RPC boundaries.

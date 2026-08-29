@@ -1,0 +1,1 @@
+Root and ERP use React 18, TypeScript strict, Vite, Supabase JS 2.x, TanStack Query, Zod. Root uses npm workspaces (`apps/*`, `packages/*`); ERP package is `@nictech/erp`. Supabase CLI is a root dev dependency.

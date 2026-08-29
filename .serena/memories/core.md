@@ -1,0 +1,1 @@
+Monorepo Windows at `A:/nictech`: storefront root plus `apps/erp` private React/Vite ERP and `packages/domain` shared package. Supabase schema/migrations/tests under `supabase/`; local DB is required for SQL/RLS/pgTAP verification. Read `mem:erp/core` for ERP-specific map and invariants; read `mem:task_completion` for closure checks.

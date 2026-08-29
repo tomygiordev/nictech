@@ -1,0 +1,1 @@
+From `A:\nictech` in PowerShell: `npm run lint`; `npm run typecheck:erp`; `npm run build:erp`; `npm run test:run`; `npm run db:test`. Local DB lifecycle: `npm run db:start`, `npm run db:stop`; Docker/Supabase must be available for db tests. Use repo-root workdir rather than `cd`.

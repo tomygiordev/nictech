@@ -1,0 +1,1 @@
+ERP closure checks: `npm run lint`, `npm run typecheck:erp`, `npm run build:erp`, `npm run test:run`, and `npm run db:test`. For SQL/RLS work, `npm run db:test` is indispensable; if Docker/local Postgres is unavailable, report it as pending rather than claiming SQL verification.
