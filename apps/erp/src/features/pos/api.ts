@@ -7,9 +7,21 @@ const client = () => {
 };
 
 export const listRegisters = async (): Promise<PosRegister[]> => {
-  const { data, error } = await client().from("cash_registers").select("id,branch_id,code,name,is_active").eq("is_active", true).order("code");
-  if (error) throw error;
-  return (data ?? []) as PosRegister[];
+  try {
+    const { data, error } = await client()
+      .from("cash_registers")
+      .select("id,branch_id,code,name,is_active")
+      .eq("is_active", true)
+      .order("code");
+    if (error) {
+      console.warn("Aviso al consultar cash_registers:", error.message);
+      return [];
+    }
+    return (data ?? []) as PosRegister[];
+  } catch (err) {
+    console.warn("Error en listRegisters:", err);
+    return [];
+  }
 };
 
 export const createSale = async (input: PosSaleInput): Promise<string> => {

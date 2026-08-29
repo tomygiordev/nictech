@@ -7,9 +7,20 @@ const client = () => {
 };
 
 export const listOpenCashSessions = async (): Promise<CashSession[]> => {
-  const { data, error } = await client().from("cash_sessions").select("id,branch_id,cash_register_id,opened_at,reason").order("opened_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as CashSession[];
+  try {
+    const { data, error } = await client()
+      .from("cash_sessions")
+      .select("id,branch_id,cash_register_id,opened_at,reason")
+      .order("opened_at", { ascending: false });
+    if (error) {
+      console.warn("Aviso al consultar cash_sessions:", error.message);
+      return [];
+    }
+    return (data ?? []) as CashSession[];
+  } catch (err) {
+    console.warn("Error en listOpenCashSessions:", err);
+    return [];
+  }
 };
 
 export const openCashSession = async (input: OpenCashInput): Promise<string> => {

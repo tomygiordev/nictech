@@ -30,36 +30,68 @@ export const parseRpcId = (value: unknown, label: string): string => {
 };
 
 export const listFinancingContracts = async (): Promise<FinancingContract[]> => {
-  const { data, error } = await getSupabase()
-    .from("financing_contracts")
-    .select("*, financing_installments(*)")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return asRows<FinancingContract>(data);
+  try {
+    const { data, error } = await getSupabase()
+      .from("financing_contracts")
+      .select("*, financing_installments(*)")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.warn("Aviso al consultar financing_contracts:", error.message);
+      return [];
+    }
+    return asRows<FinancingContract>(data);
+  } catch (err) {
+    console.warn("Error en listFinancingContracts:", err);
+    return [];
+  }
 };
 
 export const listChartOfAccounts = async (): Promise<ChartAccount[]> => {
-  const { data, error } = await getSupabase().from("chart_of_accounts").select("*").order("code");
-  if (error) throw error;
-  return asRows<ChartAccount>(data);
+  try {
+    const { data, error } = await getSupabase().from("chart_of_accounts").select("*").order("code");
+    if (error) {
+      console.warn("Aviso al consultar chart_of_accounts:", error.message);
+      return [];
+    }
+    return asRows<ChartAccount>(data);
+  } catch (err) {
+    console.warn("Error en listChartOfAccounts:", err);
+    return [];
+  }
 };
 
 export const listAccountingPeriods = async (): Promise<AccountingPeriod[]> => {
-  const { data, error } = await getSupabase()
-    .from("accounting_periods")
-    .select("*")
-    .order("period_start", { ascending: false });
-  if (error) throw error;
-  return asRows<AccountingPeriod>(data);
+  try {
+    const { data, error } = await getSupabase()
+      .from("accounting_periods")
+      .select("*")
+      .order("period_start", { ascending: false });
+    if (error) {
+      console.warn("Aviso al consultar accounting_periods:", error.message);
+      return [];
+    }
+    return asRows<AccountingPeriod>(data);
+  } catch (err) {
+    console.warn("Error en listAccountingPeriods:", err);
+    return [];
+  }
 };
 
 export const listJournalEntries = async (): Promise<JournalEntry[]> => {
-  const { data, error } = await getSupabase()
-    .from("journal_entries")
-    .select("*")
-    .order("entry_date", { ascending: false });
-  if (error) throw error;
-  return asRows<JournalEntry>(data);
+  try {
+    const { data, error } = await getSupabase()
+      .from("journal_entries")
+      .select("*")
+      .order("entry_date", { ascending: false });
+    if (error) {
+      console.warn("Aviso al consultar journal_entries:", error.message);
+      return [];
+    }
+    return asRows<JournalEntry>(data);
+  } catch (err) {
+    console.warn("Error en listJournalEntries:", err);
+    return [];
+  }
 };
 
 export const createFinancingContract = async (input: FinancingInput): Promise<string> => {
