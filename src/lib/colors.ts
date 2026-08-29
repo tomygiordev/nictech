@@ -1,5 +1,16 @@
 import { supabase } from '@/integrations/supabase/client';
 
+type ColorRow = { name: string; hex_color: string | null };
+type ColorQuery = {
+  select: (columns: string) => Promise<{ data: unknown[] | null }>;
+  update: (values: { hex_color: string }) => {
+    ilike: (column: string, value: string) => Promise<{ error: unknown }>
+  };
+};
+
+const colorsTable = (): ColorQuery =>
+  (supabase as unknown as { from: (table: 'colors') => ColorQuery }).from('colors');
+
 // Mapa base en código — cubre todos los colores del DB
 export const COLOR_MAP: Record<string, string> = {
   'transparente':    'repeating-conic-gradient(#ccc 0% 25%, white 0% 50%) 0 0 / 10px 10px',
@@ -59,9 +70,11 @@ export const isLightColor = (colorName: string): boolean =>
 
 /** Carga hex_colors desde DB y sobreescribe COLOR_MAP. Llamar una vez al montar el admin. */
 export const loadColorsFromDB = async () => {
-  const { data } = await supabase.from('colors' as any).select('name, hex_color');
+  const { data } = await colorsTable().select('name, hex_color');
   if (!data) return;
-  for (const row of data as { name: string; hex_color: string | null }[]) {
+  for (const value of data) {
+    if (!value || typeof value !== 'object' || !('name' in value) || !('hex_color' in value)) continue;
+    const row = value as ColorRow;
     if (row.hex_color) COLOR_MAP[row.name.toLowerCase()] = row.hex_color;
   }
 };
@@ -69,9 +82,6 @@ export const loadColorsFromDB = async () => {
 /** Guarda hex_color en DB y actualiza el mapa local. */
 export const saveColorHex = async (colorName: string, hex: string): Promise<boolean> => {
   COLOR_MAP[colorName.toLowerCase()] = hex;
-  const { error } = await supabase
-    .from('colors' as any)
-    .update({ hex_color: hex } as any)
-    .ilike('name', colorName);
+  const { error } = await colorsTable().update({ hex_color: hex }).ilike('name', colorName);
   return !error;
 };

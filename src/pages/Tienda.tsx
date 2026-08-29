@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy storefront payload shape. */
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
@@ -658,3 +659,4 @@ const Tienda = () => {
 };
 
 export default Tienda;
+ 

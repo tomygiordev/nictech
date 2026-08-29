@@ -54,7 +54,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
         const fetchVariants = async () => {
             const { data } = await supabase
-                .from('product_variants' as any)
+                .from('product_variants')
                 .select('*')
                 .eq('product_id', product.id);
 

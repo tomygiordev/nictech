@@ -41,13 +41,13 @@ export const Promos = () => {
         .order('created_at', { ascending: false });
 
       if (data) {
-        const formatted: Product[] = data.map((item: any) => ({
+        const formatted: Product[] = data.map((item) => ({
           id: item.id,
           name: item.name,
           category_id: item.category_id,
           price: item.price,
           stock: item.stock,
-          image_url: item.image_url || (item.product_variants as any[])?.[0]?.image_url || null,
+          image_url: item.image_url || item.product_variants?.[0]?.image_url || null,
           additional_images: item.additional_images || [],
           description: item.description,
           category: item.category,
