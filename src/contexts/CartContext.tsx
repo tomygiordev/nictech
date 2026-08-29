@@ -103,15 +103,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .filter(item => item.variant?.id)
         .map(item => item.variant!.id);
 
-      let variantStocks: Record<string, number> = {};
+      const variantStocks: Record<string, number> = {};
       if (variantIds.length > 0) {
         const { data: variants } = await supabase
-          .from('product_variants' as any)
+          .from('product_variants')
           .select('id, stock')
           .in('id', variantIds);
 
         if (variants) {
-          (variants as any[]).forEach(v => {
+          variants.forEach(v => {
             variantStocks[v.id] = v.stock;
           });
         }

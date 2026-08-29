@@ -55,7 +55,7 @@ const Checkout = () => {
         }
       });
     }
-  }, []);
+  }, [initialValidationDone, items.length, paymentStatus, validateCart]);
 
   // Show payment result if redirected
   if (paymentStatus) {
@@ -174,10 +174,10 @@ const Checkout = () => {
       } else {
         throw new Error('No se recibió URL de pago');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Checkout error object:', error);
 
-      let errorMessage = 'Error al procesar el pago. Intenta nuevamente.';
+      const errorMessage = 'Error al procesar el pago. Intenta nuevamente.';
 
       if (typeof error === 'object' && error !== null) {
         // Avoid exposing raw database or network error messages to the client

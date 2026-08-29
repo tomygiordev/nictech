@@ -30,7 +30,7 @@ export const CartSlideOver = () => {
         }
       });
     }
-  }, [isOpen]);
+  }, [isOpen, items.length, validateCart]);
 
   if (!isOpen) return null;
 

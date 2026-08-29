@@ -1,3 +1,4 @@
+ 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -29,10 +30,13 @@ const makeItem = (overrides: Partial<Omit<CartItem, 'quantity'>> = {}): Omit<Car
 /** Renders a component that exposes every cart action via data-testid buttons/spans. */
 const CartHarness = ({
   onAction,
+  capture,
 }: {
   onAction?: (cart: ReturnType<typeof useCart>) => void;
+  capture?: (cart: ReturnType<typeof useCart>) => void;
 }) => {
   const cart = useCart();
+  capture?.(cart);
 
   return (
     <div>
@@ -54,12 +58,22 @@ const CartHarness = ({
   );
 };
 
-const renderCart = (props?: { onAction?: (cart: ReturnType<typeof useCart>) => void }) =>
-  render(
+const renderCart = (props?: { onAction?: (cart: ReturnType<typeof useCart>) => void }) => {
+  let currentCart: ReturnType<typeof useCart> | undefined;
+  const result = render(
     <CartProvider>
-      <CartHarness {...props} />
+      <CartHarness {...props} capture={(cart) => { currentCart = cart; }} />
     </CartProvider>,
   );
+
+  return {
+    ...result,
+    cart: () => {
+      if (!currentCart) throw new Error('CartContext is not ready');
+      return currentCart;
+    },
+  };
+};
 
 const totalItems = () => screen.getByTestId('total-items').textContent;
 const totalPrice = () => screen.getByTestId('total-price').textContent;
@@ -227,17 +241,27 @@ describe('CartContext', () => {
     it('guarda los ítems en localStorage al agregar', async () => {
       renderCart();
       await userEvent.click(screen.getByTestId('add-default'));
-      const saved = JSON.parse(localStorage.getItem('cartItems')!);
-      expect(saved).toHaveLength(1);
-      expect(saved[0].id).toBe('prod-1');
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('cartItems') ?? '[]');
+        expect(saved).toHaveLength(1);
+        expect(saved[0].id).toBe('prod-1');
+      });
     });
 
     it('borra cartItems de localStorage al limpiar el carrito', async () => {
       renderCart();
       await userEvent.click(screen.getByTestId('add-default'));
+
+      await waitFor(() => {
+        expect(JSON.parse(localStorage.getItem('cartItems') ?? '[]')).toHaveLength(1);
+      });
+
       await userEvent.click(screen.getByTestId('clear'));
-      const saved = JSON.parse(localStorage.getItem('cartItems')!);
-      expect(saved).toHaveLength(0);
+
+      await waitFor(() => {
+        expect(JSON.parse(localStorage.getItem('cartItems') ?? '[]')).toHaveLength(0);
+      });
     });
   });
 
@@ -250,24 +274,24 @@ describe('CartContext', () => {
         select: vi.fn().mockReturnValue({
           in: vi.fn().mockResolvedValue({ data: productData, error: null }),
         }),
-      } as any);
+      } as ReturnType<typeof vi.fn>);
     };
 
     it('no hace nada cuando el carrito está vacío', async () => {
-      renderCart();
+      const { cart } = renderCart();
       await act(async () => {
-        await userEvent.click(screen.getByTestId('validate'));
+        await cart().validateCart();
       });
       expect(supabase.from).not.toHaveBeenCalled();
     });
 
     it('elimina ítems sin stock', async () => {
       mockFrom([{ id: 'prod-1', stock: 0, name: 'iPhone 14' }]);
-      renderCart();
+      const { cart } = renderCart();
       await userEvent.click(screen.getByTestId('add-default'));
 
       await act(async () => {
-        await userEvent.click(screen.getByTestId('validate'));
+        await cart().validateCart();
       });
 
       await waitFor(() => {
@@ -277,7 +301,7 @@ describe('CartContext', () => {
 
     it('ajusta la cantidad cuando excede el stock disponible', async () => {
       mockFrom([{ id: 'prod-1', stock: 2, name: 'iPhone 14' }]);
-      renderCart();
+      const { cart } = renderCart();
       // Add 3 items
       await userEvent.click(screen.getByTestId('add-default'));
       await userEvent.click(screen.getByTestId('add-default'));
@@ -285,7 +309,7 @@ describe('CartContext', () => {
       expect(items()[0].quantity).toBe(3);
 
       await act(async () => {
-        await userEvent.click(screen.getByTestId('validate'));
+        await cart().validateCart();
       });
 
       await waitFor(() => {
@@ -295,12 +319,12 @@ describe('CartContext', () => {
 
     it('mantiene ítems cuya cantidad está dentro del stock disponible', async () => {
       mockFrom([{ id: 'prod-1', stock: 10, name: 'iPhone 14' }]);
-      renderCart();
+      const { cart } = renderCart();
       await userEvent.click(screen.getByTestId('add-default'));
       await userEvent.click(screen.getByTestId('add-default'));
 
       await act(async () => {
-        await userEvent.click(screen.getByTestId('validate'));
+        await cart().validateCart();
       });
 
       await waitFor(() => {
@@ -310,3 +334,4 @@ describe('CartContext', () => {
     });
   });
 });
+ 
