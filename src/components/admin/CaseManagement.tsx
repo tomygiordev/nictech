@@ -152,6 +152,11 @@ export const CaseManagement = () => {
                     .order('color');
                 setModalVariants(variants as unknown as Variant[] || []);
             } else {
+                    .select('*')
+                    .eq('product_id', stockUpdateData.caseId)
+                    .order('color');
+                setModalVariants(variants as unknown as Variant[] || []);
+            } else {
                 setModalVariants([]);
             }
         };
@@ -178,16 +183,20 @@ export const CaseManagement = () => {
     const fetchInitialData = async () => {
         setLoading(true);
         // Fetch models
-        const { data: modelsData } = await supabase
+        const { data: modelsData, error: modelsError } = await supabase
             .from('models')
-            .select('*, brand:brands(*)');
+            .select('id, name, brand_id, brands(id, name)');
+
+        if (modelsError) {
+            console.error("Error al cargar modelos:", modelsError);
+        }
 
         if (modelsData) {
-            const formatted = modelsData.map((m) => ({
+            const formatted = (modelsData as any[]).map((m: any) => ({
                 id: m.id,
-                name: `${m.brand?.name} ${m.name}`,
-                brand_name: m.brand?.name,
-                model_name: m.name
+                name: m.brands?.name ? `${m.brands.name} ${m.name}`.trim() : m.name,
+                brand_name: m.brands?.name || '',
+                model_name: m.name || ''
             })).sort((a, b) => a.name.localeCompare(b.name));
             setSmartphones(formatted);
         }
@@ -199,7 +208,6 @@ export const CaseManagement = () => {
     const fetchCases = async () => {
         const { data: categories } = await supabase.from('categories').select('id, name');
         const caseCategoryIds = categories?.filter(c => c.name.toLowerCase().includes('funda') || c.name.toLowerCase().includes('case')).map(c => c.id) || [];
-
         let query = supabase
             .from('products')
             .select('*')

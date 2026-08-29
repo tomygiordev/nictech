@@ -197,14 +197,14 @@ export const VariantManagement = () => {
         // Fetch models
         const { data: modelsData } = await supabase
             .from('models' as any)
-            .select('*, brand:brands(*)');
+            .select('id, name, brand_id, brands(id, name)');
 
         if (modelsData) {
             const formatted = (modelsData as any[]).map((m: any) => ({
                 id: m.id,
-                name: `${m.brand?.name} ${m.name}`,
-                brand_name: m.brand?.name,
-                model_name: m.name
+                name: m.brands?.name ? `${m.brands.name} ${m.name}`.trim() : (m.name || ''),
+                brand_name: m.brands?.name || '',
+                model_name: m.name || ''
             })).sort((a, b) => a.name.localeCompare(b.name));
             setSmartphones(formatted);
         }
