@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Auditoría local de NicTech: ERP, sistema existente y flujo de Mercado Pago.">
+  <title>Auditoría | ERP y Mercado Pago · NicTech</title>
+  <style>
+    :root { --paper:#f0f1f3; --card:#fff; --ink:#111318; --muted:#68707c; --line:#d9dde3; --blue:#0759d9; --blue-soft:#e8f0ff; --red:#c52d3c; --red-soft:#fff0f1; --amber:#9a6500; --amber-soft:#fff6df; --green:#176b48; --green-soft:#e9f7ef; --max:1180px; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--paper); color:var(--ink); font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height:1.55; }
+    a { color:var(--blue); }
+    a:focus-visible, button:focus-visible { outline:3px solid #f4b400; outline-offset:3px; }
+    .wrap { width:min(calc(100% - 40px),var(--max)); margin:auto; }
+    .masthead { padding:56px 0 32px; border-bottom:1px solid var(--line); }
+    .eyebrow { margin:0 0 16px; color:var(--blue); font-size:.75rem; font-weight:800; letter-spacing:.16em; text-transform:uppercase; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { max-width:850px; margin-bottom:22px; font-size:clamp(2.8rem,7vw,6.5rem); line-height:.96; letter-spacing:-.07em; font-weight:850; }
+    h2 { margin-bottom:24px; font-size:clamp(1.8rem,3vw,3.3rem); line-height:1.02; letter-spacing:-.045em; }
+    h3 { margin-bottom:8px; font-size:1.05rem; line-height:1.15; }
+    .dek { max-width:720px; margin-bottom:28px; color:#3f4650; font-size:clamp(1.05rem,2vw,1.35rem); }
+    .meta { display:flex; flex-wrap:wrap; gap:10px; color:var(--muted); font-size:.82rem; }
+    .pill { display:inline-flex; align-items:center; min-height:28px; padding:3px 10px; border:1px solid var(--line); border-radius:999px; background:var(--card); font-weight:700; }
+    main { padding:26px 0 70px; }
+    section { padding:58px 0; border-bottom:1px solid var(--line); }
+    .section-head { display:grid; grid-template-columns:minmax(180px,.65fr) 1.35fr; gap:30px; margin-bottom:28px; }
+    .section-number { color:var(--blue); font-size:.8rem; font-weight:850; letter-spacing:.15em; text-transform:uppercase; }
+    .section-intro { max-width:650px; color:var(--muted); }
+    .grid { display:grid; gap:16px; }
+    .grid-2 { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .grid-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .grid-4 { grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .card { padding:24px; border:1px solid var(--line); background:var(--card); }
+    .card p:last-child { margin-bottom:0; }
+    .verdict { display:grid; grid-template-columns:1.2fr .8fr; gap:16px; }
+    .verdict-main { padding:34px; background:var(--ink); color:#fff; }
+    .verdict-main .eyebrow { color:#8bb4ff; }
+    .verdict-main p { max-width:650px; color:#d4d9e2; font-size:1.15rem; }
+    .big-stat { display:flex; height:100%; flex-direction:column; justify-content:space-between; padding:28px; background:var(--blue); color:#fff; }
+    .big-stat strong { display:block; font-size:clamp(3.4rem,7vw,6rem); line-height:.9; letter-spacing:-.08em; }
+    .big-stat span { color:#d7e5ff; font-weight:700; }
+    .label { display:inline-block; margin-bottom:14px; font-size:.72rem; font-weight:850; letter-spacing:.12em; text-transform:uppercase; }
+    .label.blue { color:var(--blue); }
+    .label.red { color:var(--red); }
+    .label.amber { color:var(--amber); }
+    .label.green { color:var(--green); }
+    .severity { min-height:220px; display:flex; flex-direction:column; justify-content:space-between; }
+    .severity.p0 { border-top:7px solid var(--red); background:var(--red-soft); }
+    .severity.p1 { border-top:7px solid var(--amber); background:var(--amber-soft); }
+    .severity.p2 { border-top:7px solid var(--blue); background:var(--blue-soft); }
+    .severity strong { display:block; font-size:3.4rem; line-height:.9; letter-spacing:-.08em; }
+    .boundary { position:relative; padding-top:66px; }
+    .boundary .tag { position:absolute; top:20px; left:24px; padding:5px 9px; background:var(--ink); color:#fff; font-size:.7rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+    .boundary.erp { border-top:5px solid var(--blue); }
+    .boundary.store { border-top:5px solid #87909b; }
+    .finding { display:flex; gap:14px; align-items:flex-start; }
+    .finding + .finding { margin-top:22px; padding-top:22px; border-top:1px solid var(--line); }
+    .finding-mark { flex:0 0 10px; width:10px; height:10px; margin-top:7px; border-radius:50%; background:var(--blue); }
+    .finding-mark.warn { background:var(--amber); }
+    .finding-mark.danger { background:var(--red); }
+    .finding p { color:var(--muted); }
+    .flow { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:0; counter-reset:step; }
+    .flow-step { position:relative; min-height:235px; padding:24px 18px; border:1px solid var(--line); border-right:0; background:var(--card); }
+    .flow-step:last-child { border-right:1px solid var(--line); }
+    .flow-step::before { counter-increment:step; content:"0" counter(step); display:block; margin-bottom:44px; color:var(--blue); font-size:.75rem; font-weight:850; }
+    .flow-step:not(:last-child)::after { content:"→"; position:absolute; top:17px; right:-9px; z-index:1; color:var(--blue); font-size:1.2rem; font-weight:900; }
+    .flow-step p { color:var(--muted); font-size:.88rem; }
+    .flow-note { margin-top:14px; padding:14px 18px; border-top:3px solid var(--amber); background:var(--amber-soft); color:#59420b; }
+    table { width:100%; border-collapse:collapse; background:var(--card); font-size:.92rem; }
+    th,td { padding:16px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:#e7e9ed; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; }
+    .status { display:inline-flex; align-items:center; gap:7px; font-weight:800; white-space:nowrap; }
+    .status::before { content:""; width:9px; height:9px; border-radius:50%; background:currentColor; }
+    .pass { color:var(--green); }
+    .pending { color:var(--amber); }
+    .fail { color:var(--red); }
+    .recommendation { display:grid; grid-template-columns:70px 1fr auto; gap:18px; align-items:start; padding:22px 0; border-top:1px solid var(--line); }
+    .recommendation:first-child { border-top:0; }
+    .priority { font-size:1.7rem; font-weight:900; letter-spacing:-.06em; }
+    .recommendation p { margin-bottom:0; color:var(--muted); }
+    .action { max-width:230px; color:var(--blue); font-size:.82rem; font-weight:750; }
+    .note { padding:18px 20px; border:1px dashed #aab2bd; background:#f8f9fa; color:var(--muted); font-size:.9rem; }
+    footer { padding:28px 0 0; color:var(--muted); font-size:.82rem; }
+    @media (max-width: 850px) { .grid-4 { grid-template-columns:repeat(2,minmax(0,1fr)); } .flow { grid-template-columns:repeat(2,minmax(0,1fr)); } .flow-step { border-right:1px solid var(--line); } .flow-step:not(:last-child)::after { display:none; } .flow-step:nth-child(-n+4) { border-bottom:0; } .section-head,.verdict { grid-template-columns:1fr; } }
+    @media (max-width: 620px) { .wrap { width:min(calc(100% - 28px),var(--max)); } .masthead { padding-top:34px; } .grid-2,.grid-3,.grid-4,.flow { grid-template-columns:1fr; } .flow-step { min-height:0; border-bottom:0; } .flow-step:last-child { border-bottom:1px solid var(--line); } .flow-step::before { margin-bottom:18px; } .recommendation { grid-template-columns:48px 1fr; } .action { grid-column:2; max-width:none; } table { display:block; overflow-x:auto; white-space:normal; } th,td { min-width:145px; } }
+    @media print { body { background:#fff; } .masthead { padding-top:20px; } section { break-inside:avoid; padding:28px 0; } .card,.flow-step,table { box-shadow:none; } a { color:inherit; text-decoration:none; } }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior:auto; } }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap">
+      <p class="eyebrow">NicTech · auditoría técnica</p>
+      <h1>ERP y Mercado Pago, en planos separados.</h1>
+      <p class="dek">Una lectura ejecutiva de los riesgos, límites de evidencia y próximos controles. El ERP es una aplicación privada en construcción; el checkout pertenece al sistema existente.</p>
+      <div class="meta"><span class="pill">Documento local</span><span class="pill">Sin fixes aplicados</span><span class="pill">24 agosto 2026</span></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="resumen">
+      <div class="section-head"><div class="section-number">01 · Resumen ejecutivo</div><div class="section-intro">El veredicto separa lo que es deuda o configuración del ERP de lo que ya existía en la tienda pública. Las etiquetas P0/P1/P2 son prioridades de auditoría, no nuevas mediciones de severidad en producción.</div></div>
+      <div class="verdict">
+        <article class="verdict-main"><p class="eyebrow">Veredicto general</p><p>La base del ERP avanzó con contratos, migraciones y pruebas locales, pero su verificación de base de datos sigue incompleta por la indisponibilidad de Docker/Postgres. Mercado Pago tiene un flujo identificable y defensas importantes en el servidor; su riesgo principal documentado es de configuración y operación histórica, no una regresión atribuible al trabajo reciente del ERP.</p></article>
+        <article class="big-stat"><span>Pruebas de la suite completa</span><strong>41</strong><span>en 5 archivos · PASS local</span></article>
+      </div>
+    </section>
+
+    <section id="frontera">
+      <div class="section-head"><div class="section-number">02 · Frontera de responsabilidad</div><div class="section-intro">La separación evita atribuir al ERP problemas de un flujo comercial anterior y permite validar cada sistema con su propia evidencia.</div></div>
+      <div class="grid grid-2">
+        <article class="card boundary erp"><span class="tag">ERP privado</span><h3>Lo que auditar aquí</h3><p>Permisos, RLS, auditoría, seed determinista, transacciones, contabilidad, módulos pendientes y reconstrucción local. El programa define etapas 0–11; una pantalla no equivale a un módulo terminado.</p><p class="label blue">Evidencia: local / en construcción</p></article>
+        <article class="card boundary store"><span class="tag">Sistema existente</span><h3>Lo que ya estaba aquí</h3><p>Tienda pública, carrito, checkout, Edge Functions de preferencia y webhook de Mercado Pago. Los cambios recientes visibles en estos archivos son tipado/lint, dependencias del efecto de checkout y configuración local.</p><p class="label amber">Evidencia: código existente</p></article>
+      </div>
+    </section>
+
+    <section id="severidad">
+      <div class="section-head"><div class="section-number">03 · Mapa de severidades</div><div class="section-intro">Prioridad sugerida para ordenar la revisión. No reemplaza una evaluación de impacto con datos desplegados, logs ni una reproducción completa.</div></div>
+      <div class="grid grid-3">
+        <article class="card severity p0"><div><span class="label red">P0 · bloquear salida</span><strong>0</strong></div><p>La evidencia disponible no establece un P0 medido ni permite inferir impacto de producción.</p></article>
+        <article class="card severity p1"><div><span class="label amber">P1 · corregir antes de confiar</span><strong>4</strong></div><p>Permisos, pgTAP/runtime, seed y configuración de firma del webhook concentran el riesgo de integridad y seguridad a validar.</p></article>
+        <article class="card severity p2"><div><span class="label blue">P2 · ordenar y completar</span><strong>3</strong></div><p>Módulos pendientes, health checks y documentación operativa requieren seguimiento para cerrar la trazabilidad.</p></article>
+      </div>
+    </section>
+
+    <section id="erp">
+      <div class="section-head"><div class="section-number">04 · Exclusivo del ERP</div><div class="section-intro">Hallazgos de diseño y verificación del sistema privado. Son independientes de la lógica de cobro de la tienda.</div></div>
+      <div class="card">
+        <div class="finding"><span class="finding-mark danger"></span><div><h3><code>has_permission</code> y autorización efectiva</h3><p>Debe comprobarse que el permiso se resuelva en base de datos, por organización, rol, excepción y alcance operativo; ocultar controles no alcanza. La evidencia disponible muestra contratos y pruebas, pero no una ejecución runtime completa.</p></div></div>
+        <div class="finding"><span class="finding-mark danger"></span><div><h3>pgTAP y puerta de base local</h3><p>La preocupación por fallos de pgTAP queda como punto de auditoría. El estado verificable actual es PENDING: <code>npm run db:test</code> no pudo conectar a <code>127.0.0.1:54322</code> porque Docker no estaba disponible. Los conteos y causas quedan sin afirmar.</p></div></div>
+        <div class="finding"><span class="finding-mark warn"></span><div><h3>Seed consistente y reconstruible</h3><p><code>supabase/seed.sql</code> debe permanecer determinista, idempotente y coherente con migraciones, permisos y datos de prueba. La revisión de una base vacía requiere levantar el stack local; no se ejecutó un reset destructivo.</p></div></div>
+        <div class="finding"><span class="finding-mark warn"></span><div><h3>Módulos todavía pendientes</h3><p>El programa contempla compras, ventas, reparaciones, documentos, financiación, contabilidad, reportes y migración. Las pantallas actuales no prueban por sí solas libros, reversas, auditoría, observabilidad ni conciliación completa.</p></div></div>
+        <div class="finding"><span class="finding-mark"></span><div><h3>Docker y entorno local</h3><p>La ruta de verificación depende del daemon Linux de Docker. Mientras no esté disponible, SQL, RPC, RLS y pgTAP no tienen validación runtime local. Supabase remoto queda fuera de alcance sin autorización expresa.</p></div></div>
+      </div>
+    </section>
+
+    <section id="mercadopago">
+      <div class="section-head"><div class="section-number">05 · Mercado Pago, paso a paso</div><div class="section-intro">El flujo observado en el sistema existente conserva una frontera clara: el navegador inicia, el servidor recalcula y Mercado Pago notifica el resultado.</div></div>
+      <div class="flow">
+        <article class="flow-step"><h3>Checkout</h3><p>Valida carrito al entrar y nuevamente antes de pagar. Recibe datos del comprador y solicita la preferencia.</p></article>
+        <article class="flow-step"><h3>Preferencia</h3><p>La Edge Function busca precio, nombre y stock reales; no confía en el precio enviado por frontend.</p></article>
+        <article class="flow-step"><h3>Mercado Pago</h3><p>Crea la preferencia, define retornos success/failure/pending y redirige al comprador a <code>init_point</code>.</p></article>
+        <article class="flow-step"><h3>Webhook</h3><p>El proveedor llama sin JWT de Supabase. La función debe verificar su firma HMAC propia cuando existe el secreto.</p></article>
+        <article class="flow-step"><h3>Pedido y stock</h3><p>Consulta el pago, actualiza el pedido, reclama una sola vez el decremento y llama al RPC <code>decrement_stock</code>.</p></article>
+        <article class="flow-step"><h3>Email</h3><p>Para pagos aprobados, intenta enviar un correo al cliente y otro al negocio, evitando repetirlos con <code>email_sent</code>.</p></article>
+      </div>
+      <p class="flow-note"><strong>Riesgo de configuración:</strong> si <code>MERCADOPAGO_WEBHOOK_SECRET</code> no está configurado, el código registra una advertencia y permite continuar. El estado de secretos desplegados no está acreditado por la evidencia local.</p>
+    </section>
+
+    <section id="historico">
+      <div class="section-head"><div class="section-number">06 · Histórico vs. reciente</div><div class="section-intro">La cronología importa: una auditoría útil no convierte una corrección de tipos en un cambio de negocio.</div></div>
+      <div class="grid grid-2">
+        <article class="card"><span class="label amber">Código anterior</span><h3>Checkout y pagos</h3><p>El checkout y las dos funciones de Mercado Pago forman parte del sistema existente. Allí viven la validación de carrito, la preferencia, el webhook, el stock y los emails.</p></article>
+        <article class="card"><span class="label blue">Trabajo reciente</span><h3>ERP y configuración local</h3><p>Los cambios observados en pagos son ajustes de tipado/lint y dependencias del efecto; la configuración local habilita seed y deja el webhook sin JWT para un caller externo. No hay evidencia suministrada de que se haya cambiado la lógica principal del pago.</p></article>
+      </div>
+    </section>
+
+    <section id="checks">
+      <div class="section-head"><div class="section-number">07 · Matriz de checks</div><div class="section-intro">Estado de la evidencia registrada. PENDING significa “no verificable aún”, no “aprobado”.</div></div>
+      <table>
+        <thead><tr><th>Control</th><th>Estado</th><th>Evidencia disponible</th><th>Qué falta cerrar</th></tr></thead>
+        <tbody>
+          <tr><td>Tests focalizados</td><td><span class="status pass">PASS</span></td><td>8 tests de finanzas locales.</td><td>Ampliar cobertura según etapa y contratos.</td></tr>
+          <tr><td>Suite completa</td><td><span class="status pass">PASS</span></td><td>5 archivos / 41 tests.</td><td>Conservarla como regresión automatizada.</td></tr>
+          <tr><td>Typecheck y build ERP</td><td><span class="status pass">PASS</span></td><td>Typecheck PASS; build PASS, 1686 módulos.</td><td>No confundir compilación con integridad de datos.</td></tr>
+          <tr><td>Lint global</td><td><span class="status fail">FAIL</span></td><td>Baseline no relacionado: 281 errores / 30 warnings.</td><td>Separar deuda histórica y reducirla sin ocultar errores.</td></tr>
+          <tr><td>ESLint de archivos ERP cambiados</td><td><span class="status pass">PASS</span></td><td>Un warning Fast Refresh preexistente.</td><td>Resolver warning cuando corresponda.</td></tr>
+          <tr><td>Docker / health checks</td><td><span class="status pending">PENDING</span></td><td>Daemon Linux no disponible.</td><td>Levantar stack local y registrar estado de servicios.</td></tr>
+          <tr><td>pgTAP / SQL / RLS / RPC</td><td><span class="status pending">PENDING</span></td><td>ECONNREFUSED en <code>127.0.0.1:54322</code>.</td><td>Ejecutar <code>npm run db:test</code> con Docker local.</td></tr>
+          <tr><td>Mercado Pago desplegado</td><td><span class="status pending">PENDING</span></td><td>No hay evidencia autoritativa de secretos, RLS o infraestructura remota.</td><td>Auditar configuración autorizada y pruebas de webhook.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="recomendaciones">
+      <div class="section-head"><div class="section-number">08 · Recomendaciones</div><div class="section-intro">Acciones de auditoría priorizadas. Este documento no implementa ninguna de ellas.</div></div>
+      <div class="card">
+        <div class="recommendation"><div class="priority">P1</div><div><h3>Cerrar autorización en base</h3><p>Revisar <code>has_permission</code>, RLS y matrices de roles con casos permitidos y denegados.</p></div><div class="action">Validar con pgTAP y llamadas directas no autorizadas.</div></div>
+        <div class="recommendation"><div class="priority">P1</div><div><h3>Hacer reproducible la puerta de DB</h3><p>Arrancar Docker, reconstruir una base local no destructiva para el flujo normal y ejecutar pruebas de esquema, RPC, RLS y transacciones.</p></div><div class="action">Registrar health checks, logs y resultado de <code>db:test</code>.</div></div>
+        <div class="recommendation"><div class="priority">P1</div><div><h3>Endurecer la configuración del webhook</h3><p>Confirmar que el secreto de firma exista en el entorno autorizado y que su ausencia sea un estado explícitamente bloqueante antes de producción.</p></div><div class="action">Probar firma válida, inválida, replay y reintento idempotente.</div></div>
+        <div class="recommendation"><div class="priority">P1</div><div><h3>Conciliar seed y migraciones</h3><p>Comparar referencias, permisos, módulos y datos deterministas contra el esquema desde una base vacía.</p></div><div class="action">Validar reconstrucción repetida sin duplicados.</div></div>
+        <div class="recommendation"><div class="priority">P2</div><div><h3>Ordenar deuda y etapas pendientes</h3><p>Separar lint histórico de regresiones nuevas y mantener el roadmap del ERP con puertas por módulo.</p></div><div class="action">Publicar checklists de contrato, auditoría, reversa y observabilidad.</div></div>
+      </div>
+    </section>
+
+    <section id="alcance">
+      <div class="section-head"><div class="section-number">09 · Alcance y fuentes</div><div class="section-intro">La precisión de este informe depende de no exceder lo que el repositorio puede demostrar.</div></div>
+      <div class="note"><strong>Base de este documento:</strong> lectura local del repositorio NicTech, <code>AGENTS.md</code>, <code>PRODUCT.md</code>, <code>docs/erp-program.md</code>, <code>docs/stage9-mvp-verification.md</code>, checkout, Edge Functions y configuración Supabase. No certifica producción, infraestructura remota, secretos, datos desplegados ni cumplimiento fiscal. Los números mostrados son únicamente los registrados en la evidencia local.</div>
+    </section>
+    <footer><p>NicTech · Auditoría ERP y Mercado Pago · documento estático sin dependencias externas.</p></footer>
+  </main>
+</body>
+</html>
