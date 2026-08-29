@@ -1,7 +1,20 @@
-project_id = "gbgvfeattjxskdqrwett"
+project_id = "nictech-local"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public", "erp"]
+extra_search_path = ["public", "extensions", "erp"]
+max_rows = 1000
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
 [functions.mercadopago-webhook]
 enabled = true
-verify_jwt = true
+# Mercado Pago is an external caller and does not send a Supabase user JWT.
+# The function must verify Mercado Pago's own signature before processing.
+verify_jwt = false
 import_map = "./functions/mercadopago-webhook/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
