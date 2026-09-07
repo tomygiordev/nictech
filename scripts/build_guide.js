@@ -1,0 +1,1989 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NicTech ERP • Manual y Guía de Alcance por Módulos</title>
+  
+  <!-- Precision Typography: Inter for UI/Readability + JetBrains Mono for Code/Data -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ==========================================================================
+       IMPECCABLE DESIGN SYSTEM: LINEAR/STRIPE CRAFT STANDARD
+       Clean, high-contrast, perfectly aligned, zero fluff, accessible, fast.
+       ========================================================================== */
+    :root {
+      --bg-canvas: #FAFAFA;
+      --bg-surface: #FFFFFF;
+      --bg-subtle: #F4F4F5;
+      --bg-muted: #E4E4E7;
+      
+      --border-default: #E4E4E7;
+      --border-strong: #D4D4D8;
+      
+      --text-primary: #09090B;
+      --text-secondary: #52525B;
+      --text-muted: #71717A;
+      --text-faint: #A1A1AA;
+      
+      --brand-blue: #0066FF;
+      --brand-blue-subtle: #EFF6FF;
+      --brand-blue-border: #BFDBFE;
+      
+      --success-green: #16A34A;
+      --success-green-subtle: #F0FDF4;
+      --success-green-border: #BBF7D0;
+      
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    code, .font-mono {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88em;
+    }
+
+    ::selection {
+      background: var(--brand-blue-subtle);
+      color: var(--brand-blue);
+    }
+
+    /* Layout Shell */
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sticky Sidebar Navigation */
+    .sidebar {
+      width: 290px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-default);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      z-index: 40;
+    }
+
+    .sidebar-header {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--bg-subtle);
+      color: var(--text-secondary);
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-default);
+    }
+
+    .sidebar-search {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      padding: 7px 10px 7px 30px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--text-primary);
+      outline: none;
+      transition: all 0.15s;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: 8px center;
+    }
+
+    .search-input:focus {
+      border-color: var(--brand-blue);
+      background: #FFFFFF;
+      box-shadow: 0 0 0 2px var(--brand-blue-subtle);
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 8px 32px;
+    }
+
+    .sidebar-nav::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .sidebar-nav::-webkit-scrollbar-thumb {
+      background: var(--border-default);
+      border-radius: 4px;
+    }
+
+    .nav-group-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      padding: 12px 10px 4px;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.12s;
+      margin-bottom: 1px;
+    }
+
+    .nav-link:hover {
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+    }
+
+    .nav-link.active {
+      background: var(--brand-blue-subtle);
+      color: var(--brand-blue);
+      font-weight: 600;
+    }
+
+    .nav-link-code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-right: 6px;
+    }
+
+    .nav-link.active .nav-link-code {
+      color: var(--brand-blue);
+    }
+
+    /* Main Content Area */
+    .content-area {
+      flex: 1;
+      height: 100vh;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+    }
+
+    .content-container {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 48px 120px;
+    }
+
+    /* Header Banner */
+    .header-banner {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      padding: 32px 36px;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .header-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--success-green-subtle);
+      border: 1px solid var(--success-green-border);
+      color: var(--success-green);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 99px;
+    }
+
+    .header-status-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--success-green);
+      border-radius: 50%;
+    }
+
+    .header-title {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      margin-bottom: 8px;
+    }
+
+    .header-description {
+      font-size: 14.5px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 760px;
+      margin-bottom: 24px;
+    }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      border-top: 1px solid var(--border-default);
+      padding-top: 20px;
+    }
+
+    .stat-box h4 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+
+    .stat-box p {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Category Filter Tabs */
+    .filter-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 28px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .filter-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.12s;
+    }
+
+    .filter-btn:hover {
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+    }
+
+    .filter-btn.active {
+      background: var(--text-primary);
+      color: #FFFFFF;
+      border-color: var(--text-primary);
+    }
+
+    /* Module Card */
+    .module-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+    }
+
+    .module-card-header {
+      padding: 24px 28px 18px;
+      border-bottom: 1px solid var(--border-default);
+      background: #FFFFFF;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .module-header-left {
+      flex: 1;
+      min-width: 260px;
+    }
+
+    .module-meta-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--brand-blue);
+      margin-bottom: 4px;
+      display: inline-block;
+    }
+
+    .module-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+      margin-bottom: 4px;
+    }
+
+    .module-summary {
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .module-badge-ok {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--success-green);
+      background: var(--success-green-subtle);
+      border: 1px solid var(--success-green-border);
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+    }
+
+    .module-body {
+      padding: 28px;
+    }
+
+    /* Purpose Box */
+    .purpose-box {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      padding: 14px 18px;
+      margin-bottom: 24px;
+    }
+
+    .purpose-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin-bottom: 3px;
+    }
+
+    .purpose-desc {
+      font-size: 13px;
+      color: var(--text-primary);
+      line-height: 1.55;
+    }
+
+    /* Steps Grid */
+    .section-subtitle {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .step-item {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      padding: 14px;
+    }
+
+    .step-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--brand-blue);
+      margin-bottom: 6px;
+      display: inline-block;
+    }
+
+    .step-item h5 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .step-item p {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    /* Data Table */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      font-size: 13px;
+    }
+
+    .data-table th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      padding: 8px 12px;
+      background: var(--bg-subtle);
+      border-top: 1px solid var(--border-default);
+      border-bottom: 1px solid var(--border-default);
+    }
+
+    .data-table td {
+      padding: 10px 12px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-default);
+      vertical-align: top;
+      line-height: 1.5;
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table td strong {
+      color: var(--text-primary);
+    }
+
+    /* Sign-off Box */
+    .signoff-panel {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+    }
+
+    .signoff-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .signoff-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 8px;
+    }
+
+    .signoff-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .signoff-label input[type="checkbox"] {
+      margin-top: 3px;
+      accent-color: var(--brand-blue);
+      cursor: pointer;
+      width: 15px;
+      height: 15px;
+    }
+
+    .signoff-label.checked span {
+      color: var(--text-faint);
+      text-decoration: line-through;
+    }
+
+    /* Sticky Bottom Bar */
+    .bottom-bar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #09090B;
+      color: #FFFFFF;
+      padding: 10px 20px;
+      border-radius: 99px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      z-index: 50;
+    }
+
+    .bottom-bar-text {
+      font-size: 12.5px;
+      font-weight: 500;
+    }
+
+    .bottom-bar-btn {
+      background: var(--brand-blue);
+      color: #FFFFFF;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+
+    .bottom-bar-btn:hover {
+      background: #0052CC;
+    }
+
+    /* Side Feedback Drawer */
+    .feedback-drawer {
+      position: fixed;
+      right: 0;
+      top: 0;
+      width: 420px;
+      height: 100vh;
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border-default);
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .feedback-drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .drawer-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .drawer-body {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .drawer-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border-default);
+      background: var(--bg-subtle);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .form-input, .form-textarea {
+      width: 100%;
+      background: #FFFFFF;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--text-primary);
+      outline: none;
+    }
+
+    .form-input:focus, .form-textarea:focus {
+      border-color: var(--brand-blue);
+      box-shadow: 0 0 0 2px var(--brand-blue-subtle);
+    }
+
+    @media (max-width: 900px) {
+      .app-shell {
+        flex-direction: column;
+      }
+      .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        top: 0;
+      }
+      .content-container {
+        padding: 24px 16px 100px;
+      }
+      .feedback-drawer {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- SIDEBAR NAVIGATION -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="brand-title">
+        <span>NicTech ERP</span>
+        <span class="brand-badge">v2.0</span>
+      </div>
+      <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Guía funcional de módulos</p>
+    </div>
+
+    <div class="sidebar-search">
+      <input type="text" id="searchBar" class="search-input" placeholder="Buscar módulo o función..." onkeyup="filterModules()" />
+    </div>
+
+    <nav class="sidebar-nav" id="sidebarList">
+      <div class="nav-group-title">Operaciones Diarias</div>
+      <a href="#mod-dashboard" class="nav-link active" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">01</span> Dashboard General</span>
+      </a>
+      <a href="#mod-pos" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">02</span> Punto de Venta (POS)</span>
+      </a>
+      <a href="#mod-cash" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">03</span> Caja & Arqueos</span>
+      </a>
+      <a href="#mod-online-orders" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">04</span> Pedidos Online Web</span>
+      </a>
+
+      <div class="nav-group-title">Inventario & Catálogo</div>
+      <a href="#mod-catalog" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">05</span> Catálogo de Artículos</span>
+      </a>
+      <a href="#mod-pricing" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">06</span> Precios & Cotiz. Dólar</span>
+      </a>
+      <a href="#mod-stock" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">07</span> Stock Multidepósito</span>
+      </a>
+      <a href="#mod-labels" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">08</span> Etiquetas & QR</span>
+      </a>
+
+      <div class="nav-group-title">Comercial & CRM</div>
+      <a href="#mod-purchases" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">09</span> Compras a Proveedores</span>
+      </a>
+      <a href="#mod-customers" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">10</span> Directorio de Clientes</span>
+      </a>
+      <a href="#mod-quotes" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">11</span> Presupuestos Formales</span>
+      </a>
+
+      <div class="nav-group-title">Laboratorio Técnico</div>
+      <a href="#mod-repairs" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">12</span> Órdenes de Reparación</span>
+      </a>
+      <a href="#mod-repair-tests" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">13</span> Control de Calidad (QC)</span>
+      </a>
+      <a href="#mod-warranties" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">14</span> Garantías & Devoluciones</span>
+      </a>
+      <a href="#mod-pc-builds" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">15</span> Armados de PC a Medida</span>
+      </a>
+      <a href="#mod-trade-ins" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">16</span> Usados & Plan Canje</span>
+      </a>
+
+      <div class="nav-group-title">Finanzas & Sistema</div>
+      <a href="#mod-accounts" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">17</span> Financiación en Cuotas</span>
+      </a>
+      <a href="#mod-accounting" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">18</span> Contabilidad & Libros</span>
+      </a>
+      <a href="#mod-documents" class="nav-link" onclick="setLinkActive(this)">
+        <span><span class="nav-link-code">19</span> Facturación ARCA & RLS</span>
+      </a>
+    </nav>
+  </aside>
+
+  <!-- MAIN VIEWPORT -->
+  <main class="content-area">
+    <div class="content-container">
+
+      <!-- HEADER BANNER -->
+      <section class="header-banner">
+        <div class="header-top">
+          <span class="header-status">
+            <span class="header-status-dot"></span>
+            19 Módulos Operativos
+          </span>
+          <button onclick="toggleFeedback()" style="background:none; border:1px solid var(--border-default); border-radius:var(--radius-sm); padding:4px 10px; font-size:12px; font-weight:600; cursor:pointer; color:var(--text-secondary);">
+            Observaciones
+          </button>
+        </div>
+        <h1 class="header-title">Manual Funcional & Guía de Módulos NicTech ERP</h1>
+        <p class="header-description">
+          Documento descriptivo para revisión del cliente. Cada módulo detalla su función en el negocio, 
+          los pasos operativos de uso, las reglas aplicadas y una lista de verificación interactiva.
+        </p>
+
+        <div class="stats-row">
+          <div class="stat-box">
+            <h4>19</h4>
+            <p>Módulos Documentados</p>
+          </div>
+          <div class="stat-box">
+            <h4>Dual ARS/USD</h4>
+            <p>Cotizaciones en tiempo real</p>
+          </div>
+          <div class="stat-box">
+            <h4>Tracking Web</h4>
+            <p>Consulta online para clientes</p>
+          </div>
+          <div class="stat-box">
+            <h4>ARCA / AFIP</h4>
+            <p>Facturación electrónica oficial</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- FILTER TABS -->
+      <div class="filter-tabs">
+        <button class="filter-btn active" onclick="filterCategory('all', this)">Todos los Módulos (19)</button>
+        <button class="filter-btn" onclick="filterCategory('operaciones', this)">Operaciones (4)</button>
+        <button class="filter-btn" onclick="filterCategory('inventario', this)">Inventario (4)</button>
+        <button class="filter-btn" onclick="filterCategory('comercial', this)">Comercial (3)</button>
+        <button class="filter-btn" onclick="filterCategory('taller', this)">Taller (5)</button>
+        <button class="filter-btn" onclick="filterCategory('finanzas', this)">Finanzas & Sistema (3)</button>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- 01: DASHBOARD -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-dashboard" data-cat="operaciones">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 01</span>
+            <h3 class="module-title">Dashboard General</h3>
+            <p class="module-summary">Monitoreo consolidado de ingresos, gráfico mensual de ventas, stock crítico y accesos rápidos.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Permite a los administradores conocer en tiempo real la facturación acumulada del local, los equipos en proceso en el taller y los productos que están por agotarse, todo en una sola pantalla.
+            </p>
+          </div>
+
+          <div class="section-subtitle">Flujo de Uso</div>
+          <div class="steps-grid">
+            <div class="step-item">
+              <span class="step-num">01</span>
+              <h5>4 Indicadores Clave</h5>
+              <p>Facturación total, productos activos, stock valorizado al costo y reparaciones abiertas.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">02</span>
+              <h5>Gráfico Evolutivo</h5>
+              <p>Comparación de ingresos y cantidad de órdenes filtrable por mes, 30 días, 6 meses o año.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">03</span>
+              <h5>Alerta de Stock Bajo</h5>
+              <p>Detección automática de artículos con 3 o menos unidades para reponer a tiempo.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">04</span>
+              <h5>Accesos Directos</h5>
+              <p>Botones de 1 click para Nueva Venta, Ingreso a Taller, Caja, Nuevo Producto y Presupuestos.</p>
+            </div>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Los 4 indicadores principales son claros y útiles</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El gráfico mensual refleja el progreso de ventas</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El aviso de stock crítico ayuda a evitar faltantes</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 02: POS -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-pos" data-cat="operaciones">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 02</span>
+            <h3 class="module-title">Punto de Venta Mostrador (POS)</h3>
+            <p class="module-summary">Cobro rápido de mostrador, pistola de código de barras, conversión bimoneda ARS/USD y ticket térmico.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Agilizar la atención en el local: buscar productos por nombre o código de barras, calcular precios en pesos y dólares al instante, cobrar en efectivo con cálculo de vuelto o con transferencia/tarjeta, y emitir el ticket de mostrador.
+            </p>
+          </div>
+
+          <div class="section-subtitle">Flujo de Uso</div>
+          <div class="steps-grid">
+            <div class="step-item">
+              <span class="step-num">01</span>
+              <h5>Búsqueda o Escaneo</h5>
+              <p>El vendedor tipea el nombre del producto o pasa la pistola lectora de código de barras.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">02</span>
+              <h5>Cálculo Bimoneda</h5>
+              <p>Muestra el total en Pesos y Dólares según el tipo de cambio oficial o blue configurado.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">03</span>
+              <h5>Medio de Pago</h5>
+              <p>Efectivo con cálculo de vuelto, Transferencia bancaria, QR de Mercado Pago o Tarjetas.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">04</span>
+              <h5>Ticket & Stock</h5>
+              <p>Descuenta el stock automáticamente, ingresa el dinero a caja y emite ticket térmico de 80mm.</p>
+            </div>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La búsqueda y armado de carrito es rápida</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El cobro en efectivo calcula el vuelto exacto</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El formato de ticket térmico es el adecuado</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 03: CASH -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-cash" data-cat="operaciones">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 03</span>
+            <h3 class="module-title">Caja Diaria & Arqueos de Turno</h3>
+            <p class="module-summary">Apertura con fondo inicial, registro de gastos menores justificados, arqueo ciego y cierre inmutable.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Controlar el flujo de dinero de cada turno: abrir con un monto fijo de cambio, registrar cualquier salida de dinero menor con su motivo y contrastar el dinero real contado con el saldo teórico del sistema al cerrar.
+            </p>
+          </div>
+
+          <div class="section-subtitle">Flujo de Uso</div>
+          <div class="steps-grid">
+            <div class="step-item">
+              <span class="step-num">01</span>
+              <h5>Apertura de Turno</h5>
+              <p>Registro del fondo de cambio inicial en Pesos y Dólares con fecha, hora y cajero.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">02</span>
+              <h5>Ingresos Continuos</h5>
+              <p>Suma en vivo las ventas del POS y los cobros de reparaciones del taller.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">03</span>
+              <h5>Gastos Menores</h5>
+              <p>Registro de salidas de dinero de caja chica con motivo obligatorio y firma de auditoría.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">04</span>
+              <h5>Arqueo & Cierre</h5>
+              <p>El cajero declara el dinero contado; el sistema calcula diferencias y congela el turno.</p>
+            </div>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Permite abrir turnos de mañana y tarde por separado</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El registro de gastos menores evita diferencias de caja</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 04: ONLINE ORDERS -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-online-orders" data-cat="operaciones">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 04</span>
+            <h3 class="module-title">Pedidos Online & Sincronización Web</h3>
+            <p class="module-summary">Recepción de compras con Mercado Pago, reserva inmediata de stock, preparación de paquetes y despacho.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Conectar la tienda online con el mostrador físico para que cuando un cliente compra por la web, el stock se aparte de inmediato impidiendo que se venda en el local a la vez, y el personal prepare el pedido para retiro o envío.
+            </p>
+          </div>
+
+          <div class="section-subtitle">Flujo de Uso</div>
+          <div class="steps-grid">
+            <div class="step-item">
+              <span class="step-num">01</span>
+              <h5>Recepción Web</h5>
+              <p>Entra la orden con ID de pago de Mercado Pago y datos del comprador.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">02</span>
+              <h5>Reserva Inmediata</h5>
+              <p>Las unidades compradas quedan apartadas en el sistema para evitar ventas duplicadas.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">03</span>
+              <h5>Preparación</h5>
+              <p>Cambio a estado "En Preparación" mientras se arma el paquete con su remito.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">04</span>
+              <h5>Despacho / Retiro</h5>
+              <p>Se marca como listo para retirar en sucursal o se despacha por transporte.</p>
+            </div>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Se distinguen envíos por correo de retiros en local</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La reserva instantánea de existencias evita sobreventas</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 05: CATALOG -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-catalog" data-cat="inventario">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 05</span>
+            <h3 class="module-title">Catálogo Maestro de Artículos & Servicios</h3>
+            <p class="module-summary">Alta y edición de celulares nuevos y usados, repuestos, accesorios, mano de obra y publicación web selectiva.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Administrar todos los productos y servicios del negocio: smartphones con variantes de color y memoria, accesorios con código de barras y repuestos de taller, con control individual de visibilidad en la tienda web.
+            </p>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 30%;">Categoría</th>
+                <th>Datos & Especificaciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Smartphones Nuevos / Usados</strong></td>
+                <td>Marca, Modelo, Capacidad (GB), Color, Salud de Batería (%), Estado cosmético y Garantía.</td>
+              </tr>
+              <tr>
+                <td><strong>Accesorios & Periféricos</strong></td>
+                <td>Fundas, vidrios templados, cargadores y cables con código EAN y precio en pesos/dólares.</td>
+              </tr>
+              <tr>
+                <td><strong>Repuestos de Taller</strong></td>
+                <td>Módulos, baterías, pines de carga y cámaras clasificados para consumo técnico.</td>
+              </tr>
+              <tr>
+                <td><strong>Servicios & Mano de Obra</strong></td>
+                <td>Trabajos técnicos sin stock físico con precios sugeridos o editables en caja.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Permite cargar repuestos que no se muestran en la web</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La ficha de celulares usados contempla capacidad y batería</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 06: PRICING -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-pricing" data-cat="inventario">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 06</span>
+            <h3 class="module-title">Precios, Cotización del Dólar & Descuentos</h3>
+            <p class="module-summary">Ajuste centralizado del dólar, listas de precios diferenciadas y fórmulas de margen comercial.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Mantener los precios actualizados ante fluctuaciones del dólar: cambiando el valor de la divisa en una única casilla se recalculan automáticamente todos los precios en pesos de los artículos cotizados en moneda extranjera.
+            </p>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 30%;">Lista de Precios</th>
+                <th>Regla Comercial</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Contado / Efectivo</strong></td>
+                <td>Aplica un descuento configurable (ej: 10% a 15% off) para cobros en billete o transferencia.</td>
+              </tr>
+              <tr>
+                <td><strong>Precio de Lista / Tarjeta</strong></td>
+                <td>Precio base de referencia para cobros con tarjeta de débito o crédito en un pago.</td>
+              </tr>
+              <tr>
+                <td><strong>Precio Financiado (Cuotas)</strong></td>
+                <td>Precio con recargo pactado para clientes que compran con crédito directo del local.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Modificar el dólar actualiza inmediatamente las listas en pesos</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Los descuentos por pago en efectivo se aplican de forma simple</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 07: STOCK -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-stock" data-cat="inventario">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 07</span>
+            <h3 class="module-title">Stock Central & Gestión Multidepósito</h3>
+            <p class="module-summary">Trazabilidad por ubicación (Góndola, Depósito Central, Pañol Taller) y libro inalterable de movimientos.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Controlar la ubicación física de cada unidad para saber si un repuesto o accesorio está en la vitrina del mostrador, en el depósito de reserva o en la mesa del técnico, con registro de quién realizó cada movimiento.
+            </p>
+          </div>
+
+          <div class="steps-grid">
+            <div class="step-item">
+              <span class="step-num">DEP-01</span>
+              <h5>Mostrador & Vitrinas</h5>
+              <p>Artículos listos para despacho inmediato en mostrador.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">DEP-02</span>
+              <h5>Depósito Central</h5>
+              <p>Cajas de stock en reserva para reposición de góndola.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">DEP-03</span>
+              <h5>Pañol de Taller</h5>
+              <p>Módulos, baterías y repuestos para reparaciones técnicas.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">DEP-04</span>
+              <h5>Reservado Web</h5>
+              <p>Mercadería abonada online lista para retiro o correo.</p>
+            </div>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Las 4 ubicaciones representan la distribución física real</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Las transferencias internas no alteran el saldo total</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 08: LABELS -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-labels" data-cat="inventario">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 08</span>
+            <h3 class="module-title">Generador e Impresión de Etiquetas & QR</h3>
+            <p class="module-summary">Emisión de etiquetas autoadhesivas con código de barras, IMEI, precios y QR para bolsas de taller.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Rotular la mercadería que llega de proveedores para que tenga el precio a la vista y pueda cobrarse escaneando el código de barras, además de generar etiquetas con código QR para pegar en la bolsa de los celulares dejados a reparar.
+            </p>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 30%;">Formato de Etiqueta</th>
+                <th>Información Impresa</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Etiquetas de Productos</strong></td>
+                <td>Nombre del artículo, código de barras escaneable, precio en efectivo y logo de NicTech.</td>
+              </tr>
+              <tr>
+                <td><strong>Etiquetas de Celulares Usados</strong></td>
+                <td>Marca, Modelo, Capacidad (GB), Salud de Batería (%), Número de IMEI/Serie y Garantía.</td>
+              </tr>
+              <tr>
+                <td><strong>Etiquetas de Taller</strong></td>
+                <td>Código NT-XXXX-X con código QR para consulta web del cliente y detalle de falla declarada.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Compatible con impresoras de etiquetas estándar</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La etiqueta de taller permite identificar de inmediato cada celular</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 09: PURCHASES -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-purchases" data-cat="comercial">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 09</span>
+            <h3 class="module-title">Compras a Proveedores & Recepción</h3>
+            <p class="module-summary">Órdenes de compra a distribuidores e importadores, mercadería en camino y actualización de costos.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Gestionar los pedidos de mercadería a mayoristas e importadores, controlando qué pedidos están viajando y sumando el stock automáticamente cuando el transporte entrega la caja en el local.
+            </p>
+          </div>
+
+          <div class="section-subtitle">Flujo de Uso</div>
+          <div class="steps-grid">
+            <div class="step-item">
+              <span class="step-num">01</span>
+              <h5>Creación de Orden</h5>
+              <p>Selección de productos y proveedor pactando moneda de compra (USD o ARS).</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">02</span>
+              <h5>En Tránsito</h5>
+              <p>Seguimiento de pedidos en camino con número de guía de flete.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">03</span>
+              <h5>Recepción & Control</h5>
+              <p>Conteo físico de las piezas e ingreso automático al depósito correspondiente.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">04</span>
+              <h5>Costeo & Pasivo</h5>
+              <p>Recálculo de costos promedio y asiento de deuda si la compra es a plazo.</p>
+            </div>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Permite registrar compras a importadores en dólares</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Al recibir mercadería se actualizan los costos al instante</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 10: CUSTOMERS -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-customers" data-cat="comercial">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 10</span>
+            <h3 class="module-title">Directorio 360° de Clientes</h3>
+            <p class="module-summary">Ficha completa de cada cliente con historial de compras, reparaciones de taller, saldos y WhatsApp directo.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Tener la información completa de cada cliente en un solo lugar: compras anteriores, qué celulares trajo al taller, si tiene crédito a favor por un plan canje o cuotas pendientes, con botón directo para chatear por WhatsApp sin agendar el número.
+            </p>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 30%;">Sección</th>
+                <th>Datos Disponibles</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Datos de Contacto</strong></td>
+                <td>Nombre completo, DNI/CUIT, Teléfono con enlace a WhatsApp, Dirección y Ciudad.</td>
+              </tr>
+              <tr>
+                <td><strong>Historial Comercial</strong></td>
+                <td>Detalle de todas las ventas de mostrador y pedidos web realizados históricamente.</td>
+              </tr>
+              <tr>
+                <td><strong>Historial de Taller</strong></td>
+                <td>Todas las órdenes de servicio técnico registradas, fallas previas y garantías vigentes.</td>
+              </tr>
+              <tr>
+                <td><strong>Cuenta Corriente</strong></td>
+                <td>Créditos a favor (ej: canje de usados) o saldos pendientes de pago en cuotas.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La búsqueda por DNI o celular es instantánea</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El botón de WhatsApp abre la conversación de forma directa</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 11: QUOTES -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-quotes" data-cat="comercial">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 11</span>
+            <h3 class="module-title">Presupuestos & Cotizaciones Formales</h3>
+            <p class="module-summary">Emisión de cotizaciones numeradas con validez temporal, envío en PDF/WhatsApp y conversión a venta en 1 click.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Emitir presupuestos formales para empresas o clientes que piden cotización previa, fijando un plazo de validez de 3 a 7 días para protegerse ante variaciones del dólar, y transformando el presupuesto en venta sin volver a cargar los productos.
+            </p>
+          </div>
+
+          <div class="section-subtitle">Flujo de Uso</div>
+          <div class="steps-grid">
+            <div class="step-item">
+              <span class="step-num">01</span>
+              <h5>Armado de Cotización</h5>
+              <p>Selección de productos y mano de obra fijando fecha límite de validez.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">02</span>
+              <h5>Envío Formal</h5>
+              <p>Generación de comprobante con código COT-2026-X y envío en PDF o WhatsApp.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">03</span>
+              <h5>Aceptación & Venta</h5>
+              <p>Al confirmar el cliente, un botón convierte el presupuesto en venta directa o taller.</p>
+            </div>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Los presupuestos vencidos quedan alertados en pantalla</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La conversión a venta ahorra tiempo de carga</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 12: REPAIRS -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-repairs" data-cat="taller">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 12</span>
+            <h3 class="module-title">Órdenes de Reparación & Taller Técnico</h3>
+            <p class="module-summary">Recepción de equipos, código de tracking público para clientes, 5 etapas de trabajo y notas privadas.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Controlar todo el flujo del taller de NicTech: recibir el equipo con sus accesorios y contraseña, entregar al cliente su código de 8 dígitos (ej: NT-8492-X) para que consulte en la web desde su casa, y descontar los repuestos que usa el técnico al reparar.
+            </p>
+          </div>
+
+          <div class="section-subtitle">5 Etapas de Reparación</div>
+          <div class="steps-grid">
+            <div class="step-item">
+              <span class="step-num">ET-01</span>
+              <h5>Recibido</h5>
+              <p>Recepción en local con registro de falla y accesorios.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">ET-02</span>
+              <h5>Diagnóstico</h5>
+              <p>Revisión técnica y elaboración del presupuesto.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">ET-03</span>
+              <h5>Esperando Piezas</h5>
+              <p>Espera en caso de requerir repuestos especiales.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">ET-04</span>
+              <h5>En Reparación</h5>
+              <p>Colocación de piezas descontadas del inventario.</p>
+            </div>
+            <div class="step-item">
+              <span class="step-num">ET-05</span>
+              <h5>Listo / Entregado</h5>
+              <p>Pruebas QC aprobadas, aviso por WhatsApp y entrega.</p>
+            </div>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El código de seguimiento NT-XXXX-X funciona 24hs en la web</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Las notas internas del técnico quedan ocultas al cliente</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El repuesto colocado se descuenta del inventario del taller</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 13: REPAIR TESTS -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-repair-tests" data-cat="taller">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 13</span>
+            <h3 class="module-title">Protocolos de Control de Calidad (QC)</h3>
+            <p class="module-summary">Checklist obligatorio de 10 puntos al recibir y entregar (Pantalla, Táctil, Cámaras, FaceID, Audio y Carga).</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Evitar reclamos injustificados: comprobar el estado de todas las funciones del celular tanto al recibirlo como antes de entregarlo reparado, dejando constancia de qué funcionaba y qué estaba dañado previamente.
+            </p>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 35%;">Punto de Control</th>
+                <th>Verificación Realizada</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Pantalla & Táctil</strong></td>
+                <td>Respuesta multitáctil en todos los bordes, brillo, TrueTone y ausencia de líneas.</td>
+              </tr>
+              <tr>
+                <td><strong>Cámaras & Sensores</strong></td>
+                <td>Enfoque de cámaras traseras y delantera, flash LED y funcionamiento de FaceID o Huella.</td>
+              </tr>
+              <tr>
+                <td><strong>Audio & Micrófonos</strong></td>
+                <td>Grabación de notas de voz, auricular de llamadas y parlante multimedia inferior.</td>
+              </tr>
+              <tr>
+                <td><strong>Carga & Batería</strong></td>
+                <td>Reconocimiento del puerto Lightning/USB-C, consumo de amperaje y porcentaje de salud.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El checklist evita reclamos por fallas ajenas a la reparación</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Queda asentado el técnico que aprobó la prueba final</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 14: WARRANTIES -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-warranties" data-cat="taller">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 14</span>
+            <h3 class="module-title">Pólizas de Garantía & Gestión RMA</h3>
+            <p class="module-summary">Emisión de pólizas de 90 días, reingresos sin cargo y devolución de repuestos fallados a proveedores.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Dar respaldo al cliente con su garantía por escrito y resolver rápido si un repuesto vino fallado de fábrica, gestionando la devolución al proveedor mayorista para que emita la nota de crédito respectiva.
+            </p>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La póliza identifica exactamente qué repuesto fue instalado</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El control de RMA facilita la devolución a los distribuidores</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 15: PC BUILDS -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-pc-builds" data-cat="taller">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 15</span>
+            <h3 class="module-title">Proyectos de Armado de PC a Medida</h3>
+            <p class="module-summary">Configurador completo (CPU, GPU, RAM, SSD, Mother, Fuente, Gabinete), reserva de piezas y pruebas de estrés.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Cotizar y ensamblar computadoras de alto rendimiento para gaming o empresas: reserva los componentes en el depósito mientras se arma la máquina, registra las pruebas térmicas de 24 horas y emite el certificado con los números de serie individuales de cada pieza.
+            </p>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Facilita cotizar configuraciones personalizadas en segundos</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Guarda los números de serie de micro, placa madre y placa de video</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 16: TRADE-INS -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-trade-ins" data-cat="taller">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 16</span>
+            <h3 class="module-title">Equipos Usados & Plan Canje (Trade-Ins)</h3>
+            <p class="module-summary">Toma de celulares en parte de pago, verificación de IMEI en ENACOM, reacondicionamiento y margen de reventa.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Tomar celulares usados con seguridad: verifica que el IMEI no tenga denuncia de robo en las listas de ENACOM, acredita el dinero para pagar parte del equipo nuevo y envía el teléfono a cuarentena técnica para cambiarle batería o pantalla antes de revenderlo.
+            </p>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 30%;">Control de Toma</th>
+                <th>Acción del Sistema</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Chequeo ENACOM / IMEI</strong></td>
+                <td>Comprueba el IMEI de 15 dígitos contra la base nacional para evitar problemas legales.</td>
+              </tr>
+              <tr>
+                <td><strong>Crédito Directo en Caja</strong></td>
+                <td>El valor tomado se aplica como medio de pago en el POS para rebajar la compra del nuevo.</td>
+              </tr>
+              <tr>
+                <td><strong>Costeo de Reacondicionamiento</strong></td>
+                <td>Suma el valor tomado + repuestos cambiados para calcular con exactitud la ganancia al revenderlo.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La verificación de IMEI protege al local de recibir equipos denunciados</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El saldo reconocido se descuenta automáticamente en el mostrador</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 17: FINANCING -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-accounts" data-cat="finanzas">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 17</span>
+            <h3 class="module-title">Financiación Propia & Venta en Cuotas</h3>
+            <p class="module-summary">Venta de celulares en cuotas de palabra sin tarjeta, cronograma de vencimientos y recibos de cobranza.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Facilitar que clientes de confianza compren celulares en cuotas con financiación propia: genera el plan de pago con anticipo e interés, avisa si hay cuotas vencidas y emite recibo cada vez que el cliente abona su cuota en mostrador.
+            </p>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>El cronograma permite ver rápido quién tiene cuotas atrasadas</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Al cobrar una cuota se emite recibo e ingresa el dinero a la caja</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 18: ACCOUNTING -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-accounting" data-cat="finanzas">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 18</span>
+            <h3 class="module-title">Contabilidad por Partida Doble & Libros</h3>
+            <p class="module-summary">Libro diario automático (Debe = Haber), balance de rentabilidad por rubro y exportación de reportes a Excel.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Llevar los números del negocio al día sin necesidad de ser contador: cada venta, compra o pago genera automáticamente su asiento cuadrado en el libro diario y permite conocer la ganancia neta mensual del local en un click.
+            </p>
+          </div>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Permite saber con exactitud cuánto dinero ganó el negocio en el mes</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Las planillas pueden descargarse a Excel con un solo click</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ========================================================================= -->
+      <!-- 19: DOCUMENTS & ARCA -->
+      <!-- ========================================================================= -->
+      <article class="module-card" id="mod-documents" data-cat="finanzas">
+        <div class="module-card-header">
+          <div class="module-header-left">
+            <span class="module-meta-tag">Módulo 19</span>
+            <h3 class="module-title">Facturación ARCA (AFIP), WhatsApp & RLS</h3>
+            <p class="module-summary">Comprobantes fiscales electrónicos con CAE oficial y código QR, WhatsApp integrado y auditoría inmutable.</p>
+          </div>
+          <span class="module-badge-ok">Operativo</span>
+        </div>
+        <div class="module-body">
+          <div class="purpose-box">
+            <div class="purpose-title">Función en el Negocio</div>
+            <p class="purpose-desc">
+              Cumplir con las obligaciones impositivas oficiales: emisión de facturas A, B y C electrónicas ante ARCA con CAE automático, WhatsApp unificado para enviar avisos y un libro de auditoría que registra cada cambio de precio o anulación para máxima seguridad.
+            </p>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 30%;">Pilar</th>
+                <th>Funcionamiento</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Facturación Electrónica ARCA</strong></td>
+                <td>Conexión con AFIP/ARCA para obtención automática de CAE y generación de código QR.</td>
+              </tr>
+              <tr>
+                <td><strong>WhatsApp Integrado</strong></td>
+                <td>Envío de avisos de "Equipo Listo" y presupuestos con un solo click.</td>
+              </tr>
+              <tr>
+                <td><strong>Seguridad por Roles (RLS)</strong></td>
+                <td>Los empleados sólo acceden a las secciones autorizadas para su función.</td>
+              </tr>
+              <tr>
+                <td><strong>Auditoría Inmutable SHA-256</strong></td>
+                <td>Cada movimiento crítico queda firmado con usuario, fecha, hora e IP.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="signoff-panel">
+            <div class="signoff-title">
+              <span>Validación del Módulo</span>
+              <span style="font-size: 11px; color: var(--text-muted); font-weight: normal;">Marca los puntos conformes</span>
+            </div>
+            <div class="signoff-grid">
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>La facturación electrónica cumple con la normativa oficial</span></label>
+              <label class="signoff-label"><input type="checkbox" checked onchange="toggleCheck(this)"> <span>Los datos sensibles de costos y ganancias quedan resguardados por rol</span></label>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </main>
+</div>
+
+<!-- STICKY BOTTOM BAR -->
+<div class="bottom-bar">
+  <span class="bottom-bar-text" id="counterText">0/19 Puntos Verificados</span>
+  <button class="bottom-bar-btn" onclick="exportWhatsApp()">
+    <span>WhatsApp</span>
+  </button>
+</div>
+
+<!-- SIDE FEEDBACK DRAWER -->
+<aside class="feedback-drawer" id="drawer">
+  <div class="drawer-header">
+    <h3 class="drawer-title">Observaciones del Cliente</h3>
+    <button onclick="toggleFeedback()" style="background:none; border:none; font-size:20px; color:var(--text-muted); cursor:pointer;">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div class="form-group">
+      <label class="form-label">Nombre del Revisor:</label>
+      <input type="text" id="clientName" class="form-input" value="Nicolás (NicTech)" />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Módulo:</label>
+      <select id="moduleSelect" class="form-input" style="cursor: pointer;">
+        <option value="General">General / Todo el Sistema</option>
+        <option value="01 Dashboard">01. Dashboard General</option>
+        <option value="02 POS">02. Punto de Venta (POS)</option>
+        <option value="03 Caja">03. Caja Diaria & Arqueos</option>
+        <option value="04 Pedidos Web">04. Pedidos Online Web</option>
+        <option value="05 Catálogo">05. Catálogo de Artículos</option>
+        <option value="06 Precios">06. Precios & Cotiz. Dólar</option>
+        <option value="07 Stock">07. Stock Multidepósito</option>
+        <option value="08 Etiquetas">08. Etiquetas & QR</option>
+        <option value="09 Compras">09. Compras a Proveedores</option>
+        <option value="10 Clientes">10. Directorio de Clientes</option>
+        <option value="11 Presupuestos">11. Presupuestos Formales</option>
+        <option value="12 Taller">12. Órdenes de Reparación</option>
+        <option value="13 Calidad QC">13. Control de Calidad (QC)</option>
+        <option value="14 Garantías">14. Garantías & Devoluciones</option>
+        <option value="15 Armados PC">15. Armados de PC a Medida</option>
+        <option value="16 Plan Canje">16. Usados & Plan Canje</option>
+        <option value="17 Cuotas">17. Financiación en Cuotas</option>
+        <option value="18 Contabilidad">18. Contabilidad & Libros</option>
+        <option value="19 Facturación ARCA">19. Facturación ARCA & RLS</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Comentarios o Ajustes:</label>
+      <textarea id="clientNotes" class="form-textarea" rows="6" placeholder="Escribí acá tus observaciones, consultas o cambios solicitados..."></textarea>
+    </div>
+
+    <div style="background: var(--bg-subtle); border: 1px solid var(--border-default); padding: 12px; border-radius: var(--radius-sm); font-size: 12px; color: var(--text-secondary);">
+      💡 Al hacer click en <strong>"Copiar para WhatsApp"</strong>, se genera un mensaje ordenado con tus puntos verificados y notas listo para enviar.
+    </div>
+  </div>
+  <div class="drawer-footer">
+    <button onclick="exportWhatsApp()" style="width:100%; background:var(--brand-blue); color:#fff; border:none; padding:10px; border-radius:var(--radius-sm); font-size:13px; font-weight:600; cursor:pointer;">
+      Copiar Resumen para WhatsApp
+    </button>
+  </div>
+</aside>
+
+<script>
+  function setLinkActive(el) {
+    document.querySelectorAll('.nav-link').forEach(item => item.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  function filterCategory(cat, btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const cards = document.querySelectorAll('.module-card');
+    cards.forEach(card => {
+      if (cat === 'all' || card.getAttribute('data-cat') === cat) {
+        card.style.display = 'block';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+  }
+
+  function filterModules() {
+    const q = document.getElementById('searchBar').value.toLowerCase();
+    const items = document.querySelectorAll('#sidebarList .nav-link');
+    const cards = document.querySelectorAll('.module-card');
+
+    items.forEach(item => {
+      const text = item.textContent.toLowerCase();
+      item.style.display = text.includes(q) ? 'flex' : 'none';
+    });
+
+    cards.forEach(card => {
+      const text = card.textContent.toLowerCase();
+      card.style.display = text.includes(q) ? 'block' : 'none';
+    });
+  }
+
+  function toggleFeedback() {
+    document.getElementById('drawer').classList.toggle('open');
+  }
+
+  function toggleCheck(cb) {
+    const parent = cb.parentElement;
+    if (cb.checked) {
+      parent.classList.remove('checked');
+    } else {
+      parent.classList.add('checked');
+    }
+    updateCounter();
+  }
+
+  function updateCounter() {
+    let checked = 0;
+    let total = 0;
+    document.querySelectorAll('.signoff-label input[type="checkbox"]').forEach(c => {
+      total++;
+      if (c.checked) checked++;
+    });
+    const el = document.getElementById('counterText');
+    if (el) {
+      el.innerText = checked + " de " + total + " Puntos Verificados";
+    }
+  }
+
+  function exportWhatsApp() {
+    const name = document.getElementById('clientName').value || 'Nicolás (NicTech)';
+    const mod = document.getElementById('moduleSelect').value;
+    const text = document.getElementById('clientNotes').value;
+
+    let checkedCount = 0;
+    let totalCount = 0;
+    document.querySelectorAll('.signoff-label input[type="checkbox"]').forEach(c => {
+      totalCount++;
+      if (c.checked) checkedCount++;
+    });
+
+    const msg = "*NicTech ERP - Revisión de " + name + "*\\n" +
+      "📌 *Módulo:* " + mod + "\\n" +
+      "✅ *Verificación:* " + checkedCount + " de " + totalCount + " puntos aprobados\\n\\n" +
+      "📝 *Observaciones:*\\n" + (text ? text : "Todo conforme y aprobado según el manual de módulos.") + "\\n\\n" +
+      "🚀 Enviado desde la Guía Interactiva NicTech ERP.";
+
+    navigator.clipboard.writeText(msg).then(() => {
+      alert("¡Resumen copiado con éxito! Ya podés pegarlo en el chat de WhatsApp.");
+    }).catch(() => {
+      alert("No se pudo copiar automáticamente. Por favor seleccioná el texto y copialo a mano.");
+    });
+  }
+
+  updateCounter();
+</script>
+
+</body>
+</html>`;
+
+const outPath1 = path.join(__dirname, "..", "guia-erp-nictech.html");
+const outPath2 = path.join(__dirname, "..", "docs", "guia-erp-nictech.html");
+
+fs.writeFileSync(outPath1, html, "utf8");
+fs.writeFileSync(outPath2, html, "utf8");
+console.log("Impeccable Product Guide built successfully at:", outPath1, "and", outPath2);
