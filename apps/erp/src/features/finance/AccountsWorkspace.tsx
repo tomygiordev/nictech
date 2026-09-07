@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleDollarSign, PlusCircle, CreditCard, AlertCircle } from "lucide-react";
+import { CircleDollarSign, PlusCircle, CreditCard, Users, Clock, AlertCircle } from "lucide-react";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   createFinancingContract,
@@ -9,20 +10,56 @@ import {
   recordReceivablePayment,
 } from "./api";
 import { financingSchema, receivablePaymentSchema, type FinancingInput, type ReceivablePaymentInput } from "./schemas";
-import { StatePanel, WorkspaceHeader } from "../../components/erp/WorkspaceUi";
+import { StatePanel, WorkspaceHeader, FeedbackAlert, KpiCard } from "../../components/erp/WorkspaceUi";
+import { formatCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
+
+const BRANCH_OPTIONS = [
+  { id: "dev-branch-0000", name: "Sucursal Central (Belgrano)" },
+  { id: "dev-branch-0001", name: "Depósito Central" },
+];
 
 export const AccountsWorkspace = () => {
   const { hasPermission } = useErpAuth();
   const queryClient = useQueryClient();
   const contractsQuery = useQuery({ queryKey: ["erp", "finance", "contracts"], queryFn: listFinancingContracts });
-  const createForm = useForm<FinancingInput>({ resolver: zodResolver(financingSchema) });
-  const paymentForm = useForm<ReceivablePaymentInput>({ resolver: zodResolver(receivablePaymentSchema) });
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const createForm = useForm<FinancingInput>({
+    resolver: zodResolver(financingSchema),
+    defaultValues: {
+      branchId: "dev-branch-0000",
+      customerId: "dev-cust-0001",
+      currency: "ARS",
+      principal: "250000",
+      downPayment: "50000",
+      interestRate: "0.05",
+      installmentsCount: 3,
+      firstDue: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10),
+      operationKey: generateIdempotencyKey("fin"),
+      reason: "Financiación de equipo en cuotas fijas",
+    },
+  });
+
+  const paymentForm = useForm<ReceivablePaymentInput>({
+    resolver: zodResolver(receivablePaymentSchema),
+    defaultValues: {
+      branchId: "dev-branch-0000",
+      contractId: "",
+      amount: "50000",
+      operationKey: generateIdempotencyKey("pay"),
+      reason: "Cobro de cuota presencial en mostrador",
+    },
+  });
 
   const createMutation = useMutation({
     mutationFn: createFinancingContract,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["erp", "finance", "contracts"] });
-      createForm.reset();
+      createForm.reset({
+        ...createForm.getValues(),
+        operationKey: generateIdempotencyKey("fin"),
+      });
+      setFeedback("¡Financiación creada y cuotas calculadas con éxito!");
     },
   });
 
@@ -30,27 +67,83 @@ export const AccountsWorkspace = () => {
     mutationFn: recordReceivablePayment,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["erp", "finance", "contracts"] });
-      paymentForm.reset();
+      paymentForm.reset({
+        ...paymentForm.getValues(),
+        operationKey: generateIdempotencyKey("pay"),
+      });
+      setFeedback("¡Cobro parcial registrado y saldo actualizado!");
     },
   });
 
   if (!hasPermission("accounts_receivable.view")) {
     return <div className="state-panel state-panel--error">No tenés permiso para ver cuentas corrientes.</div>;
   }
-  if (contractsQuery.isLoading) return <StatePanel type="loading" message="Cargando cuentas corrientes…" />;
-  if (contractsQuery.error) return <StatePanel type="error" title="Error al cargar cuentas" message={contractsQuery.error.message} />;
 
   const contracts = contractsQuery.data ?? [];
+  const totalPrincipal = contracts.reduce((acc, c) => acc + Number(c.principal_amount || 0), 0);
+  const totalFinanced = contracts.reduce((acc, c) => acc + Number(c.financed_amount || 0), 0);
+
+  const openPaymentForContract = (contractId: string) => {
+    paymentForm.setValue("contractId", contractId);
+    paymentForm.setValue("operationKey", generateIdempotencyKey("pay"));
+  };
 
   return (
-    <div>
+    <div className="flow-dashboard">
       <WorkspaceHeader
         title="Cuentas Corrientes & Financiaciones"
-        description="Planes de pago en cuotas, intereses pactados y cobros parciales a clientes."
-        badge={`${contracts.length} Contratos`}
+        description="Planes de pago en cuotas, intereses pactados, seguimiento de vencimientos y cobros parciales."
+        badge={`${contracts.length} Contratos Activos`}
       />
 
-      {contracts.length === 0 ? (
+      {feedback && (
+        <FeedbackAlert
+          type="success"
+          message={feedback}
+          onClose={() => setFeedback(null)}
+        />
+      )}
+
+      {/* KPI Summary */}
+      <div className="kpi-grid">
+        <KpiCard
+          icon={Users}
+          iconVariant="green"
+          label="Contratos Vigentes"
+          value={contracts.length}
+          sublabel="Planes de financiación en curso"
+        />
+
+        <KpiCard
+          icon={CircleDollarSign}
+          iconVariant="navy"
+          label="Total Financiado"
+          value={formatCurrency(totalFinanced, "ARS")}
+          sublabel="Monto pactado en cuotas"
+        />
+
+        <KpiCard
+          icon={CreditCard}
+          iconVariant="steel"
+          label="Capital Prestado"
+          value={formatCurrency(totalPrincipal, "ARS")}
+          sublabel="Principal inicial"
+        />
+
+        <KpiCard
+          icon={Clock}
+          iconVariant="dark"
+          label="Tasa Promedio Mensual"
+          value="5.0% TNA/TEM"
+          sublabel="Interés pactado de financiación"
+        />
+      </div>
+
+      {contractsQuery.isLoading ? (
+        <StatePanel type="loading" message="Cargando cuentas corrientes…" />
+      ) : contractsQuery.error ? (
+        <StatePanel type="error" title="Error al cargar cuentas" message={contractsQuery.error.message} />
+      ) : contracts.length === 0 ? (
         <StatePanel
           type="empty"
           title="Sin contratos registrados"
@@ -59,92 +152,204 @@ export const AccountsWorkspace = () => {
       ) : (
         <div className="records-grid">
           {contracts.map((contract) => (
-            <article className="record-card" key={contract.id}>
+            <article className="record-card flow-card" key={contract.id}>
               <div className="record-card__header">
-                <strong>{contract.contract_reference ?? contract.id.slice(0, 8)}</strong>
-                <span className="status-pill status-pill--mint">{contract.status} · {contract.currency_code}</span>
+                <div>
+                  <strong style={{ fontSize: "15px" }}>{contract.contract_reference ?? contract.id.slice(0, 8)}</strong>
+                  <span style={{ fontSize: "11px", color: "var(--text-muted)", display: "block" }}>
+                    Cliente #{contract.customer_id ? contract.customer_id.slice(0, 8) : "General"}
+                  </span>
+                </div>
+                <span className="flow-status-pill completed">{contract.status} · {contract.currency_code}</span>
               </div>
-              <dl className="record-card__metrics">
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", margin: "12px 0" }}>
                 <div>
-                  <dt>Principal</dt>
-                  <dd>${contract.principal_amount}</dd>
+                  <span className="stat-label">Principal</span>
+                  <strong style={{ fontSize: "13px", display: "block" }}>{formatCurrency(Number(contract.principal_amount), "ARS")}</strong>
                 </div>
                 <div>
-                  <dt>Financiado</dt>
-                  <dd>${contract.financed_amount}</dd>
+                  <span className="stat-label">Financiado</span>
+                  <strong style={{ fontSize: "13px", display: "block", color: "var(--brand-primary)" }}>
+                    {formatCurrency(Number(contract.financed_amount), "ARS")}
+                  </strong>
                 </div>
                 <div>
-                  <dt>Cuotas</dt>
-                  <dd>{contract.installment_count}</dd>
+                  <span className="stat-label">Cuotas</span>
+                  <strong style={{ fontSize: "13px", display: "block" }}>{contract.installment_count}</strong>
                 </div>
-              </dl>
+              </div>
+
               {contract.financing_installments?.length ? (
-                <ol className="installments-mini-list">
+                <ol className="installments-mini-list" style={{ listStyle: "none", padding: 0, margin: "0 0 14px", display: "flex", flexDirection: "column", gap: "6px" }}>
                   {contract.financing_installments.map((installment) => (
-                    <li key={installment.id}>
-                      <span>Cuota {installment.installment_number} ({installment.due_date})</span>
-                      <span className="status-pill status-pill--mint">{installment.status}</span>
+                    <li
+                      key={installment.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        padding: "6px 10px",
+                        background: "var(--surface-subtle)",
+                        borderRadius: "6px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      <span>
+                        <strong>Cuota {installment.installment_number}</strong> — Vence: {formatDate(installment.due_date)}
+                      </span>
+                      <span className={`type-badge ${installment.status === "paid" ? "green" : "orange"}`} style={{ fontSize: "10px" }}>
+                        {installment.status === "paid" ? "Pagada" : "Pendiente"}
+                      </span>
                     </li>
                   ))}
                 </ol>
               ) : null}
+
+              {hasPermission("accounts_receivable.manage") && (
+                <div style={{ borderTop: "1px solid var(--border-light)", paddingTop: "10px", display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="pag-btn"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--brand-primary)", borderColor: "var(--brand-border)" }}
+                    onClick={() => openPaymentForContract(contract.id)}
+                  >
+                    <CreditCard size={13} /> Registrar Cobro Parcial
+                  </button>
+                </div>
+              )}
             </article>
           ))}
         </div>
       )}
 
       {hasPermission("accounts_receivable.manage") && (
-        <div className="forms-grid">
-          {/* Nueva Financiación */}
-          <form className="erp-form" onSubmit={createForm.handleSubmit((values) => createMutation.mutate(values))}>
-            <div className="form-header">
-              <PlusCircle size={18} color="#16a34a" />
-              <h3>Nueva financiación</h3>
-            </div>
-            <div className="form-fields-grid">
-              <input placeholder="Sucursal UUID" {...createForm.register("branchId")} />
-              <input placeholder="Cliente UUID" {...createForm.register("customerId")} />
-              <input placeholder="Moneda (ARS/USD)" defaultValue="ARS" {...createForm.register("currency")} />
-              <input placeholder="Principal" {...createForm.register("principal")} />
-              <input placeholder="Anticipo" {...createForm.register("downPayment")} />
-              <input placeholder="Interés mensual" {...createForm.register("interestRate")} />
-              <input placeholder="Cuotas" type="number" {...createForm.register("installmentsCount")} />
-              <input placeholder="Primero vence (AAAA-MM-DD)" {...createForm.register("firstDue")} />
-              <input placeholder="Clave idempotencia" {...createForm.register("operationKey")} />
-              <input placeholder="Motivo" {...createForm.register("reason")} />
-            </div>
-            <button className="btn-primary-form" type="submit" disabled={createMutation.isPending}>
-              {createMutation.isPending ? "Procesando..." : "Crear financiación"}
-            </button>
-            {createMutation.error ? (
-              <div className="form-error-alert" role="alert">
-                <AlertCircle size={14} /> {createMutation.error.message}
+        <div className="forms-2col-grid">
+          {/* Form: Crear Financiación */}
+          <div className="flow-card" style={{ margin: 0 }}>
+            <div className="flow-card__header">
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <PlusCircle size={18} color="var(--brand-primary)" />
+                <h3 className="flow-card__title" style={{ margin: 0 }}>Crear nueva financiación</h3>
               </div>
-            ) : null}
-          </form>
+            </div>
 
-          {/* Cobro Parcial */}
-          <form className="erp-form" onSubmit={paymentForm.handleSubmit((values) => paymentMutation.mutate(values))}>
-            <div className="form-header">
-              <CreditCard size={18} color="#16a34a" />
-              <h3>Registrar cobro parcial</h3>
-            </div>
-            <div className="form-fields-grid">
-              <input placeholder="Sucursal UUID" {...paymentForm.register("branchId")} />
-              <input placeholder="Contrato UUID" {...paymentForm.register("contractId")} />
-              <input placeholder="Importe" {...paymentForm.register("amount")} />
-              <input placeholder="Clave idempotencia" {...paymentForm.register("operationKey")} />
-              <input placeholder="Motivo" {...paymentForm.register("reason")} />
-            </div>
-            <button className="btn-primary-form" type="submit" disabled={paymentMutation.isPending}>
-              {paymentMutation.isPending ? "Procesando..." : "Registrar cobro"}
-            </button>
-            {paymentMutation.error ? (
-              <div className="form-error-alert" role="alert">
-                <AlertCircle size={14} /> {paymentMutation.error.message}
+            <form onSubmit={createForm.handleSubmit((values) => createMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Sucursal</label>
+                  <select className="erp-form-select" {...createForm.register("branchId")}>
+                    {BRANCH_OPTIONS.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Moneda</label>
+                  <input className="erp-form-input" placeholder="Moneda (ARS/USD)" {...createForm.register("currency")} />
+                </div>
               </div>
-            ) : null}
-          </form>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Monto Principal ($)</label>
+                  <input className="erp-form-input" type="number" placeholder="250000" {...createForm.register("principal")} />
+                </div>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Anticipo ($)</label>
+                  <input className="erp-form-input" type="number" placeholder="50000" {...createForm.register("downPayment")} />
+                </div>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Interés Mensual</label>
+                  <input className="erp-form-input" placeholder="Interés mensual" {...createForm.register("interestRate")} />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Cantidad Cuotas</label>
+                  <input className="erp-form-input" type="number" min="1" max="24" {...createForm.register("installmentsCount", { valueAsNumber: true })} />
+                </div>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Primer Vencimiento</label>
+                  <input className="erp-form-input" type="date" {...createForm.register("firstDue")} />
+                </div>
+              </div>
+
+              <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                <label className="erp-form-label">Motivo / Concepto del Plan</label>
+                <input className="erp-form-input" placeholder="Financiación de equipo en cuotas fijas" {...createForm.register("reason")} />
+              </div>
+
+              {createMutation.error ? (
+                <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> {createMutation.error.message}
+                </div>
+              ) : null}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+                <button type="submit" className="btn-primary" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? "Generando Plan…" : "Crear financiación"}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Form: Registrar Cobro Parcial */}
+          <div className="flow-card" style={{ margin: 0 }}>
+            <div className="flow-card__header">
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <CreditCard size={18} color="var(--emerald-success)" />
+                <h3 className="flow-card__title" style={{ margin: 0 }}>Registrar cobro parcial</h3>
+              </div>
+            </div>
+
+            <form onSubmit={paymentForm.handleSubmit((values) => paymentMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div className="erp-form-group">
+                <label className="erp-form-label">Contrato de Financiación *</label>
+                <select className="erp-form-select" {...paymentForm.register("contractId")}>
+                  <option value="">Seleccioná un contrato</option>
+                  {contracts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.contract_reference || c.id.slice(0, 8)} — Financiado: {formatCurrency(Number(c.financed_amount), "ARS")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div className="erp-form-group">
+                  <label className="erp-form-label">Importe a Cobrar ($)</label>
+                  <input className="erp-form-input" type="number" placeholder="50000" {...paymentForm.register("amount")} />
+                </div>
+                <div className="erp-form-group">
+                  <label className="erp-form-label">Sucursal de Cobro</label>
+                  <select className="erp-form-select" {...paymentForm.register("branchId")}>
+                    {BRANCH_OPTIONS.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="erp-form-group">
+                <label className="erp-form-label">Concepto / Comprobante de Cobro</label>
+                <input className="erp-form-input" placeholder="Cobro cuota 1 en efectivo" {...paymentForm.register("reason")} />
+              </div>
+
+              {paymentMutation.error ? (
+                <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> {paymentMutation.error.message}
+                </div>
+              ) : null}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
+                <button type="submit" className="btn-primary" disabled={paymentMutation.isPending}>
+                  {paymentMutation.isPending ? "Registrando…" : "Registrar cobro"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
