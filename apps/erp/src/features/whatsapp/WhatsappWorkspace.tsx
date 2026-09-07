@@ -1,288 +1,713 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Search, Send, Phone, CheckCheck, ShieldCheck, UserCheck } from "lucide-react";
+import { WorkspaceHeader, StatePanel, FeedbackAlert } from "../../components/erp/WorkspaceUi";
+import { formatDateTime } from "../../lib/formatters";
 import {
-  Search,
-  Send,
-  Phone,
-  CheckCheck,
-} from "lucide-react";
-import { WorkspaceHeader } from "../../components/erp/WorkspaceUi";
+  assignConversation,
+  listConversationAssignments,
+  listConversationCustomers,
+  listConversationMessages,
+  listConversations,
+  listCustomerConsents,
+  listMessageEvents,
+  listMessageTemplateVersions,
+  listMessageTemplates,
+  queueMessage,
+  recordConsent,
+  type AssignmentRecord,
+  type CommunicationStatus,
+  type ConsentRecord,
+  type Conversation,
+  type ConversationCustomer,
+  type ConversationMessage,
+  type MessageEvent,
+  type MessageTemplate,
+  type MessageTemplateVersion,
+} from "./api";
 
-interface ChatMessage {
-  id: string;
-  sender: "customer" | "agent" | "system";
-  text: string;
-  timestamp: string;
-  status?: "sent" | "delivered" | "read";
+interface Feedback {
+  type: "success" | "error" | "info";
+  message: string;
 }
 
-interface ChatThread {
-  id: string;
-  customerName: string;
-  customerPhone: string;
-  lastMessage: string;
-  lastMessageTime: string;
-  unreadCount: number;
-  relatedEntityCode?: string;
-  consentOptIn: boolean;
-  messages: ChatMessage[];
-}
+const STATUS_LABEL: Record<CommunicationStatus, string> = {
+  queued: "En cola",
+  sent: "Enviado",
+  delivered: "Entregado",
+  read: "Leído",
+  failed: "Fallido",
+};
 
-const DEMO_THREADS: ChatThread[] = [
-  {
-    id: "th-1",
-    customerName: "Agustín Benítez",
-    customerPhone: "+54 9 11 4829-1029",
-    lastMessage: "Perfecto Tomás, confirmo el presupuesto del cambio de pantalla.",
-    lastMessageTime: "14:22",
-    unreadCount: 1,
-    relatedEntityCode: "NT-8492-X",
-    consentOptIn: true,
-    messages: [
-      { id: "m1", sender: "system", text: "🔧 NicTech Taller: Tu equipo iPhone 13 Pro ingresó a diagnóstico con tracking NT-8492-X.", timestamp: "28 Ago 14:30" },
-      { id: "m2", sender: "agent", text: "Hola Agustín, el técnico revisó tu iPhone. El presupuesto total por el cambio de módulo display OLED original es de $165.000 con 90 días de garantía. ¿Avanzamos con la reparación?", timestamp: "14:15", status: "read" },
-      { id: "m3", sender: "customer", text: "Perfecto Tomás, confirmo el presupuesto del cambio de pantalla.", timestamp: "14:22" },
-    ],
-  },
-  {
-    id: "th-2",
-    customerName: "Lucía Fernández",
-    customerPhone: "+54 9 11 5920-3341",
-    lastMessage: "¿Tienen cargadores originales Apple de 20W en stock?",
-    lastMessageTime: "12:10",
-    unreadCount: 0,
-    consentOptIn: true,
-    messages: [
-      { id: "m4", sender: "customer", text: "Hola! ¿Tienen cargadores originales Apple de 20W en stock?", timestamp: "12:10" },
-      { id: "m5", sender: "agent", text: "¡Hola Lucía! Sí, tenemos stock disponible en el local a $42.000 ARS. Podés pasar a retirarlo o coordinar envío por Moto.", timestamp: "12:14", status: "read" },
-    ],
-  },
-  {
-    id: "th-3",
-    customerName: "Martín Benítez",
-    customerPhone: "+54 9 11 3918-2940",
-    lastMessage: "📦 Tu pedido WEB-4421 fue despachado.",
-    lastMessageTime: "Ayer",
-    unreadCount: 0,
-    relatedEntityCode: "ORD-4421",
-    consentOptIn: true,
-    messages: [
-      { id: "m6", sender: "system", text: "📦 NicTech Store: Tu compra online #ORD-4421 fue aprobada y despachada por Correo Argentino. Código de seguimiento: 389201948.", timestamp: "Ayer 17:00" },
-    ],
-  },
-];
+const errorMessage = (err: unknown, fallback: string): string => {
+  if (err instanceof Error && err.message.trim() !== "") return err.message;
+  return fallback;
+};
 
-const TEMPLATES = [
-  { id: "t1", name: "Presupuesto Aprobación", text: "Hola {{nombre}}, tu {{equipo}} ya fue diagnosticado. El presupuesto total es de ${{monto}} ARS con garantía oficial de taller. ¿Confirmamos el trabajo?" },
-  { id: "t2", name: "Equipo Listo para Retiro", text: "¡Hola {{nombre}}! Te avisamos que tu equipo ya pasó las pruebas de control de calidad (QC) y está listo para retirar en el local. Saludos, NicTech." },
-  { id: "t3", name: "Pedido Despachado", text: "Hola {{nombre}}, tu orden #{{pedido}} fue empaquetada y entregada a la empresa de logística. Código de tracking: {{tracking}}." },
-];
+const digitsOnly = (value: string | null | undefined): string => (value ?? "").replace(/[^0-9]/g, "");
+
+const latestStatusOf = (events: MessageEvent[]): CommunicationStatus | null => {
+  if (events.length === 0) return null;
+  let latest = events[0];
+  for (const event of events) {
+    if (event.event_sequence > latest.event_sequence) latest = event;
+  }
+  return latest.status;
+};
 
 export const WhatsappWorkspace = () => {
-  const [selectedThread, setSelectedThread] = useState<ChatThread>(DEMO_THREADS[0]);
-  const [messageText, setMessageText] = useState<string>("");
-  const [search, setSearch] = useState<string>("");
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [customers, setCustomers] = useState<ConversationCustomer[]>([]);
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const handleSendMessage = () => {
-    if (!messageText.trim()) return;
-    const newMsg: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      sender: "agent",
-      text: messageText.trim(),
-      timestamp: "Ahora",
-      status: "sent",
-    };
-    setSelectedThread({
-      ...selectedThread,
-      messages: [...selectedThread.messages, newMsg],
-      lastMessage: newMsg.text,
-      lastMessageTime: "Ahora",
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [events, setEvents] = useState<MessageEvent[]>([]);
+  const [consents, setConsents] = useState<ConsentRecord[]>([]);
+  const [assignments, setAssignments] = useState<AssignmentRecord[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const [versions, setVersions] = useState<MessageTemplateVersion[]>([]);
+  const [templateId, setTemplateId] = useState("");
+  const [versionId, setVersionId] = useState("");
+  const [variableValues, setVariableValues] = useState<Record<string, string>>({});
+  const [recipient, setRecipient] = useState("");
+  const [queueReason, setQueueReason] = useState("");
+
+  const [consentGranted, setConsentGranted] = useState(true);
+  const [consentSource, setConsentSource] = useState("");
+  const [consentReason, setConsentReason] = useState("");
+
+  const [assigneeId, setAssigneeId] = useState("");
+  const [assignReason, setAssignReason] = useState("");
+
+  const customersById = useMemo(() => {
+    const map = new Map<string, ConversationCustomer>();
+    for (const customer of customers) map.set(customer.id, customer);
+    return map;
+  }, [customers]);
+
+  const eventsByMessage = useMemo(() => {
+    const map = new Map<string, MessageEvent[]>();
+    for (const event of events) {
+      const list = map.get(event.message_id) ?? [];
+      list.push(event);
+      map.set(event.message_id, list);
+    }
+    return map;
+  }, [events]);
+
+  const selectedConversation = useMemo(
+    () => conversations.find((c) => c.id === selectedId) ?? null,
+    [conversations, selectedId]
+  );
+
+  const selectedCustomer = useMemo(() => {
+    if (!selectedConversation?.customer_id) return null;
+    return customersById.get(selectedConversation.customer_id) ?? null;
+  }, [selectedConversation, customersById]);
+
+  const activeConsent = useMemo(() => {
+    if (consents.length === 0) return null;
+    return consents[0];
+  }, [consents]);
+
+  const hasActiveConsent = activeConsent?.granted === true;
+
+  const selectedVersion = useMemo(
+    () => versions.find((v) => v.id === versionId) ?? null,
+    [versions, versionId]
+  );
+
+  const filteredConversations = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter((c) => {
+      const customer = c.customer_id ? customersById.get(c.customer_id) : undefined;
+      const haystack = [customer?.display_name ?? "", customer?.phone ?? "", customer?.code ?? "", c.id]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
     });
-    setMessageText("");
+  }, [conversations, customersById, search]);
+
+  const loadInbox = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const rows = await listConversations();
+      setConversations(rows);
+      if (rows.length > 0) {
+        const customerIds = rows
+          .map((row) => row.customer_id)
+          .filter((id): id is string => id !== null);
+        setCustomers(await listConversationCustomers(customerIds));
+        setSelectedId((current) => current ?? rows[0].id);
+      } else {
+        setCustomers([]);
+        setSelectedId(null);
+      }
+      setTemplates(await listMessageTemplates());
+    } catch (err) {
+      setError(errorMessage(err, "No se pudo cargar la bandeja de WhatsApp."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadDetail = useCallback(async (conversation: Conversation) => {
+    setDetailLoading(true);
+    try {
+      const [msgs, consentRows, assignmentRows] = await Promise.all([
+        listConversationMessages(conversation.id),
+        conversation.customer_id ? listCustomerConsents(conversation.customer_id) : Promise.resolve([]),
+        listConversationAssignments(conversation.id),
+      ]);
+      setMessages(msgs);
+      setConsents(consentRows);
+      setAssignments(assignmentRows);
+      setEvents(await listMessageEvents(msgs.map((m) => m.id)));
+      const customer = conversation.customer_id
+        ? (await listConversationCustomers([conversation.customer_id]))[0]
+        : undefined;
+      setRecipient(customer?.phone ?? "");
+    } catch (err) {
+      setFeedback({ type: "error", message: errorMessage(err, "No se pudo cargar la conversación.") });
+      setMessages([]);
+      setEvents([]);
+      setConsents([]);
+      setAssignments([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadInbox();
+  }, [loadInbox]);
+
+  useEffect(() => {
+    if (!selectedConversation) return;
+    void loadDetail(selectedConversation);
+  }, [selectedConversation, loadDetail]);
+
+  const loadVersions = useCallback(async (targetTemplateId: string) => {
+    if (targetTemplateId === "") {
+      setVersions([]);
+      setVersionId("");
+      setVariableValues({});
+      return;
+    }
+    try {
+      const rows = await listMessageTemplateVersions(targetTemplateId);
+      setVersions(rows);
+      const latest = rows[0] ?? null;
+      setVersionId(latest?.id ?? "");
+      const initial: Record<string, string> = {};
+      for (const key of latest?.variable_keys ?? []) initial[key] = "";
+      setVariableValues(initial);
+    } catch (err) {
+      setFeedback({ type: "error", message: errorMessage(err, "No se pudieron cargar las versiones de la plantilla.") });
+      setVersions([]);
+      setVersionId("");
+      setVariableValues({});
+    }
+  }, []);
+
+  const handleSelectVersion = (targetVersionId: string) => {
+    setVersionId(targetVersionId);
+    const version = versions.find((v) => v.id === targetVersionId) ?? null;
+    const initial: Record<string, string> = {};
+    for (const key of version?.variable_keys ?? []) initial[key] = variableValues[key] ?? "";
+    setVariableValues(initial);
   };
 
-  const handleApplyTemplate = (tplText: string) => {
-    const replaced = tplText
-      .replace("{{nombre}}", selectedThread.customerName.split(" ")[0])
-      .replace("{{equipo}}", "equipo")
-      .replace("{{monto}}", "165.000")
-      .replace("{{pedido}}", selectedThread.relatedEntityCode || "WEB-001")
-      .replace("{{tracking}}", selectedThread.relatedEntityCode || "NT-001");
-    setMessageText(replaced);
+  const runAction = async (key: string, fn: () => Promise<string>, successPrefix: string) => {
+    if (busy) return;
+    setBusy(key);
+    setFeedback(null);
+    try {
+      const id = await fn();
+      setFeedback({ type: "success", message: `${successPrefix} Referencia: ${id}` });
+    } catch (err) {
+      setFeedback({ type: "error", message: errorMessage(err, "La operación no pudo completarse.") });
+    } finally {
+      setBusy(null);
+    }
   };
+
+  const handleRecordConsent = () => {
+    if (!selectedConversation) {
+      setFeedback({ type: "error", message: "Seleccioná una conversación para registrar el consentimiento." });
+      return;
+    }
+    if (!selectedConversation.customer_id) {
+      setFeedback({ type: "error", message: "La conversación no tiene cliente asociado." });
+      return;
+    }
+    const branchId = selectedConversation.branch_id;
+    const customerId = selectedConversation.customer_id;
+    void runAction("consent", async () => {
+      const id = await recordConsent({
+        branchId,
+        customerId,
+        granted: consentGranted,
+        source: consentSource,
+        reason: consentReason,
+      });
+      setConsents(await listCustomerConsents(customerId));
+      setConsentSource("");
+      setConsentReason("");
+      return id;
+    }, "Consentimiento registrado.");
+  };
+
+  const handleQueueMessage = () => {
+    if (!selectedConversation) {
+      setFeedback({ type: "error", message: "Seleccioná una conversación para encolar el mensaje." });
+      return;
+    }
+    if (!selectedConversation.customer_id) {
+      setFeedback({ type: "error", message: "La conversación no tiene cliente asociado." });
+      return;
+    }
+    if (!selectedVersion) {
+      setFeedback({ type: "error", message: "Seleccioná una plantilla y su versión." });
+      return;
+    }
+    if (!hasActiveConsent) {
+      setFeedback({
+        type: "error",
+        message: "El cliente no tiene consentimiento vigente de WhatsApp. Registralo antes de encolar.",
+      });
+      return;
+    }
+    const missing = selectedVersion.variable_keys.filter((key) => (variableValues[key] ?? "").trim() === "");
+    if (missing.length > 0) {
+      setFeedback({
+        type: "error",
+        message: `Completá las variables exactas de la plantilla: ${missing.join(", ")}.`,
+      });
+      return;
+    }
+    const variables: Record<string, string> = {};
+    for (const key of selectedVersion.variable_keys) variables[key] = variableValues[key].trim();
+    const branchId = selectedConversation.branch_id;
+    const customerId = selectedConversation.customer_id;
+    const conversationId = selectedConversation.id;
+    const templateVersionId = selectedVersion.id;
+    void runAction("queue", async () => {
+      const id = await queueMessage({
+        branchId,
+        customerId,
+        conversationId,
+        templateVersionId,
+        recipientAddress: recipient,
+        variables,
+        reason: queueReason,
+      });
+      const msgs = await listConversationMessages(conversationId);
+      setMessages(msgs);
+      setEvents(await listMessageEvents(msgs.map((m) => m.id)));
+      setQueueReason("");
+      return id;
+    }, "Mensaje encolado en estado queued. El envío lo procesa el worker de integración.");
+  };
+
+  const handleAssign = () => {
+    if (!selectedConversation) {
+      setFeedback({ type: "error", message: "Seleccioná una conversación para asignarla." });
+      return;
+    }
+    const conversationId = selectedConversation.id;
+    const userId = assigneeId.trim() === "" ? null : assigneeId.trim();
+    void runAction("assign", async () => {
+      const id = await assignConversation({ conversationId, userId, reason: assignReason });
+      setAssignments(await listConversationAssignments(conversationId));
+      setAssignReason("");
+      return id;
+    }, "Conversación asignada.");
+  };
+
+  if (loading) {
+    return (
+      <div className="flow-dashboard">
+        <WorkspaceHeader
+          title="WhatsApp Business & Comunicaciones"
+          description="Bandeja de mensajería con cola de salida persistida y consentimientos."
+          badge="Canal oficial"
+        />
+        <StatePanel type="loading" title="Cargando bandeja" message="Consultando conversaciones en Supabase…" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flow-dashboard">
+        <WorkspaceHeader
+          title="WhatsApp Business & Comunicaciones"
+          description="Bandeja de mensajería con cola de salida persistida y consentimientos."
+          badge="Canal oficial"
+        />
+        <StatePanel
+          type="error"
+          title="Error al cargar la bandeja"
+          message={error}
+          action={
+            <button type="button" className="btn-primary" onClick={() => void loadInbox()}>
+              Reintentar
+            </button>
+          }
+        />
+      </div>
+    );
+  }
+
+  const waDigits = digitsOnly(selectedCustomer?.phone ?? recipient);
 
   return (
     <div className="flow-dashboard">
-      <div style={{
-        marginBottom: "16px",
-        padding: "12px 16px",
-        background: "#eff6ff",
-        border: "1px solid #bfdbfe",
-        borderRadius: "8px",
-        color: "#1e40af",
-        fontSize: "13px"
-      }}>
-        <strong>[Módulo DEMO / Simulador - FASE E]:</strong> Este buzón es un prototipo interactivo de atención por mensajería. La cola de salida persistida y la integración con Meta WhatsApp Cloud API se implementan en FASE E.
-      </div>
       <WorkspaceHeader
-        title="WhatsApp Business & Comunicaciones Omnicanal"
-        description="Bandeja de mensajería para atención de clientes, envío de presupuestos, avisos automáticos de taller y seguimiento de pedidos."
-        badge="Simulador WhatsApp"
+        title="WhatsApp Business & Comunicaciones"
+        description="Bandeja real: conversaciones, consentimientos, plantillas versionadas y cola de salida. El estado de cada mensaje refleja communication_message_events; la integración con Meta WhatsApp Cloud API aún no está conectada, por lo que los mensajes quedan encolados sin simular envíos."
+        badge="Canal oficial"
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: "16px", height: "calc(100vh - 240px)", minHeight: "560px" }}>
-        {/* Left: Threads List */}
-        <div className="flow-card" style={{ display: "flex", flexDirection: "column", padding: "16px", margin: 0 }}>
-          <div className="flow-search-pill" style={{ width: "100%", marginBottom: "12px" }}>
-            <Search size={15} />
-            <input
-              type="text"
-              placeholder="Buscar conversación..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+      {feedback && (
+        <FeedbackAlert
+          type={feedback.type}
+          message={feedback.message}
+          onClose={() => setFeedback(null)}
+        />
+      )}
 
-          <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
-            {DEMO_THREADS.map((t) => {
-              const isSelected = selectedThread.id === t.id;
-              return (
-                <div
-                  key={t.id}
-                  onClick={() => setSelectedThread(t)}
-                  style={{
-                    padding: "12px",
-                    borderRadius: "10px",
-                    cursor: "pointer",
-                    background: isSelected ? "var(--brand-soft)" : "var(--surface-white)",
-                    border: isSelected ? "1px solid var(--brand-border)" : "1px solid var(--border-light)",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                    <strong style={{ fontSize: "13px", color: "var(--text-main)" }}>{t.customerName}</strong>
-                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{t.lastMessageTime}</span>
-                  </div>
-                  <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {t.lastMessage}
-                  </p>
-                  {t.relatedEntityCode && (
-                    <div style={{ marginTop: "6px", display: "flex", gap: "6px" }}>
-                      <span className="type-badge green" style={{ fontSize: "10px", padding: "1px 6px" }}>
-                        {t.relatedEntityCode}
+      <StatePanel
+        type="info"
+        title="Encolado real, sin simulación"
+        message="Encolar crea la conversación (si falta), el mensaje outbound y el evento queued más el pedido message.send.requested al outbox. Nada se marca como enviado, entregado o leído desde este workspace."
+      />
+
+      {conversations.length === 0 ? (
+        <StatePanel
+          type="empty"
+          title="Sin conversaciones"
+          message="Todavía no hay conversaciones de WhatsApp. Se crean al encolar el primer mensaje o al recibir un inbound del proveedor."
+        />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: "16px", minHeight: "560px" }}>
+          <div className="flow-card" style={{ display: "flex", flexDirection: "column", padding: "16px", margin: 0 }}>
+            <div className="flow-search-pill" style={{ width: "100%", marginBottom: "12px" }}>
+              <Search size={15} />
+              <input
+                type="text"
+                placeholder="Buscar por cliente o teléfono…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+              {filteredConversations.map((c) => {
+                const customer = c.customer_id ? customersById.get(c.customer_id) : undefined;
+                const isSelected = selectedId === c.id;
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => setSelectedId(c.id)}
+                    style={{
+                      padding: "12px",
+                      borderRadius: "10px",
+                      cursor: "pointer",
+                      background: isSelected ? "var(--brand-soft)" : "var(--surface-white)",
+                      border: isSelected ? "1px solid var(--brand-border)" : "1px solid var(--border-light)",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                      <strong style={{ fontSize: "13px", color: "var(--text-main)" }}>
+                        {customer?.display_name ?? "Cliente sin identificar"}
+                      </strong>
+                      <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                        {formatDateTime(c.opened_at)}
                       </span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right: Chat Box */}
-        <div className="flow-card" style={{ display: "flex", flexDirection: "column", padding: "0", margin: 0, overflow: "hidden" }}>
-          {/* Header */}
-          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-line)", background: "var(--canvas-bg)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800 }}>{selectedThread.customerName}</h3>
-              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{selectedThread.customerPhone}</span>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {selectedThread.consentOptIn && (
-                <span className="flow-status-pill completed" style={{ fontSize: "11px" }}>
-                  ✓ Opt-In Consentido
-                </span>
-              )}
-              <a
-                href={`https://wa.me/${selectedThread.customerPhone.replace(/[^0-9]/g, "")}`}
-                target="_blank"
-                rel="noreferrer"
-                className="pag-btn"
-                style={{ display: "inline-flex", alignItems: "center", gap: "6px", textDecoration: "none" }}
-              >
-                <Phone size={13} /> Abrir en WhatsApp Web
-              </a>
-            </div>
-          </div>
-
-          {/* Messages Area */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "20px", background: "var(--surface-subtle)", display: "flex", flexDirection: "column", gap: "12px" }}>
-            {selectedThread.messages.map((m) => {
-              const isMe = m.sender === "agent" || m.sender === "system";
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    alignSelf: isMe ? "flex-end" : "flex-start",
-                    maxWidth: "70%",
-                    background: isMe ? "var(--brand-soft)" : "var(--surface-white)",
-                    border: isMe ? "1px solid var(--brand-border)" : "1px solid var(--border-line)",
-                    borderRadius: "12px",
-                    padding: "10px 14px",
-                    boxShadow: "var(--shadow-sm)",
-                  }}
-                >
-                  {m.sender === "system" && (
-                    <span style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "var(--brand-primary)", textTransform: "uppercase", marginBottom: "2px" }}>
-                      🤖 Mensaje Automático
-                    </span>
-                  )}
-                  <p style={{ margin: 0, fontSize: "13px", color: "var(--text-main)", lineHeight: "1.4" }}>{m.text}</p>
-                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "4px", marginTop: "4px" }}>
-                    <span style={{ fontSize: "10px", color: "var(--text-light)" }}>{m.timestamp}</span>
-                    {m.status === "read" && <CheckCheck size={13} color="var(--brand-primary)" />}
-                    {m.status === "delivered" && <CheckCheck size={13} color="var(--text-light)" />}
+                    <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+                      {customer?.phone ?? "Sin teléfono"} · {c.closed_at ? "Cerrada" : "Abierta"}
+                    </p>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flow-card" style={{ display: "flex", flexDirection: "column", padding: "0", margin: 0, overflow: "hidden" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-line)", background: "var(--canvas-bg)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800 }}>
+                  {selectedCustomer?.display_name ?? "Conversación"}
+                </h3>
+                <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  {selectedCustomer?.phone ?? "Sin teléfono registrado"}
+                  {selectedConversation?.closed_at ? " · Cerrada" : " · Abierta"}
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {activeConsent ? (
+                  <span className="flow-status-pill completed" style={{ fontSize: "11px" }}>
+                    <ShieldCheck size={12} /> {activeConsent.granted ? "Opt-In vigente" : "Opt-Out vigente"}
+                  </span>
+                ) : (
+                  <span className="flow-status-pill cancelled" style={{ fontSize: "11px" }}>
+                    Sin consentimiento
+                  </span>
+                )}
+                {waDigits !== "" && (
+                  <a
+                    href={`https://wa.me/${waDigits}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="pag-btn"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", textDecoration: "none" }}
+                  >
+                    <Phone size={13} /> Abrir en WhatsApp Web
+                  </a>
+                )}
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: "20px", background: "var(--surface-subtle)", display: "flex", flexDirection: "column", gap: "12px", minHeight: "280px" }}>
+              {detailLoading ? (
+                <StatePanel type="loading" message="Cargando mensajes y eventos…" />
+              ) : messages.length === 0 ? (
+                <StatePanel
+                  type="empty"
+                  title="Sin mensajes"
+                  message="Esta conversación aún no tiene mensajes registrados."
+                />
+              ) : (
+                messages.map((m) => {
+                  const msgEvents = eventsByMessage.get(m.id) ?? [];
+                  const status = latestStatusOf(msgEvents);
+                  const isOutbound = m.direction === "outbound";
+                  return (
+                    <div
+                      key={m.id}
+                      style={{
+                        alignSelf: isOutbound ? "flex-end" : "flex-start",
+                        maxWidth: "70%",
+                        background: isOutbound ? "var(--brand-soft)" : "var(--surface-white)",
+                        border: isOutbound ? "1px solid var(--brand-border)" : "1px solid var(--border-line)",
+                        borderRadius: "12px",
+                        padding: "10px 14px",
+                        boxShadow: "var(--shadow-sm)",
+                      }}
+                    >
+                      <span style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "var(--brand-primary)", textTransform: "uppercase", marginBottom: "2px" }}>
+                        {isOutbound ? "Saliente" : "Entrante"}
+                      </span>
+                      <p style={{ margin: 0, fontSize: "13px", color: "var(--text-main)", lineHeight: "1.4" }}>{m.body_snapshot}</p>
+                      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "4px", marginTop: "4px" }}>
+                        <span style={{ fontSize: "10px", color: "var(--text-light)" }}>{formatDateTime(m.created_at)}</span>
+                        {status && (
+                          <span style={{ fontSize: "10px", color: "var(--text-muted)", display: "inline-flex", alignItems: "center", gap: "2px" }}>
+                            <CheckCheck size={13} /> {STATUS_LABEL[status]}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ padding: "16px 20px", background: "var(--canvas-bg)", borderTop: "1px solid var(--border-line)", display: "flex", flexDirection: "column", gap: "10px" }}>
+              <strong style={{ fontSize: "13px" }}>Redactar con plantilla real y encolar</strong>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  Plantilla
+                  <select
+                    className="erp-form-select"
+                    value={templateId}
+                    onChange={(e) => {
+                      setTemplateId(e.target.value);
+                      void loadVersions(e.target.value);
+                    }}
+                  >
+                    <option value="">Seleccionar…</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.code})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  Versión
+                  <select
+                    className="erp-form-select"
+                    value={versionId}
+                    onChange={(e) => handleSelectVersion(e.target.value)}
+                    disabled={versions.length === 0}
+                  >
+                    <option value="">Seleccionar…</option>
+                    {versions.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        v{v.version} · {v.language_code}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {selectedVersion && (
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)", whiteSpace: "pre-wrap" }}>
+                  {selectedVersion.body}
+                </p>
+              )}
+              {selectedVersion && selectedVersion.variable_keys.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  {selectedVersion.variable_keys.map((key) => (
+                    <label key={key} style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {key}
+                      <input
+                        type="text"
+                        className="erp-form-input"
+                        value={variableValues[key] ?? ""}
+                        onChange={(e) => setVariableValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                        placeholder={`Valor de ${key}`}
+                      />
+                    </label>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "10px" }}>
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  Destinatario
+                  <input
+                    type="text"
+                    className="erp-form-input"
+                    value={recipient}
+                    onChange={(e) => setRecipient(e.target.value)}
+                    placeholder="+54 9 …"
+                  />
+                </label>
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  Motivo (auditoría)
+                  <input
+                    type="text"
+                    className="erp-form-input"
+                    value={queueReason}
+                    onChange={(e) => setQueueReason(e.target.value)}
+                    placeholder="Ej.: aviso de presupuesto aprobado"
+                  />
+                </label>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleQueueMessage}
+                  disabled={busy !== null}
+                >
+                  <Send size={15} /> {busy === "queue" ? "Encolando…" : "Encolar mensaje"}
+                </button>
+              </div>
+            </div>
 
-          {/* Template Bar */}
-          <div style={{ padding: "8px 16px", background: "var(--canvas-bg)", borderTop: "1px solid var(--border-line)", display: "flex", alignItems: "center", gap: "8px", overflowX: "auto" }}>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>Plantillas:</span>
-            {TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.id}
-                type="button"
-                className="pag-btn"
-                style={{ fontSize: "11px", padding: "4px 8px" }}
-                onClick={() => handleApplyTemplate(tpl.text)}
-              >
-                {tpl.name}
-              </button>
-            ))}
-          </div>
-
-          {/* Input Box */}
-          <div style={{ padding: "12px 16px", background: "var(--surface-white)", borderTop: "1px solid var(--border-line)", display: "flex", alignItems: "center", gap: "10px" }}>
-            <input
-              type="text"
-              placeholder="Escribe un mensaje para el cliente..."
-              value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                border: "1px solid var(--border-line)",
-                borderRadius: "8px",
-                padding: "9px 14px",
-                fontSize: "13px",
-                outline: "none",
-                background: "var(--surface-subtle)",
-              }}
-            />
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={handleSendMessage}
-            >
-              <Send size={15} /> Enviar
-            </button>
+            <div style={{ padding: "16px 20px", background: "var(--surface-white)", borderTop: "1px solid var(--border-line)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <strong style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <ShieldCheck size={14} /> Consentimiento WhatsApp
+                </strong>
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  Estado
+                  <select
+                    className="erp-form-select"
+                    value={consentGranted ? "granted" : "revoked"}
+                    onChange={(e) => setConsentGranted(e.target.value === "granted")}
+                  >
+                    <option value="granted">Otorgado (opt-in)</option>
+                    <option value="revoked">Revocado (opt-out)</option>
+                  </select>
+                </label>
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  Origen
+                  <input
+                    type="text"
+                    className="erp-form-input"
+                    value={consentSource}
+                    onChange={(e) => setConsentSource(e.target.value)}
+                    placeholder="Ej.: mostrador, web, taller"
+                  />
+                </label>
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  Motivo (auditoría)
+                  <input
+                    type="text"
+                    className="erp-form-input"
+                    value={consentReason}
+                    onChange={(e) => setConsentReason(e.target.value)}
+                    placeholder="Ej.: cliente acepta avisos de taller"
+                  />
+                </label>
+                <div>
+                  <button
+                    type="button"
+                    className="pag-btn"
+                    onClick={handleRecordConsent}
+                    disabled={busy !== null}
+                  >
+                    {busy === "consent" ? "Registrando…" : "Registrar consentimiento"}
+                  </button>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <strong style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <UserCheck size={14} /> Asignación
+                </strong>
+                {assignments.length > 0 && (
+                  <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+                    Última: {assignments[0].assigned_user_id ?? "sin asignar"} · {formatDateTime(assignments[0].assigned_at)} · {assignments[0].reason}
+                  </p>
+                )}
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  ID de usuario (vacío = desasignar)
+                  <input
+                    type="text"
+                    className="erp-form-input"
+                    value={assigneeId}
+                    onChange={(e) => setAssigneeId(e.target.value)}
+                    placeholder="UUID del agente"
+                  />
+                </label>
+                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  Motivo (auditoría)
+                  <input
+                    type="text"
+                    className="erp-form-input"
+                    value={assignReason}
+                    onChange={(e) => setAssignReason(e.target.value)}
+                    placeholder="Ej.: deriva a ventas"
+                  />
+                </label>
+                <div>
+                  <button
+                    type="button"
+                    className="pag-btn"
+                    onClick={handleAssign}
+                    disabled={busy !== null}
+                  >
+                    {busy === "assign" ? "Asignando…" : "Asignar conversación"}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
