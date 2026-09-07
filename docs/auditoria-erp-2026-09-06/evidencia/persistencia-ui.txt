@@ -1,0 +1,132 @@
+apps/erp/src/features\integrations\IntegrationHealthWorkspace.tsx:47:  { name: "Supabase Edge Functions Runtime", category: "database", endpoint: "https://functions.supabase.co/v1/health", status: "healthy", latencyMs: 38, uptimePercent: 99.96, lastCheck: "Hace 12 seg" },
+apps/erp/src/features\integrations\IntegrationHealthWorkspace.tsx:50:const DEMO_OUTBOX: OutboxEvent[] = [
+apps/erp/src/features\integrations\IntegrationHealthWorkspace.tsx:58:  const [events, setEvents] = useState<OutboxEvent[]>(DEMO_OUTBOX);
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:20:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:42:const DEFAULT_PURCHASES: PurchaseOrder[] = [
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:48:const DEFAULT_SUPPLIERS: SupplierItem[] = [
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:66:    const saved = localStorage.getItem("erp_po_list_v1");
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:67:    return saved ? JSON.parse(saved) : DEFAULT_PURCHASES;
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:71:    const saved = localStorage.getItem("erp_suppliers_list_v1");
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:72:    return saved ? JSON.parse(saved) : DEFAULT_SUPPLIERS;
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:94:    localStorage.setItem("erp_po_list_v1", JSON.stringify(purchases));
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:98:    localStorage.setItem("erp_suppliers_list_v1", JSON.stringify(suppliers));
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:104:        const { data } = await supabase.from("dollar_settings").select("rate").limit(1).maybeSingle();
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:121:      id: `PO-${Math.floor(1000 + Math.random() * 9000)}`,
+apps/erp/src/features\purchases\PurchasesWorkspace.tsx:360:                          onClick={() => alert(`Ficha de Proveedor: ${sup.name} (CUIT ${sup.cuit})\nRubro: ${sup.category}\nCondición: ${sup.terms}\nContacto: ${sup.contact}`)}
+apps/erp/src/features\pos\PosWorkspace.tsx:22:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\pos\PosWorkspace.tsx:75:      const { data: dData } = await supabase.from("dollar_settings").select("rate").limit(1).maybeSingle();
+apps/erp/src/features\pos\PosWorkspace.tsx:80:      const { data: prodData, error: prodErr } = await supabase
+apps/erp/src/features\pos\PosWorkspace.tsx:81:        .from("products")
+apps/erp/src/features\pos\PosWorkspace.tsx:116:    return ["all", ...Array.from(new Set(products.map((p) => p.category)))];
+apps/erp/src/features\pos\PosWorkspace.tsx:178:      const ticketNum = `TK-${Math.floor(100000 + Math.random() * 900000)}`;
+apps/erp/src/features\pos\PosWorkspace.tsx:183:        await supabase
+apps/erp/src/features\pos\PosWorkspace.tsx:184:          .from("products")
+apps/erp/src/features\pos\PosWorkspace.tsx:188:        await supabase.from("inventory_movements").insert([
+apps/erp/src/features\pcbuilds\PcBuildsWorkspace.tsx:35:const DEFAULT_BUILDS: PcBuildItem[] = [
+apps/erp/src/features\pcbuilds\PcBuildsWorkspace.tsx:49:    const saved = localStorage.getItem("erp_pc_builds_v1");
+apps/erp/src/features\pcbuilds\PcBuildsWorkspace.tsx:50:    return saved ? JSON.parse(saved) : DEFAULT_BUILDS;
+apps/erp/src/features\pcbuilds\PcBuildsWorkspace.tsx:70:    localStorage.setItem("erp_pc_builds_v1", JSON.stringify(builds));
+apps/erp/src/features\pcbuilds\PcBuildsWorkspace.tsx:77:    const num = Math.floor(100 + Math.random() * 900);
+apps/erp/src/features\onlineorders\OnlineOrdersWorkspace.tsx:21:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\onlineorders\OnlineOrdersWorkspace.tsx:64:      const { data, error: dbErr } = await supabase
+apps/erp/src/features\onlineorders\OnlineOrdersWorkspace.tsx:65:        .from("orders")
+apps/erp/src/features\onlineorders\OnlineOrdersWorkspace.tsx:85:      const { error: updErr } = await supabase
+apps/erp/src/features\onlineorders\OnlineOrdersWorkspace.tsx:86:        .from("orders")
+apps/erp/src/features\finance\AccountingWorkspace.tsx:219:            <button type="button" className="pag-btn" style={{ justifyContent: "center", gap: "6px" }} onClick={() => alert("Descargando Libro IVA Ventas en formato oficial ARCA...")}>
+apps/erp/src/features\finance\AccountingWorkspace.tsx:234:            <button type="button" className="pag-btn" style={{ justifyContent: "center", gap: "6px" }} onClick={() => alert("Generando Balance de Sumas y Saldos en Excel...")}>
+apps/erp/src/features\finance\AccountingWorkspace.tsx:249:            <button type="button" className="pag-btn" style={{ justifyContent: "center", gap: "6px" }} onClick={() => alert("Descargando Estado de Resultados en PDF...")}>
+apps/erp/src/features\finance\AccountingWorkspace.tsx:264:            <button type="button" className="pag-btn" style={{ justifyContent: "center", gap: "6px" }} onClick={() => alert("Exportando rotación de inventario...")}>
+apps/erp/src/features\catalog\CatalogWorkspace.tsx:23:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\catalog\CatalogWorkspace.tsx:79:      const { data, error: dbErr } = await supabase
+apps/erp/src/features\catalog\CatalogWorkspace.tsx:80:        .from("products")
+apps/erp/src/features\catalog\CatalogWorkspace.tsx:103:    return ["all", ...Array.from(set)];
+apps/erp/src/features\catalog\CatalogWorkspace.tsx:136:      const { error: insErr } = await supabase.from("products").insert([
+apps/erp/src/features\catalog\CatalogWorkspace.tsx:179:      const { error: updErr } = await supabase
+apps/erp/src/features\catalog\CatalogWorkspace.tsx:180:        .from("products")
+apps/erp/src/features\stock\StockWorkspace.tsx:21:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\stock\StockWorkspace.tsx:66:      const { data: movData } = await supabase
+apps/erp/src/features\stock\StockWorkspace.tsx:67:        .from("inventory_movements")
+apps/erp/src/features\stock\StockWorkspace.tsx:75:      const { data: prodData } = await supabase
+apps/erp/src/features\stock\StockWorkspace.tsx:76:        .from("products")
+apps/erp/src/features\stock\StockWorkspace.tsx:111:      await supabase
+apps/erp/src/features\stock\StockWorkspace.tsx:112:        .from("products")
+apps/erp/src/features\stock\StockWorkspace.tsx:117:      await supabase.from("inventory_movements").insert([
+apps/erp/src/features\stock\StockWorkspace.tsx:463:              <button type="button" className="pag-btn" onClick={() => alert("Enviando lote de 50 etiquetas de Vidrios Templados a la impresora térmica...")}>
+apps/erp/src/features\stock\StockWorkspace.tsx:473:              <button type="button" className="pag-btn" onClick={() => alert("Enviando lote de 30 etiquetas de Cables a la impresora térmica...")}>
+apps/erp/src/features\stock\StockWorkspace.tsx:483:              <button type="button" className="pag-btn" onClick={() => alert("Enviando 25 rótulos de taller a la impresora térmica...")}>
+apps/erp/src/features\stock\StockWorkspace.tsx:493:              <button type="button" className="pag-btn" onClick={() => alert("Enviando etiquetas de pañol técnico...")}>
+apps/erp/src/features\documents\DocumentsWorkspace.tsx:35:const DEFAULT_DOCUMENTS: FiscalDocument[] = [
+apps/erp/src/features\documents\DocumentsWorkspace.tsx:110:    const saved = localStorage.getItem("erp_fiscal_docs_v1");
+apps/erp/src/features\documents\DocumentsWorkspace.tsx:111:    return saved ? JSON.parse(saved) : DEFAULT_DOCUMENTS;
+apps/erp/src/features\documents\DocumentsWorkspace.tsx:128:    localStorage.setItem("erp_fiscal_docs_v1", JSON.stringify(docs));
+apps/erp/src/features\documents\DocumentsWorkspace.tsx:135:    const num = Math.floor(100000 + Math.random() * 900000);
+apps/erp/src/features\documents\DocumentsWorkspace.tsx:137:    const cae = docType.startsWith("factura") ? `7439${Math.floor(1000000000 + Math.random() * 9000000000)}` : undefined;
+apps/erp/src/features\cash\CashWorkspace.tsx:16:const DEFAULT_SESSIONS: CashSession[] = [
+apps/erp/src/features\cash\CashWorkspace.tsx:30:    const saved = localStorage.getItem("erp_cash_sessions_v1");
+apps/erp/src/features\cash\CashWorkspace.tsx:31:    return saved ? JSON.parse(saved) : DEFAULT_SESSIONS;
+apps/erp/src/features\cash\CashWorkspace.tsx:41:    localStorage.setItem("erp_cash_sessions_v1", JSON.stringify(sessions));
+apps/erp/src/features\cash\CashWorkspace.tsx:47:      id: `CS-${Math.floor(100 + Math.random() * 900)}-2026`,
+apps/erp/src/features\quotes\QuotesWorkspace.tsx:20:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\quotes\QuotesWorkspace.tsx:34:const DEFAULT_QUOTES: QuoteItem[] = [
+apps/erp/src/features\quotes\QuotesWorkspace.tsx:42:    const saved = localStorage.getItem("erp_quotes_v1");
+apps/erp/src/features\quotes\QuotesWorkspace.tsx:44:      try { return JSON.parse(saved); } catch { return DEFAULT_QUOTES; }
+apps/erp/src/features\quotes\QuotesWorkspace.tsx:46:    return DEFAULT_QUOTES;
+apps/erp/src/features\quotes\QuotesWorkspace.tsx:64:    localStorage.setItem("erp_quotes_v1", JSON.stringify(quotes));
+apps/erp/src/features\quotes\QuotesWorkspace.tsx:70:        const { data } = await supabase.from("dollar_settings").select("rate").limit(1).maybeSingle();
+apps/erp/src/features\quotes\QuotesWorkspace.tsx:83:    const num = `COT-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
+apps/erp/src/features\system\SystemWorkspace.tsx:38:const DEFAULT_USERS: UserAccount[] = [
+apps/erp/src/features\system\SystemWorkspace.tsx:49:    const saved = localStorage.getItem("erp_users_list_v1");
+apps/erp/src/features\system\SystemWorkspace.tsx:50:    return saved ? JSON.parse(saved) : DEFAULT_USERS;
+apps/erp/src/features\system\SystemWorkspace.tsx:69:    localStorage.setItem("erp_users_list_v1", JSON.stringify(users));
+apps/erp/src/features\audit\AuditWorkspace.tsx:31:const DEMO_AUDIT_LOGS: AuditLogEntry[] = [
+apps/erp/src/features\audit\AuditWorkspace.tsx:44:    return DEMO_AUDIT_LOGS.filter((log) => {
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:34:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:111:      const { data, error: dbError } = await supabase
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:112:        .from("repairs")
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:135:      const { data, error: logError } = await supabase
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:136:        .from("repair_logs")
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:176:      const { data, error: insertError } = await supabase
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:177:        .from("repairs")
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:186:        await supabase.from("repair_logs").insert([
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:215:      const { error: updError } = await supabase
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:216:        .from("repairs")
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:222:      await supabase.from("repair_logs").insert([
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:245:      const { error: updError } = await supabase
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:246:        .from("repairs")
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:266:      const { error: logErr } = await supabase.from("repair_logs").insert([
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:842:const DEFAULT_QC: QcProtocol[] = [
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:878:    const saved = localStorage.getItem("erp_qc_protocols_v1");
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:879:    return saved ? JSON.parse(saved) : DEFAULT_QC;
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:893:    localStorage.setItem("erp_qc_protocols_v1", JSON.stringify(protocols));
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:908:      id: `QC-2026-${Math.floor(100 + Math.random() * 900)}`,
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:1011:                    onClick={() => alert(`Ficha de Control QC: ${p.id} para ${p.device}. Checklist: ${p.checks.map(c => c.name + ": " + c.status).join(", ")}`)}
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:1115:const DEFAULT_RMA: RmaClaim[] = [
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:1139:    const saved = localStorage.getItem("erp_rma_claims_v1");
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:1140:    return saved ? JSON.parse(saved) : DEFAULT_RMA;
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:1149:    localStorage.setItem("erp_rma_claims_v1", JSON.stringify(claims));
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:1157:      id: `RMA-2026-${Math.floor(100 + Math.random() * 900)}`,
+apps/erp/src/features\repairs\RepairsWorkspace.tsx:1260:                    onClick={() => alert(`Expediente RMA: ${c.id} - Orden ${c.repairOrderCode} (${c.customerName}). Defecto: ${c.itemDefect}`)}
+apps/erp/src/features\customers\CustomersWorkspace.tsx:37:const DEFAULT_CUSTOMERS: CustomerRecord[] = [
+apps/erp/src/features\customers\CustomersWorkspace.tsx:47:    const saved = localStorage.getItem("erp_customers_list_v1");
+apps/erp/src/features\customers\CustomersWorkspace.tsx:48:    return saved ? JSON.parse(saved) : DEFAULT_CUSTOMERS;
+apps/erp/src/features\customers\CustomersWorkspace.tsx:68:    localStorage.setItem("erp_customers_list_v1", JSON.stringify(customers));
+apps/erp/src/features\tradeins\TradeInsWorkspace.tsx:20:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\tradeins\TradeInsWorkspace.tsx:41:const DEFAULT_TRADE_INS: TradeInItem[] = [
+apps/erp/src/features\tradeins\TradeInsWorkspace.tsx:123:    const saved = localStorage.getItem("erp_trade_ins_v1");
+apps/erp/src/features\tradeins\TradeInsWorkspace.tsx:124:    return saved ? JSON.parse(saved) : DEFAULT_TRADE_INS;
+apps/erp/src/features\tradeins\TradeInsWorkspace.tsx:148:    localStorage.setItem("erp_trade_ins_v1", JSON.stringify(items));
+apps/erp/src/features\tradeins\TradeInsWorkspace.tsx:154:        const { data } = await supabase.from("dollar_settings").select("rate").limit(1).maybeSingle();
+apps/erp/src/features\tradeins\TradeInsWorkspace.tsx:167:    const num = Math.floor(1000 + Math.random() * 9000);
+apps/erp/src/features\tradeins\TradeInsWorkspace.tsx:178:      serialImei: serialImei.trim() || `35${Math.floor(1000000000000 + Math.random() * 9000000000000)}`,
+apps/erp/src/features\dashboard\DashboardOverview.tsx:30:import { supabase } from "../../lib/supabase";
+apps/erp/src/features\dashboard\DashboardOverview.tsx:366:      const { data: prodData } = await supabase
+apps/erp/src/features\dashboard\DashboardOverview.tsx:367:        .from("products")
+apps/erp/src/features\dashboard\DashboardOverview.tsx:376:      const { data: repData } = await supabase
+apps/erp/src/features\dashboard\DashboardOverview.tsx:377:        .from("repairs")
+apps/erp/src/features\dashboard\DashboardOverview.tsx:386:      const { data: ordData } = await supabase
+apps/erp/src/features\dashboard\DashboardOverview.tsx:387:        .from("orders")
+apps/erp/src/features\dashboard\DashboardOverview.tsx:394:      const { data: movData } = await supabase
+apps/erp/src/features\dashboard\DashboardOverview.tsx:395:        .from("inventory_movements")
+apps/erp/src/features\whatsapp\WhatsappWorkspace.tsx:30:const DEMO_THREADS: ChatThread[] = [
+apps/erp/src/features\whatsapp\WhatsappWorkspace.tsx:81:  const [selectedThread, setSelectedThread] = useState<ChatThread>(DEMO_THREADS[0]);
+apps/erp/src/features\whatsapp\WhatsappWorkspace.tsx:135:            {DEMO_THREADS.map((t) => {

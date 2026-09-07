@@ -1,0 +1,921 @@
+Sistema integral de gestión para Nictech
+Quiero desarrollar un sistema de gestión propio para Nictech, tomando como referencia las funciones de reparación de Samii y la gestión comercial, administrativa y financiera de Don Gestión, pero adaptado completamente al funcionamiento del negocio.
+El sistema debe centralizar productos, compras, stock, ventas, caja, pedidos online, reparaciones, presupuestos, clientes, armados de PC, equipos recibidos como parte de pago, facturación, WhatsApp, financiación, contabilidad e informes.
+1. Separación entre la página y el sistema
+La página web pública y el sistema de gestión deben ser aplicaciones diferenciadas.
+La página continuará destinada a los clientes y tendrá:
+Catálogo y tienda.
+Compra de productos.
+Seguimiento de reparaciones.
+Información pública de Nictech.
+El sistema será privado y podrá utilizar una dirección como:
+gestion.nictech.com.ar
+sistema.nictech.com.ar
+También puede existir en la página un botón “Iniciar sesión” que dirija al sistema, pero la gestión no debe formar parte del área pública.
+Ambas aplicaciones estarán conectadas mediante una API y utilizarán una fuente central de productos, precios, disponibilidad y operaciones. El acceso interno requerirá usuario, contraseña, permisos y sesiones seguras.
+2. Usuarios, roles y permisos
+Los permisos deben poder configurarse por rol y también individualmente.
+Se podrá autorizar o restringir:
+Ver costos.
+Ver ganancias.
+Consultar finanzas.
+Modificar precios.
+Aplicar descuentos.
+Registrar compras.
+Realizar ventas.
+Facturar.
+Anular operaciones.
+Abrir o cerrar caja.
+Ajustar stock.
+Transferir mercadería.
+Ver contraseñas de equipos.
+Acceder a fotografías y videos.
+Gestionar WhatsApp.
+Consultar informes.
+Dar financiación.
+Modificar configuraciones.
+Administrar usuarios.
+Las acciones deben guardar automáticamente usuario, fecha y hora. Cuando alguien realiza una revisión, recibe un equipo o cambia un estado, su nombre debe tomarse de la sesión iniciada y no escribirse manualmente.
+3. Auditoría
+Debe existir un historial completo de acciones, visible solamente para el administrador.
+La auditoría registrará:
+Creaciones y modificaciones.
+Cambios de estado.
+Cambios de precios o costos.
+Descuentos.
+Movimientos y ajustes de stock.
+Anulaciones.
+Eliminaciones.
+Cambios en fotografías o videos.
+Presupuestos enviados.
+Facturas emitidas.
+Pagos y devoluciones.
+Cambios de configuración.
+Usuario, fecha y hora.
+Los movimientos sensibles no deben eliminarse definitivamente. Se anularán o revertirán mediante otra operación para conservar la trazabilidad.
+4. Productos y servicios
+El sistema debe admitir:
+Accesorios.
+Celulares nuevos y usados.
+Computadoras, notebooks y tablets.
+Componentes.
+Repuestos.
+Insumos.
+Servicios.
+Mano de obra.
+Cada producto podrá tener:
+Nombre.
+Código interno.
+Código de barras.
+Categoría.
+Marca y modelo.
+Variante, color o capacidad.
+Descripción interna.
+Descripción para la web.
+Imagen interna.
+Imagen principal y galería web.
+Proveedor.
+Moneda y costo.
+Precio.
+Margen.
+Garantía.
+Stock mínimo.
+Estado.
+Impuestos.
+Fecha de ingreso.
+Se podrá configurar si el producto:
+Se vende.
+Se utiliza como repuesto.
+Se publica en la web.
+Admite venta online.
+Se muestra sin stock.
+Se oculta al agotarse.
+Permite consultar disponibilidad.
+Los servicios no tendrán stock y podrán tener precio fijo, precio sugerido o precio editable.
+5. Códigos de barras y etiquetas
+Un producto podrá tener simultáneamente:
+Código original del fabricante.
+Código interno de Nictech.
+Códigos adicionales.
+IMEI.
+Número de serie.
+Se podrá escanear o escribir el código original y, además, crear manualmente un código interno o pedirle al sistema que lo genere.
+Cualquiera de los códigos debe encontrar el mismo producto. El sistema debe impedir que un código quede asociado a dos productos diferentes.
+En productos controlados por cantidad, varios códigos pueden dirigir al mismo artículo. En celulares, notebooks y productos serializados, el código interno podrá identificar una unidad específica.
+El sistema generará códigos de barras imprimibles y permitirá diseñar etiquetas con:
+Logo.
+Nombre.
+Código.
+Precio.
+Variante.
+Color o capacidad.
+IMEI o número de serie.
+QR opcional.
+Se podrá configurar tamaño, contenido, cantidad, impresora y plantillas diferentes. También se podrán imprimir:
+Etiquetas individuales.
+Varias copias.
+Etiquetas de todos los productos de una compra.
+Únicamente productos sin etiquetar.
+Etiquetas actualizadas después de cambiar precios.
+Los códigos utilizados no deben reciclarse automáticamente.
+6. Stock central y ubicaciones
+Debe existir un inventario central con cantidades separadas por ubicación:
+Góndola o local.
+Depósito.
+Taller y repuestos.
+Reservado para reparación.
+Reservado para venta web.
+Garantías y devoluciones.
+Mercadería en tránsito.
+Una transferencia entre depósito y góndola no cambia el total. Debe generar un movimiento con producto, cantidad, origen, destino, usuario, fecha y motivo.
+El inventario admitirá:
+Control por cantidad para accesorios y repuestos.
+Control individual por IMEI para celulares.
+Control individual por número de serie para equipos.
+Servicios sin stock.
+Se debe diferenciar entre:
+Stock físico.
+Stock reservado.
+Stock disponible.
+Stock publicado en la web.
+Stock en reparación.
+Stock en tránsito.
+Los ajustes manuales requerirán motivo y permiso.
+7. Inventarios físicos
+Debe poder realizarse un conteo de stock por ubicación.
+El sistema permitirá:
+Escanear productos.
+Ingresar cantidades contadas.
+Compararlas con el saldo del sistema.
+Detectar faltantes y sobrantes.
+Revisar diferencias antes de ajustar.
+Generar un informe.
+Registrar quién realizó y aprobó el conteo.
+8. Compras y proveedores
+Se podrán registrar compras de accesorios, equipos, repuestos, componentes e insumos.
+Cada compra tendrá:
+Proveedor.
+Fecha.
+Comprobante.
+Productos.
+Cantidades.
+Moneda.
+Costo unitario.
+Cotización.
+Envío.
+Impuestos.
+Otros gastos.
+Medio de pago.
+Pago total, parcial o pendiente.
+Ubicación de ingreso.
+Al confirmar la recepción:
+Aumenta el stock.
+Se actualizan los costos.
+Se registra la deuda, si corresponde.
+Se distribuyen gastos adicionales.
+Se habilita la impresión de etiquetas.
+Se pueden sugerir precios de venta.
+Se actualiza la disponibilidad web cuando corresponda.
+También deben existir órdenes de compra y mercadería en tránsito.
+9. Multimoneda y cotizaciones
+El sistema trabajará como mínimo con ARS y USD.
+Un producto podrá:
+Comprarse y venderse en dólares.
+Comprarse en dólares y venderse en pesos.
+Tener precio fijo en pesos.
+Tener precio fijo en dólares.
+Convertirse a la cotización actual.
+Calcularse mediante costo más margen.
+El sistema debe obtener cotizaciones externas y permitir elegir:
+Oficial.
+Mayorista o A3500.
+Blue.
+MEP.
+CCL.
+Tarjeta.
+USDT.
+Cotización manual o propia de Nictech.
+Se podrán definir fórmulas como:
+“Cotización Nictech = blue venta + 1,5%”.
+Debe guardarse en cada operación:
+Moneda original.
+Fuente.
+Tipo de cotización.
+Valor utilizado.
+Fecha y hora.
+Una operación histórica no debe modificarse cuando cambie el dólar.
+Si la fuente falla, se utilizará el último valor válido, se mostrará una alerta y se permitirá cargar uno manualmente. Las actualizaciones masivas de precios deben mostrar una vista previa antes de aplicarse.
+10. Listas de precios y medios de pago
+Los productos podrán tener:
+Precio en efectivo.
+Precio por transferencia.
+Precio de lista.
+Precio web.
+Precio en dólares.
+Precio con débito.
+Precio con crédito.
+Precios según cantidad de cuotas.
+Los recargos, descuentos y comisiones serán configurables de forma general o por categoría, producto y medio de pago.
+Modificar manualmente un precio o aplicar un descuento dependerá de los permisos del usuario.
+11. Punto de venta
+El punto de venta debe ser rápido y estar preparado para trabajar con lector de códigos.
+Se podrá buscar por:
+Nombre.
+Categoría.
+Marca y modelo.
+Código original.
+Código interno.
+IMEI.
+Número de serie.
+Al encontrar el producto, mostrará:
+Imagen.
+Descripción.
+Stock total.
+Ubicación.
+Precios disponibles.
+Cuotas.
+Garantía.
+Información web.
+Desde esa pantalla se podrá agregar directamente a una venta.
+La venta permitirá:
+Seleccionar o crear cliente.
+Agregar productos, servicios y conceptos libres.
+Aplicar descuentos autorizados.
+Cobrar con uno o varios medios.
+Registrar pagos parciales.
+Identificar la unidad por IMEI o serie.
+Emitir factura o comprobante interno.
+Imprimir o enviar el documento.
+Descontar stock automáticamente.
+12. Caja diaria
+Cada jornada se podrá abrir caja indicando el efectivo inicial, incluso cero.
+Se registrarán:
+Ventas.
+Cobros de reparaciones.
+Señas.
+Cuotas.
+Ingresos.
+Gastos.
+Retiros.
+Devoluciones.
+Aportes.
+El sistema debe separar:
+Efectivo en pesos.
+Efectivo en dólares.
+Transferencias.
+Débito.
+Crédito.
+Mercado Pago.
+Otros medios configurados.
+Al cierre se informará:
+Saldo esperado.
+Dinero contado.
+Diferencia.
+Ventas.
+Gastos.
+Retiros.
+Totales por medio de pago.
+Una venta con tarjeta podrá quedar en “Tarjetas por acreditar” hasta que el dinero llegue a la cuenta correspondiente, registrando comisión y fecha de acreditación.
+13. Tienda online
+El sistema tendrá un módulo para administrar la tienda de la página.
+Desde allí se podrá:
+Publicar, pausar u ocultar productos.
+Crear borradores.
+Modificar títulos y descripciones.
+Elegir categorías.
+Configurar precios y descuentos.
+Administrar variantes.
+Destacar productos.
+Cargar imágenes y galerías.
+Definir qué ubicaciones aportan stock.
+Configurar el comportamiento con stock cero.
+Limitar unidades por compra.
+La imagen interna podrá ser diferente de la imagen principal y de la galería web.
+El stock de la página debe calcularse desde el sistema. El stock de repuestos no aparecerá salvo que se habilite expresamente para venta.
+14. Sincronización de stock con la página
+Si un producto se vende en el local:
+Se confirma la venta.
+Se descuenta del inventario.
+Se actualiza el stock web.
+Si llega a cero, se oculta, pausa o muestra agotado.
+Si alguien compra online:
+Se genera el pedido.
+Se reserva el stock.
+La disponibilidad web disminuye.
+Si se acredita el pago, la reserva se convierte en venta.
+Si el pedido vence o se cancela, el stock se libera.
+La sincronización debe registrar errores y reintentar. El sistema debe mostrar si un producto no pudo actualizarse en la página.
+15. Pedidos online
+Cada pedido web generará una notificación interna y aparecerá en una bandeja.
+Mostrará:
+Número.
+Cliente.
+Productos.
+Total.
+Cotización.
+Pago.
+Facturación.
+Entrega.
+Stock reservado.
+Fecha.
+Se manejarán por separado:
+Estado del pedido
+Nuevo.
+Confirmado.
+En preparación.
+Listo.
+Despachado.
+Entregado.
+Cancelado.
+Devuelto.
+Estado del pago
+Pendiente.
+En revisión.
+Acreditado.
+Pago parcial.
+Rechazado.
+Vencido.
+Reembolsado.
+Estado de entrega
+Retiro en el local.
+Listo para retirar.
+Pendiente de despacho.
+Despachado.
+Entregado.
+No retirado.
+Devuelto.
+Desde la ficha se podrá confirmar, asignar stock, preparar, facturar, imprimir, avisar al cliente, despachar, entregar, cancelar, devolver o reembolsar.
+16. Clientes
+Cada cliente tendrá una ficha con:
+Datos personales y contacto.
+DNI.
+Direcciones.
+Preferencias de comunicación.
+Autorización para notificaciones.
+Compras.
+Pedidos web.
+Equipos.
+Reparaciones.
+Presupuestos.
+Garantías.
+Pagos.
+Deudas.
+Cuotas.
+Mensajes.
+Documentos.
+Los datos sensibles deben estar protegidos por permisos.
+17. Órdenes de reparación
+Debe haber órdenes para celulares, tablets, computadoras, notebooks y otros equipos configurables.
+Cada orden tendrá:
+Número.
+Código de seguimiento.
+Cliente.
+Equipo.
+Marca y modelo.
+IMEI o serie.
+Contraseña o patrón protegido.
+Falla informada.
+Estado físico.
+Accesorios recibidos.
+Fotos y videos.
+Técnico asignado.
+Diagnóstico.
+Presupuesto.
+Aprobación o rechazo.
+Repuestos.
+Mano de obra.
+Pagos y señas.
+Pruebas finales.
+Garantía.
+Firma de ingreso y entrega.
+Estados configurables:
+Recibido.
+En diagnóstico.
+Esperando aprobación.
+Esperando repuesto.
+En reparación.
+En prueba.
+Listo para retirar.
+Entregado.
+Cancelado.
+En garantía.
+Los repuestos utilizados se descontarán del stock y se incorporarán al costo real de la reparación.
+18. Pruebas de ingreso
+Las órdenes tendrán pruebas básicas opcionales que podrán completarse al recibir el equipo o posteriormente por el técnico.
+Cada prueba se marcará como:
+Funciona.
+No funciona.
+No se pudo probar.
+No corresponde.
+Pendiente.
+Para celulares y tablets podrán incluir:
+Encendido.
+Imagen.
+Táctil.
+Carga.
+Botones.
+Cámaras.
+Parlante.
+Micrófono.
+Wi-Fi.
+SIM.
+Biometría.
+Batería.
+Daños visibles.
+Humedad.
+Para computadoras:
+Encendido.
+Imagen.
+Inicio del sistema.
+Teclado.
+Touchpad.
+Cargador.
+Batería.
+USB y otros puertos.
+Wi-Fi.
+Sonido.
+Pantalla.
+Temperatura o ruidos.
+Daños visibles.
+Se podrán agregar pruebas personalizadas. El usuario, fecha y hora se registrarán automáticamente.
+19. Fotos y videos mediante QR
+Desde una orden podrá generarse un QR temporal para cargar archivos desde un celular.
+Al escanearlo se abrirá una página limitada a:
+Tomar fotografías.
+Grabar videos.
+Seleccionar archivos existentes.
+Agregar descripciones.
+Cargar archivos directamente en la orden.
+No mostrará datos privados y expirará después de un tiempo configurable.
+Los archivos se clasificarán como:
+Ingreso.
+Accesorios recibidos.
+Reparación.
+Finalización.
+Garantía.
+Los empleados podrán cargar y ver. Solamente el administrador podrá reclasificar, ocultar o eliminar. Los originales no se sustituirán silenciosamente y toda intervención quedará auditada.
+20. Etiquetas para reparaciones
+Cada orden generará:
+Número como NT-2026-00125.
+Código de barras.
+QR interno.
+Código seguro de seguimiento.
+Se podrá imprimir una etiqueta para el equipo o su bolsa con:
+Número de orden.
+Equipo.
+Cliente abreviado.
+Fecha.
+Código de barras.
+QR.
+El técnico podrá escanearla para abrir la orden dentro del sistema, siempre con una sesión autorizada.
+21. Seguimiento web
+Las órdenes deben estar vinculadas al apartado de seguimiento existente en la página.
+El cliente podrá consultar mediante:
+Número de orden y DNI.
+Código seguro.
+QR.
+La página podrá mostrar:
+Equipo.
+Estado.
+Fecha de ingreso.
+Última actualización.
+Presupuesto.
+Aprobación o rechazo.
+Aviso de equipo listo.
+Garantía.
+No debe mostrar:
+Contraseñas.
+Costos.
+Ganancias.
+Notas internas.
+Proveedores.
+Historial de auditoría.
+Archivos privados.
+Información de otros clientes.
+22. Presupuestos
+Se podrán crear presupuestos para ventas, reparaciones y armados de PC.
+Cada renglón podrá ser:
+Producto del inventario.
+Servicio guardado con precio editable.
+Concepto libre.
+Podrá contener:
+Descripción.
+Cantidad.
+Precio.
+Descuento.
+Impuestos.
+Garantía.
+Observaciones.
+Costo interno opcional.
+Los presupuestos tendrán estados como borrador, enviado, aprobado, rechazado o vencido.
+Si se modifica uno enviado, se creará una versión nueva conservando la anterior.
+23. Armado de PC
+Debe existir un módulo específico para proyectos de armado.
+Se registrará:
+Cliente.
+Presupuesto aproximado.
+Requisitos.
+Preferencias.
+Observaciones.
+Uso previsto.
+Usos configurables:
+Oficina.
+Gaming.
+Diseño.
+Edición.
+Streaming.
+Programación.
+Personalizado.
+No será obligatorio seleccionar componentes al crear el proyecto.
+Estados posibles:
+Consulta.
+Borrador.
+Presupuestado.
+Enviado.
+Aprobado.
+Rechazado.
+Componentes reservados.
+En armado.
+En prueba.
+Listo.
+Entregado.
+Cuando corresponda, se elegirán componentes disponibles. El sistema podrá revisar compatibilidades básicas y reservarlos manualmente o al aprobarse el presupuesto.
+Al finalizar se creará un equipo completo vinculado al cliente, conservando:
+Componentes.
+Números de serie.
+Costos.
+Pruebas.
+Sistema instalado.
+Garantías.
+Historial posterior.
+24. Equipos recibidos como parte de pago
+Cuando se tome un celular, tablet, computadora, notebook u otro equipo como parte de pago, se creará una ficha específica.
+La operación quedará vinculada con:
+Cliente que entrega el equipo.
+Producto que compra.
+Venta.
+Valor reconocido.
+Diferencia pendiente.
+Forma de pago.
+Usuario.
+Fecha y hora.
+La ficha del equipo incluirá:
+Tipo.
+Marca y modelo.
+Color y capacidad.
+IMEI o serie.
+Código interno.
+Estado de batería.
+Estado físico.
+Accesorios.
+Reparaciones anteriores conocidas.
+Fallas.
+Observaciones.
+Valor estimado.
+Valor aceptado.
+Costo previsto de reacondicionamiento.
+Precio estimado de reventa.
+Margen esperado.
+Se realizará una revisión con pruebas configurables y se podrán adjuntar fotos y videos, directamente o mediante QR.
+También se guardarán datos de procedencia:
+Nombre y apellido.
+DNI.
+Teléfono.
+Domicilio, si se requiere.
+Declaración de propiedad.
+Firma.
+Documentación configurada.
+Para celulares, el IMEI físico debe compararse con el mostrado por el sistema y verificarse antes de aprobar la toma.
+Estados posibles:
+Pendiente de revisión.
+En evaluación.
+Aceptado.
+Rechazado.
+Pendiente de reacondicionamiento.
+En reparación.
+Listo para publicar.
+Disponible.
+Reservado.
+Vendido.
+Bloqueado por irregularidad.
+El equipo no entrará automáticamente al stock vendible hasta completar la revisión y recibir aprobación.
+Su costo real incluirá:
+Valor reconocido.
+Repuestos.
+Mano de obra.
+Limpieza.
+Accesorios agregados.
+Otros gastos.
+25. Verificación de IMEI
+Debe existir un módulo para ingresar o escanear un IMEI y verificar su estado mediante ENACOM o un proveedor autorizado.
+Se utilizará al:
+Recibir un celular para reparación.
+Comprar un usado.
+Tomarlo como parte de pago.
+Darlo de alta para la venta.
+Venderlo.
+Si no existe una API autorizada, el sistema admitirá:
+Consulta asistida en ENACOM.
+Registro manual del resultado.
+Carga de evidencia.
+Integración futura con otro proveedor.
+Se guardará:
+IMEI.
+Resultado.
+Fuente.
+Fecha y hora.
+Usuario.
+Equipo relacionado.
+Evidencia.
+Un IMEI bloqueado, inválido o inconsistente no podrá ingresar normalmente al stock vendible y generará una alerta administrativa.
+26. Facturas, recibos y documentos
+El sistema debe generar:
+Factura electrónica vinculada con ARCA.
+Recibo o comprobante interno.
+Presupuesto.
+Comprobante de recepción.
+Orden de reparación.
+Informe de reparación.
+Recibo de seña.
+Recibo de pago parcial.
+Orden de armado.
+Ficha técnica.
+Certificado de garantía.
+Constancia de ingreso por garantía.
+Comprobante de toma como parte de pago.
+Todos podrán:
+Imprimirse.
+Guardarse como PDF.
+Enviarse por WhatsApp.
+Enviarse por correo.
+Guardarse en el historial del cliente.
+Una operación podrá tener varios documentos relacionados.
+La información interna será diferente de la destinada al cliente. Los documentos del cliente no mostrarán costos, ganancias, notas privadas, contraseñas ni auditoría.
+La emisión fiscal será opcional dentro del flujo: se podrá emitir factura mediante ARCA o comprobante interno, según la operación y los permisos correspondientes.
+27. Garantías y devoluciones
+Las ventas, reparaciones y armados podrán generar garantías.
+Se registrará:
+Tipo de garantía.
+Fecha de inicio.
+Duración.
+Cobertura.
+Exclusiones.
+Producto, equipo o reparación relacionada.
+Cliente.
+Número de serie o IMEI.
+Estado.
+Si un equipo regresa, se abrirá un ingreso por garantía vinculado con la operación original, conservando pruebas, fotos, diagnóstico y resolución.
+28. WhatsApp integrado
+WhatsApp debe integrarse mediante la API oficial.
+El sistema tendrá una bandeja para:
+Leer y responder conversaciones.
+Enviar textos.
+Enviar imágenes y videos.
+Enviar presupuestos y documentos.
+Abrir el cliente, pedido u orden relacionada.
+Usar respuestas rápidas.
+Consultar estados de entrega y lectura.
+Asignar conversaciones.
+Las automatizaciones podrán configurarse como:
+Automáticas.
+Automáticas con confirmación.
+Manuales.
+Desactivadas.
+Eventos posibles:
+Orden recibida.
+Presupuesto disponible.
+Presupuesto aprobado o rechazado.
+Esperando repuesto.
+Cambio de estado.
+Equipo listo para retirar.
+Recordatorio de retiro.
+Equipo entregado.
+Garantía registrada.
+Pedido online.
+Pedido listo.
+Cuota próxima a vencer.
+Cuota vencida.
+Cuando una reparación pase a “Lista para retirar”, el sistema podrá actualizar el seguimiento web, enviar el mensaje y registrar el resultado.
+29. Financiación propia y cuentas corrientes
+Debe existir una función configurable para ventas en cuotas “de palabra”, sin tarjeta.
+Se podrá registrar:
+Cliente.
+Anticipo.
+Saldo.
+Cantidad de cuotas.
+Valor de cada cuota.
+Vencimientos.
+Interés o recargo.
+Moneda.
+Condiciones.
+Contrato.
+Pagos parciales.
+Estados:
+Al día.
+Próxima a vencer.
+Vencida.
+Pagada parcialmente.
+Refinanciada.
+Cancelada.
+Incobrable.
+Al cobrar una cuota se emitirá un recibo y se actualizarán la cuenta del cliente, la caja y la contabilidad.
+La función podrá estar desactivada, limitada al administrador o disponible para usuarios autorizados. También podrá bloquear nuevas financiaciones a clientes con vencimientos.
+30. Gestión financiera y contabilidad
+La parte financiera debe utilizar un plan de cuentas y contabilidad por partida doble.
+Las ventas, compras, cobros, pagos, stock, impuestos y anulaciones generarán automáticamente sus movimientos relacionados.
+Debe controlar:
+Activos
+Caja en pesos.
+Caja en dólares.
+Bancos.
+Billeteras.
+Tarjetas por acreditar.
+Cuentas por cobrar.
+Mercadería.
+Repuestos.
+Equipos usados.
+Otros bienes.
+Pasivos
+Proveedores.
+Préstamos.
+Impuestos.
+Otras deudas.
+Resultados
+Ventas.
+Ingresos por reparaciones.
+Ingresos por armados.
+Costo de ventas.
+Gastos operativos.
+Comisiones.
+Impuestos.
+Diferencias de cambio.
+Patrimonio
+Capital.
+Aportes.
+Retiros.
+Resultados acumulados.
+Los asientos se generarán automáticamente. Los ajustes manuales requerirán permiso, motivo y auditoría.
+31. Costos y rentabilidad
+El costo real debe contemplar:
+Precio de compra.
+Cotización.
+Envío.
+Impuestos.
+Comisión.
+Repuestos.
+Mano de obra.
+Gastos asignados.
+Diferencias de cambio.
+Para accesorios y repuestos se podrá utilizar costo promedio ponderado.
+Para celulares, computadoras y unidades serializadas se conservará el costo específico de cada unidad.
+El sistema calculará:
+Ganancia bruta.
+Ganancia neta estimada.
+Margen sobre venta.
+Margen sobre costo.
+Rentabilidad por producto.
+Rentabilidad por categoría.
+Rentabilidad por reparación.
+Rentabilidad por armado.
+Rentabilidad por canal.
+Rentabilidad por medio de pago.
+32. Dashboard
+El administrador verá un dashboard principal con información relevante para decidir:
+Operación
+Ventas de hoy y del mes.
+Pedidos nuevos.
+Reparaciones pendientes.
+Equipos demorados.
+Equipos listos sin retirar.
+Presupuestos pendientes.
+Garantías abiertas.
+Finanzas
+Ganancia bruta.
+Resultado neto estimado.
+Margen promedio.
+Gastos.
+Saldos por cuenta y moneda.
+Cuentas por cobrar.
+Cuotas vencidas.
+Deudas.
+Próximos vencimientos.
+Flujo proyectado a 7, 30 y 90 días.
+Punto de equilibrio.
+Inventario
+Valor del stock al costo.
+Capital inmovilizado.
+Productos más vendidos.
+Productos más rentables.
+Baja rotación.
+Sobrestock.
+Faltantes.
+Riesgo de agotarse.
+Diferencias de inventario.
+El dashboard será configurable y cada usuario verá únicamente los datos permitidos.
+33. Informes
+Se podrán seleccionar períodos diarios, semanales, mensuales, anuales o personalizados.
+Informes necesarios:
+Estado de resultados.
+Balance general.
+Flujo de efectivo.
+Ventas.
+Compras.
+Costos.
+Márgenes.
+Rentabilidad.
+Caja.
+Saldos por cuenta.
+Stock actual.
+Stock valorizado.
+Rotación.
+Antigüedad de inventario.
+Productos más y menos vendidos.
+Cuentas por cobrar.
+Cuentas por pagar.
+Proveedores.
+Cuotas.
+Reparaciones.
+Armados.
+Garantías.
+Comisiones.
+Impuestos.
+Diferencias de cambio.
+Auditoría.
+Los informes podrán verse dentro del sistema y exportarse a PDF o Excel.
+34. Inteligencia de inventario
+Por producto se calculará:
+Unidades vendidas.
+Facturación.
+Ganancia.
+Margen.
+Stock.
+Días desde la última venta.
+Antigüedad.
+Velocidad de venta.
+Rotación.
+Cobertura estimada.
+Capital inmovilizado.
+Rendimiento en local y web.
+Clasificaciones automáticas:
+Alta rotación.
+Rotación normal.
+Baja rotación.
+Sin movimiento.
+Riesgo de agotarse.
+Sobrestock.
+Buen margen.
+Margen insuficiente.
+Los plazos serán configurables por categoría.
+El sistema podrá mostrar recomendaciones explicadas, por ejemplo:
+Reponer un producto.
+Revisar el precio.
+Trasladar stock del depósito a la góndola.
+Promocionar mercadería sin movimiento.
+Evitar una nueva compra.
+Detectar una categoría con caída de ventas.
+35. Configuración general
+La mayor parte del funcionamiento debe administrarse desde el sistema, sin modificar el código.
+Se podrán crear, modificar, ordenar, activar o desactivar:
+Tipos de productos.
+Tipos de equipos.
+Categorías.
+Ubicaciones.
+Estados.
+Pruebas.
+Campos.
+Listas de precios.
+Medios de pago.
+Cotizaciones.
+Garantías.
+Automatizaciones.
+Plantillas.
+Mensajes.
+Documentos.
+Reglas de stock.
+Reglas de publicación.
+Permisos.
+Funciones completas.
+Cada automatización podrá configurarse como automática, con confirmación, manual o desactivada.
+No podrán desactivarse los controles esenciales de:
+Seguridad.
+Auditoría.
+Integridad contable.
+Trazabilidad de stock.
+Registro de facturas emitidas.
+Protección de archivos originales.
+Copias de seguridad.
+36. Requisitos generales
+El sistema debe:
+Funcionar correctamente en computadora, tablet y celular.
+Tener una interfaz clara y rápida.
+Mantener separados los datos internos y públicos.
+Validar información antes de confirmar operaciones.
+Evitar stock negativo salvo autorización especial.
+Realizar copias de seguridad automáticas.
+Permitir exportar información.
+Registrar errores de integraciones.
+Reintentar sincronizaciones fallidas.
+Proteger contraseñas y datos sensibles.
+Mantener historial de operaciones.
+Evitar eliminaciones definitivas de información crítica.
+Estar preparado para incorporar nuevas sucursales y funciones.

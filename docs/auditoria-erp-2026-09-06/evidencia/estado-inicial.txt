@@ -1,0 +1,57 @@
+ M apps/erp/package.json
+ M apps/erp/src/App.tsx
+ M apps/erp/src/auth/ErpAuthProvider.tsx
+ M apps/erp/src/components/erp/WorkspaceUi.tsx
+ M apps/erp/src/features/audit/AuditWorkspace.tsx
+ M apps/erp/src/features/cash/CashWorkspace.tsx
+ M apps/erp/src/features/catalog/CatalogWorkspace.tsx
+ M apps/erp/src/features/customers/CustomersWorkspace.tsx
+ M apps/erp/src/features/dashboard/DashboardOverview.tsx
+ M apps/erp/src/features/finance/AccountingWorkspace.tsx
+ M apps/erp/src/features/finance/AccountsWorkspace.tsx
+ M apps/erp/src/features/pcbuilds/PcBuildsWorkspace.tsx
+ M apps/erp/src/features/pos/PosWorkspace.tsx
+ M apps/erp/src/features/purchases/PurchasesWorkspace.tsx
+ M apps/erp/src/features/quotes/QuotesWorkspace.tsx
+ M apps/erp/src/features/repairs/RepairsWorkspace.tsx
+ M apps/erp/src/features/stock/StockWorkspace.tsx
+ M apps/erp/src/features/system/SystemWorkspace.tsx
+ M apps/erp/src/lib/supabase.ts
+ M apps/erp/src/styles.css
+ M packages/domain/src/modules.ts
+ M skills-lock.json
+ M src/components/admin/CaseManagement.tsx
+ M src/components/home/HeroSection.tsx
+ M src/components/layout/CartSlideOver.tsx
+ M src/components/layout/Footer.tsx
+ M src/components/layout/Layout.tsx
+ M src/components/shop/ProductCard.tsx
+ M src/components/tracking/RepairLogs.tsx
+ M src/components/tracking/RepairTimeline.tsx
+ M src/index.css
+ M src/pages/Checkout.tsx
+ M src/pages/Combos.tsx
+ M src/pages/Login.tsx
+ M src/pages/Promos.tsx
+ M src/pages/Seguimiento.tsx
+ M src/pages/Tienda.tsx
+?? .agents/skills/frontend-design/
+?? .agents/skills/impeccable/
+?? apps/erp/docs/
+?? apps/erp/src/App.test.tsx
+?? apps/erp/src/components/erp/WorkspaceModuleTabs.test.tsx
+?? apps/erp/src/components/erp/WorkspaceModuleTabs.tsx
+?? apps/erp/src/features/documents/
+?? apps/erp/src/features/integrations/
+?? apps/erp/src/features/onlineorders/
+?? apps/erp/src/features/tradeins/
+?? apps/erp/src/features/whatsapp/
+?? apps/erp/src/lib/formatters.ts
+?? cambios/extracted_requirements.txt
+?? docs/guia-erp-nictech.html
+?? erp_real_browser.png
+?? erp_verified_screen.png
+?? guia-erp-nictech.html
+?? packages/domain/src/modules.test.ts
+?? referenciaUI.webp
+?? scripts/build_guide.js
