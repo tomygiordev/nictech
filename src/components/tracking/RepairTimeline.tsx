@@ -66,11 +66,11 @@ export const RepairTimeline = ({ currentStatus }: RepairTimelineProps) => {
       {/* Desktop Timeline */}
       <div className="hidden md:block">
         <div className="relative flex justify-between">
-          {/* Progress Bar */}
-          <div className="absolute top-6 left-0 right-0 h-1 bg-muted rounded-full">
+          {/* Progress Bar with inset to match circle centers */}
+          <div className="absolute top-6 left-6 right-6 h-1 bg-muted rounded-full">
             <div
               className="h-full bg-primary rounded-full transition-all duration-500"
-              style={{ width: currentIndex >= 0 ? `${(currentIndex / (steps.length - 1)) * 100}%` : '0%' }}
+              style={{ width: currentIndex >= 0 ? ((currentIndex / (steps.length - 1)) * 100) + '%' : '0%' }}
             />
           </div>
 

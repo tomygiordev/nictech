@@ -9,7 +9,7 @@ export const HeroSection = () => {
       {/* Background pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute inset-0" style={{
-          backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255,255,255,0.3) 1px, transparent 0)`,
+          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.3) 1px, transparent 0)',
           backgroundSize: '40px 40px'
         }} />
       </div>
@@ -17,7 +17,7 @@ export const HeroSection = () => {
       <div className="container-main relative py-4 sm:py-6 lg:py-8">
         <HeroBannerCarousel />
 
-        <div className="pt-16 pb-20 lg:pt-20 lg:pb-28 text-center lg:text-left">
+        <div className="pt-12 pb-16 sm:pt-16 sm:pb-20 lg:pt-20 lg:pb-28 text-center lg:text-left">
           <div className="max-w-3xl mx-auto lg:mx-0">
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm text-white/90 text-sm mb-6 animate-fade-in">
@@ -37,17 +37,16 @@ export const HeroSection = () => {
             </h1>
 
             {/* Subtitle */}
-            <p className="text-lg sm:text-xl text-white/80 mb-8 animate-slide-up delay-100">
+            <p className="text-base sm:text-xl text-white/80 mb-8 animate-slide-up delay-100 max-w-2xl mx-auto lg:mx-0">
               Servicio técnico especializado en celulares, laptops y PCs. Venta de accesorios y equipos nuevos. Calidad y garantía en cada reparación.
             </p>
 
             {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start animate-slide-up delay-200">
+            <div className="flex flex-col sm:flex-row gap-3.5 sm:gap-4 justify-center lg:justify-start animate-slide-up delay-200">
               <Button
                 asChild
                 variant="hero"
-                size="xl"
-                className="bg-white text-primary hover:bg-white/90"
+                className="bg-white text-primary hover:bg-white/90 h-12 sm:h-14 px-6 sm:px-10 text-base sm:text-lg font-semibold rounded-xl shadow-lg transition-all active:scale-[0.98]"
               >
                 <a
                   href="https://wa.me/5493446353769?text=Hola!%20Me%20interesa%20cotizar%20una%20reparaci%C3%B3n."
@@ -61,7 +60,7 @@ export const HeroSection = () => {
               <Button
                 asChild
                 variant="hero-outline"
-                size="xl"
+                className="h-12 sm:h-14 px-6 sm:px-10 text-base sm:text-lg font-semibold rounded-xl border-white/40 text-white hover:bg-white/10 transition-all active:scale-[0.98]"
               >
                 <Link to="/tienda">
                   <ShoppingBag className="h-5 w-5 mr-2" />
@@ -72,21 +71,21 @@ export const HeroSection = () => {
             </div>
 
             {/* Trust badges */}
-            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-6 mt-12 animate-slide-up delay-300">
-              <div className="flex items-center gap-2 text-white/80 text-sm">
-                <svg className="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+            <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4 sm:gap-6 mt-10 sm:mt-12 animate-slide-up delay-300">
+              <div className="flex items-center gap-2 text-white/80 text-xs sm:text-sm">
+                <svg className="h-4 w-4 sm:h-5 sm:w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 Garantía incluida
               </div>
-              <div className="flex items-center gap-2 text-white/80 text-sm">
-                <svg className="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+              <div className="flex items-center gap-2 text-white/80 text-xs sm:text-sm">
+                <svg className="h-4 w-4 sm:h-5 sm:w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 Soporte Certificado
               </div>
-              <div className="flex items-center gap-2 text-white/80 text-sm">
-                <svg className="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+              <div className="flex items-center gap-2 text-white/80 text-xs sm:text-sm">
+                <svg className="h-4 w-4 sm:h-5 sm:w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 Presupuesto sin cargo

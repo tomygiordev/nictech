@@ -78,11 +78,11 @@ export const ProductCard = React.memo(({
 
         {/* Category badge */}
         <div className="absolute top-2 left-2 sm:top-3 sm:left-3 flex flex-col gap-1 z-10">
-          <span className="px-2 py-0.5 sm:px-3 sm:py-1 rounded-full bg-background/90 backdrop-blur-sm text-[9px] sm:text-xs font-medium text-foreground">
+          <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-background/90 backdrop-blur-sm text-[10px] sm:text-xs font-medium text-foreground shadow-sm">
             {category}
           </span>
           {original_price != null && (
-            <span className="px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[8px] sm:text-[10px] font-bold w-fit shadow-sm">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[9px] sm:text-[10px] font-bold w-fit shadow-sm">
               PROMO
             </span>
           )}
@@ -91,7 +91,7 @@ export const ProductCard = React.memo(({
         {/* Stock indicator */}
         {stock <= 5 && stock > 0 && (
           <div className="absolute top-2 right-2 sm:top-3 sm:right-3 max-w-[55%] z-10">
-            <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full bg-red-600 text-white animate-pulse shadow-sm text-[8px] sm:text-[10px] font-bold leading-tight block text-center">
+            <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-red-600 text-white animate-pulse shadow-sm text-[9px] sm:text-[10px] font-bold leading-tight block text-center">
               ¡Últimos!
             </span>
           </div>
@@ -124,14 +124,14 @@ export const ProductCard = React.memo(({
             {tags.slice(0, 3).map((tag, index) => {
               const tagStyle = getTagStyle(index);
               return (
-                <span key={index} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] uppercase font-bold tracking-wider border ${tagStyle}`}>
+                <span key={index} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider border ${tagStyle}`}>
                   <span className="h-1 w-1 rounded-full bg-current mr-1 shrink-0" />
                   {tag}
                 </span>
               );
             })}
             {tags.length > 3 && (
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-medium bg-muted text-muted-foreground border border-border/40">+{tags.length - 3}</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground border border-border/40">+{tags.length - 3}</span>
             )}
           </div>
         )}
@@ -141,21 +141,21 @@ export const ProductCard = React.memo(({
             {price_usd != null ? (
               <>
                 {originalUsdPrice != null && (
-                  <span className="text-[10px] sm:text-sm text-muted-foreground line-through block truncate">
+                  <span className="text-[11px] sm:text-sm text-muted-foreground line-through block truncate">
                     USD {originalUsdPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                   </span>
                 )}
                 <span className="text-sm sm:text-2xl font-bold text-green-700 block truncate">
                   USD {price_usd.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
-                <p className="text-[9px] sm:text-xs text-muted-foreground mt-0.5 hidden sm:block">
+                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 hidden sm:block">
                   Precio en dólares
                 </p>
               </>
             ) : (
               <>
                 {original_price != null && (
-                  <span className="text-[10px] sm:text-sm text-muted-foreground line-through block truncate">
+                  <span className="text-[11px] sm:text-sm text-muted-foreground line-through block truncate">
                     $ {original_price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                   </span>
                 )}
@@ -164,7 +164,7 @@ export const ProductCard = React.memo(({
                 </span>
               </>
             )}
-            <p className="text-[9px] sm:text-xs text-muted-foreground mt-0.5">
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
               {stock > 0 ? `${stock} disp.` : 'Sin stock'}
             </p>
           </div>
@@ -172,12 +172,12 @@ export const ProductCard = React.memo(({
           <Button
             variant="default"
             size="icon"
-            className="rounded-full h-7 w-7 sm:h-11 sm:w-11 shrink-0 ml-1.5 sm:ml-4 hover:bg-primary/90 shadow-sm transition-all duration-100 ease-out-default active:scale-[0.93] select-none"
+            className="rounded-full h-9 w-9 sm:h-11 sm:w-11 shrink-0 ml-1.5 sm:ml-4 hover:bg-primary/90 shadow-sm transition-all duration-100 ease-out-default active:scale-[0.93] select-none"
             disabled={stock === 0}
             onClick={handleAddToCart}
             title="Añadir a carrito"
           >
-            <ShoppingCart className="h-3.5 w-3.5 sm:h-5 sm:w-5" />
+            <ShoppingCart className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         </div>
       </div>

@@ -32,10 +32,9 @@ export const Layout = ({ children }: LayoutProps) => {
         </Suspense>
       )}
       <div
-        className="overflow-hidden py-2 group"
+        className="overflow-hidden py-2 group bg-gradient-to-r from-primary to-secondary"
         role="marquee"
         aria-label="Información destacada"
-        style={{ background: '#dc2626' }}
       >
         <div className="flex w-max whitespace-nowrap animate-marquee group-hover:[animation-play-state:paused] group-focus-within:[animation-play-state:paused] motion-reduce:animate-none gap-0">
           {[...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS, ...BANNER_ITEMS].map((item, i) => (

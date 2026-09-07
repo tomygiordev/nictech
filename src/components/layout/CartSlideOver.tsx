@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Plus, Minus, Trash2, ShoppingBag, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,6 +16,7 @@ import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 
 export const CartSlideOver = () => {
+  const navigate = useNavigate();
   const { items, isOpen, closeCart, updateQuantity, removeFromCart, totalPrice, clearCart, validateCart, isValidating } = useCart();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
@@ -51,7 +53,7 @@ export const CartSlideOver = () => {
               <ShoppingBag className="h-5 w-5 text-primary" />
               Tu Carrito
             </h2>
-            <Button variant="ghost" size="icon" onClick={closeCart}>
+            <Button variant="ghost" size="icon" onClick={closeCart} aria-label="Cerrar carrito">
               <X className="h-5 w-5" />
             </Button>
           </div>
@@ -106,7 +108,7 @@ export const CartSlideOver = () => {
                       {/* Low stock warning */}
                       {item.maxStock <= 3 && item.maxStock > 0 && (
                         <p className="text-xs text-amber-600 flex items-center gap-1 mt-0.5">
-                          <AlertTriangle className="h-3 w-3" />
+                          <AlertTriangle className="h-3.5 w-3.5" />
                           ¡Quedan solo {item.maxStock}!
                         </p>
                       )}
@@ -114,10 +116,11 @@ export const CartSlideOver = () => {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-9 w-9"
+                          className="h-8 w-8"
                           onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                          aria-label="Disminuir cantidad"
                         >
-                          <Minus className="h-3 w-3" />
+                          <Minus className="h-4 w-4" />
                         </Button>
                         <span className="w-8 text-center text-sm font-medium">
                           {item.quantity}
@@ -125,19 +128,21 @@ export const CartSlideOver = () => {
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-9 w-9"
+                          className="h-8 w-8"
                           onClick={() => updateQuantity(item.id, item.quantity + 1)}
                           disabled={item.quantity >= item.maxStock}
+                          aria-label="Aumentar cantidad"
                         >
-                          <Plus className="h-3 w-3" />
+                          <Plus className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-9 w-9 ml-auto text-destructive hover:text-destructive"
+                          className="h-8 w-8 ml-auto text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                           onClick={() => removeFromCart(item.id)}
+                          aria-label="Eliminar producto"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
@@ -149,7 +154,7 @@ export const CartSlideOver = () => {
 
           {/* Footer */}
           {items.length > 0 && (
-            <div className="p-4 border-t border-border space-y-4">
+            <div className="p-4 border-t border-border space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Subtotal:</span>
                 <span className="text-xl font-bold text-primary">
@@ -157,12 +162,12 @@ export const CartSlideOver = () => {
                 </span>
               </div>
               <Button
-                className="w-full"
+                className="w-full h-12 text-base font-semibold shadow-sm transition-all active:scale-[0.98]"
                 size="lg"
                 disabled={isValidating}
                 onClick={() => {
                   closeCart();
-                  window.location.href = '/checkout';
+                  navigate('/checkout');
                 }}
               >
                 {isValidating ? (
@@ -175,8 +180,9 @@ export const CartSlideOver = () => {
                 )}
               </Button>
               <Button
-                variant="outline"
-                className="w-full"
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                 onClick={() => setShowClearConfirm(true)}
               >
                 Vaciar Carrito

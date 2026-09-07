@@ -25,7 +25,7 @@ export const RepairLogs = ({ logs }: RepairLogsProps) => {
                     <div className="absolute left-[-5px] top-1 h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-background" />
                     <div className="flex flex-col gap-1">
                         <span className="text-xs text-muted-foreground font-medium">
-                            {new Date(log.created_at).toLocaleString('es-PE')}
+                            {new Date(log.created_at).toLocaleString('es-AR')}
                         </span>
                         <p className="text-sm text-foreground">{log.content}</p>
                     </div>

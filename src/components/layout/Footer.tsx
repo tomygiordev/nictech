@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { MapPin, Phone, Mail, Clock, Facebook, Instagram, Youtube, Video } from 'lucide-react';
+import { MapPin, Phone, Mail, Facebook, Instagram, Youtube, Video } from 'lucide-react';
 
 export const Footer = () => {
   return (
@@ -106,14 +106,14 @@ export const Footer = () => {
             <h4 className="font-semibold mb-4">Contacto</h4>
             <ul className="space-y-3">
               <li className="flex items-start gap-3">
-                <MapPin className="h-4 w-4 mt-0.5 text-primary" />
+                <MapPin className="h-4 w-4 mt-0.5 text-sky-300 shrink-0" />
                 <span className="text-sm text-secondary-foreground/80">
                   Héroes de Malvinas 08, Urdinarrain, Entre Ríos<br />
                   C.5 y C.19, Gilbert, Entre Ríos (sucursal)
                 </span>
               </li>
               <li className="flex items-center gap-3">
-                <Phone className="h-4 w-4 text-primary" />
+                <Phone className="h-4 w-4 text-sky-300 shrink-0" />
                 <a
                   href="https://wa.me/5493446353769"
                   target="_blank"
@@ -124,20 +124,11 @@ export const Footer = () => {
                 </a>
               </li>
               <li className="flex items-center gap-3">
-                <Mail className="h-4 w-4 text-primary" />
+                <Mail className="h-4 w-4 text-sky-300 shrink-0" />
                 <span className="text-sm text-secondary-foreground/80">
                   nictech.urdi@gmail.com
                 </span>
               </li>
-              {/* 
-              <li className="flex items-start gap-3">
-                <Clock className="h-4 w-4 mt-0.5 text-primary" />
-                <div className="text-sm text-secondary-foreground/80">
-                  <p>Lun - Vie: 9:00 - 19:00</p>
-                  <p>Sáb: 9:00 - 14:00</p>
-                </div>
-              </li>
-              */}
             </ul>
           </div>
         </div>
