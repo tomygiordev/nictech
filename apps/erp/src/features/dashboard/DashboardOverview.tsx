@@ -1,99 +1,485 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   DollarSign,
+  ShieldCheck,
   ShoppingCart,
   Layers,
   FileText,
   TrendingUp,
-  FileCheck,
   Package,
-  ShieldCheck,
-  UserPlus,
-  ChevronDown,
+  Wrench,
   Warehouse,
+  Receipt,
+  CircleDollarSign,
+  Loader2,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
+import { type ErpModuleId } from "@nictech/domain";
+import { KpiCard } from "../../components/erp/WorkspaceUi";
+import { formatCurrency, formatCurrencyCompact, getInitials } from "../../lib/formatters";
+import { useErpAuth } from "../../auth/ErpAuthContext";
+import { supabase } from "../../lib/supabase";
 
 export interface DashboardOverviewProps {
-  onSelectModule: (moduleId: string) => void;
+  onSelectModule: (moduleId: ErpModuleId) => void;
 }
 
+interface RecentRepairItem {
+  id: string;
+  tracking_code: string;
+  client_name: string | null;
+  device_brand: string | null;
+  device_model: string | null;
+  status: string;
+  quoted_price: number | null;
+  created_at: string;
+}
+
+interface LowStockProductItem {
+  id: string;
+  name: string;
+  stock: number | null;
+}
+
+interface OrderRecordItem {
+  id: string;
+  total: number;
+  status: string;
+  created_at: string;
+}
+
+interface StockMovementItem {
+  id: string;
+  quantity: number;
+  unit_price: number | null;
+  type: string;
+  created_at: string;
+}
+
+type PeriodType = "year" | "6m" | "month" | "30d";
+
+interface ChartPoint {
+  label: string;
+  fullLabel: string;
+  revenue: number;
+  orders: number;
+}
+
+const MONTHS_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const MONTHS_FULL = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+];
+
+function generateCommercialEvolution(
+  period: PeriodType,
+  orders: OrderRecordItem[],
+  repairs: RecentRepairItem[],
+  movements: StockMovementItem[]
+): ChartPoint[] {
+  const now = new Date();
+
+  const getParsedDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  if (period === "year") {
+    const currentYear = now.getFullYear();
+    const result: ChartPoint[] = [];
+
+    for (let m = 0; m < 12; m++) {
+      let revenue = 0;
+      let orderCount = 0;
+
+      for (const o of orders) {
+        if (o.status === "cancelled") continue;
+        const d = getParsedDate(o.created_at);
+        if (d && d.getFullYear() === currentYear && d.getMonth() === m) {
+          revenue += Number(o.total || 0);
+          orderCount += 1;
+        }
+      }
+
+      for (const mov of movements) {
+        const d = getParsedDate(mov.created_at);
+        if (d && d.getFullYear() === currentYear && d.getMonth() === m) {
+          revenue += Math.abs(mov.quantity || 1) * Number(mov.unit_price || 0);
+          orderCount += 1;
+        }
+      }
+
+      for (const r of repairs) {
+        if (r.status !== "Finalizado") continue;
+        const d = getParsedDate(r.created_at);
+        if (d && d.getFullYear() === currentYear && d.getMonth() === m) {
+          revenue += Number(r.quoted_price || 0);
+          orderCount += 1;
+        }
+      }
+
+      result.push({
+        label: MONTHS_SHORT[m],
+        fullLabel: `${MONTHS_FULL[m]} ${currentYear}`,
+        revenue: Math.round(revenue),
+        orders: orderCount,
+      });
+    }
+    return result;
+  }
+
+  if (period === "6m") {
+    const result: ChartPoint[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const dTarget = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const y = dTarget.getFullYear();
+      const m = dTarget.getMonth();
+
+      let revenue = 0;
+      let orderCount = 0;
+
+      for (const o of orders) {
+        if (o.status === "cancelled") continue;
+        const d = getParsedDate(o.created_at);
+        if (d && d.getFullYear() === y && d.getMonth() === m) {
+          revenue += Number(o.total || 0);
+          orderCount += 1;
+        }
+      }
+
+      for (const mov of movements) {
+        const d = getParsedDate(mov.created_at);
+        if (d && d.getFullYear() === y && d.getMonth() === m) {
+          revenue += Math.abs(mov.quantity || 1) * Number(mov.unit_price || 0);
+          orderCount += 1;
+        }
+      }
+
+      for (const r of repairs) {
+        if (r.status !== "Finalizado") continue;
+        const d = getParsedDate(r.created_at);
+        if (d && d.getFullYear() === y && d.getMonth() === m) {
+          revenue += Number(r.quoted_price || 0);
+          orderCount += 1;
+        }
+      }
+
+      result.push({
+        label: MONTHS_SHORT[m],
+        fullLabel: `${MONTHS_FULL[m]} ${y}`,
+        revenue: Math.round(revenue),
+        orders: orderCount,
+      });
+    }
+    return result;
+  }
+
+  if (period === "month") {
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const result: ChartPoint[] = [];
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      let revenue = 0;
+      let orderCount = 0;
+
+      for (const o of orders) {
+        if (o.status === "cancelled") continue;
+        const d = getParsedDate(o.created_at);
+        if (d && d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day) {
+          revenue += Number(o.total || 0);
+          orderCount += 1;
+        }
+      }
+
+      for (const mov of movements) {
+        const d = getParsedDate(mov.created_at);
+        if (d && d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day) {
+          revenue += Math.abs(mov.quantity || 1) * Number(mov.unit_price || 0);
+          orderCount += 1;
+        }
+      }
+
+      for (const r of repairs) {
+        if (r.status !== "Finalizado") continue;
+        const d = getParsedDate(r.created_at);
+        if (d && d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day) {
+          revenue += Number(r.quoted_price || 0);
+          orderCount += 1;
+        }
+      }
+
+      result.push({
+        label: `${day}`,
+        fullLabel: `${day} de ${MONTHS_FULL[currentMonth]} ${currentYear}`,
+        revenue: Math.round(revenue),
+        orders: orderCount,
+      });
+    }
+    return result;
+  }
+
+  // period === "30d"
+  const result: ChartPoint[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const targetDate = new Date(now.getTime() - i * 86400000);
+    const y = targetDate.getFullYear();
+    const m = targetDate.getMonth();
+    const day = targetDate.getDate();
+
+    let revenue = 0;
+    let orderCount = 0;
+
+    for (const o of orders) {
+      if (o.status === "cancelled") continue;
+      const d = getParsedDate(o.created_at);
+      if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
+        revenue += Number(o.total || 0);
+        orderCount += 1;
+      }
+    }
+
+    for (const mov of movements) {
+      const d = getParsedDate(mov.created_at);
+      if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
+        revenue += Math.abs(mov.quantity || 1) * Number(mov.unit_price || 0);
+        orderCount += 1;
+      }
+    }
+
+    for (const r of repairs) {
+      if (r.status !== "Finalizado") continue;
+      const d = getParsedDate(r.created_at);
+      if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
+        revenue += Number(r.quoted_price || 0);
+        orderCount += 1;
+      }
+    }
+
+    result.push({
+      label: `${day} ${MONTHS_SHORT[m]}`,
+      fullLabel: `${day} de ${MONTHS_FULL[m]} ${y}`,
+      revenue: Math.round(revenue),
+      orders: orderCount,
+    });
+  }
+  return result;
+}
+
+const CustomChartTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: ChartPoint; value: number }>;
+  label?: string;
+}) => {
+  if (!active || !payload || !payload.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+
+  return (
+    <div
+      style={{
+        background: "#FFFFFF",
+        border: "1px solid var(--border-line, #E2E8F0)",
+        borderRadius: "10px",
+        padding: "10px 14px",
+        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05)",
+        fontSize: "12px",
+        minWidth: "170px",
+      }}
+    >
+      <div style={{ fontWeight: 700, color: "#0F172A", marginBottom: "6px" }}>{point.fullLabel || label}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "4px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748B" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#9ec5fe", display: "inline-block" }} />
+          <span>Facturación:</span>
+        </div>
+        <strong style={{ color: "#005BD5" }}>{formatCurrency(point.revenue, "ARS")}</strong>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748B" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#005BD5", display: "inline-block" }} />
+          <span>Órdenes / Trabajos:</span>
+        </div>
+        <strong style={{ color: "#0F172A" }}>{point.orders}</strong>
+      </div>
+    </div>
+  );
+};
+
+const formatAxisCurrency = (val: number): string => {
+  if (val === 0) return "$0";
+  if (val >= 1_000_000) {
+    const m = val / 1_000_000;
+    return `$${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  }
+  if (val >= 1_000) {
+    const k = val / 1_000;
+    return `$${Number.isInteger(k) ? k : k.toFixed(0)}k`;
+  }
+  return `$${val}`;
+};
+
+const formatAxisOrders = (val: number): string => {
+  if (val === 0) return "0";
+  return String(Math.round(val));
+};
+
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectModule }) => {
-  const [selectedPeriod] = useState<string>("This Year");
+  const { session } = useErpAuth();
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>("year");
+  const [loading, setLoading] = useState<boolean>(true);
+  const [rawOrders, setRawOrders] = useState<OrderRecordItem[]>([]);
+  const [rawRepairs, setRawRepairs] = useState<RecentRepairItem[]>([]);
+  const [rawMovements, setRawMovements] = useState<StockMovementItem[]>([]);
+  const [stats, setStats] = useState({
+    productsCount: 0,
+    inventoryValueArs: 0,
+    repairsCount: 0,
+    ordersCount: 0,
+    totalRevenueArs: 0,
+  });
+  const [recentRepairs, setRecentRepairs] = useState<RecentRepairItem[]>([]);
+  const [lowStockProducts, setLowStockProducts] = useState<LowStockProductItem[]>([]);
+
+  const operatorName = session?.user.user_metadata?.full_name || "Operador NicTech";
+  const initials = getInitials(operatorName, "NT");
+
+  const fetchDashboardData = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      // 1. Products
+      const { data: prodData } = await supabase
+        .from("products")
+        .select("id, name, price, stock, is_active");
+
+      const products = prodData || [];
+      const prodCount = products.length;
+      const invValue = products.reduce((acc, p) => acc + (p.price || 0) * (p.stock || 0), 0);
+      const lowStock = products.filter((p) => (p.stock ?? 0) <= 3 && (p.is_active ?? true)).slice(0, 3);
+
+      // 2. Repairs
+      const { data: repData } = await supabase
+        .from("repairs")
+        .select("id, tracking_code, client_name, device_brand, device_model, status, quoted_price, created_at")
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .order("created_at", { ascending: false });
+
+      const repairs = (repData || []) as RecentRepairItem[];
+      const activeRepairs = repairs.filter((r) => r.status !== "Finalizado");
+
+      // 3. Orders
+      const { data: ordData } = await supabase
+        .from("orders")
+        .select("id, total, status, created_at")
+        .order("created_at", { ascending: false });
+
+      const orders = (ordData || []) as OrderRecordItem[];
+
+      // 4. Inventory Movements (sales)
+      const { data: movData } = await supabase
+        .from("inventory_movements")
+        .select("id, quantity, unit_price, type, created_at")
+        .eq("type", "sale")
+        .order("created_at", { ascending: false });
+
+      const movements = (movData || []) as StockMovementItem[];
+
+      const orderRevenue = orders
+        .filter((o) => o.status === "approved" || o.status === "completed")
+        .reduce((a, b) => a + Number(b.total || 0), 0);
+      const movementRevenue = movements
+        .reduce((a, b) => a + Math.abs(b.quantity || 1) * Number(b.unit_price || 0), 0);
+      const repairRevenue = repairs
+        .filter((r) => r.status === "Finalizado")
+        .reduce((a, b) => a + Number(b.quoted_price || 0), 0);
+
+      const totalRevenue = Math.max(orderRevenue + repairRevenue, movementRevenue + repairRevenue, orderRevenue);
+
+      setStats({
+        productsCount: prodCount,
+        inventoryValueArs: invValue,
+        repairsCount: activeRepairs.length,
+        ordersCount: orders.length + movements.length,
+        totalRevenueArs: totalRevenue,
+      });
+
+      setRawOrders(orders);
+      setRawRepairs(repairs);
+      setRawMovements(movements);
+      setRecentRepairs(repairs.slice(0, 5));
+      setLowStockProducts(lowStock);
+    } catch (e) {
+      console.error("Error al cargar dashboard:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  const chartData = useMemo(() => {
+    return generateCommercialEvolution(selectedPeriod, rawOrders, rawRepairs, rawMovements);
+  }, [selectedPeriod, rawOrders, rawRepairs, rawMovements]);
 
   return (
     <div className="flow-dashboard">
       {/* 4 KPI Metrics Row */}
       <section className="kpi-grid" aria-label="Métricas Principales">
-        {/* KPI 1: Total Revenue */}
-        <div className="flow-kpi-card">
-          <div className="flow-kpi-card__icon-box green">
-            <DollarSign size={20} />
-          </div>
-          <div className="flow-kpi-card__content">
-            <span className="flow-kpi-card__label">Total Revenue</span>
-            <div className="flow-kpi-card__val-row">
-              <strong className="flow-kpi-card__val">$ 2,45,680</strong>
-              <span className="flow-trend-tag positive">
-                <TrendingUp size={12} /> 18.6%
-              </span>
-            </div>
-            <span className="flow-kpi-card__sub">vs last month</span>
-          </div>
-        </div>
+        <KpiCard
+          icon={DollarSign}
+          iconVariant="green"
+          label="Facturación Web & POS"
+          value={loading ? "…" : formatCurrencyCompact(stats.totalRevenueArs, "ARS")}
+          trend={{ text: "Live", positive: true, icon: TrendingUp }}
+          sublabel={`${stats.ordersCount} órdenes procesadas`}
+        />
 
-        {/* KPI 2: Purchase Orders */}
-        <div className="flow-kpi-card">
-          <div className="flow-kpi-card__icon-box navy">
-            <ShoppingCart size={20} />
-          </div>
-          <div className="flow-kpi-card__content">
-            <span className="flow-kpi-card__label">Purchase Orders</span>
-            <div className="flow-kpi-card__val-row">
-              <strong className="flow-kpi-card__val">128</strong>
-              <span className="flow-trend-tag positive">
-                <TrendingUp size={12} /> 12.4%
-              </span>
-            </div>
-            <span className="flow-kpi-card__sub">vs last month</span>
-          </div>
-        </div>
+        <KpiCard
+          icon={ShoppingCart}
+          iconVariant="navy"
+          label="Artículos en Catálogo"
+          value={loading ? "…" : stats.productsCount}
+          trend={{ text: "Activos", positive: true, icon: TrendingUp }}
+          sublabel="Sincronizados en tienda"
+        />
 
-        {/* KPI 3: Inventory Value */}
-        <div className="flow-kpi-card">
-          <div className="flow-kpi-card__icon-box steel">
-            <Layers size={20} />
-          </div>
-          <div className="flow-kpi-card__content">
-            <span className="flow-kpi-card__label">Inventory Value</span>
-            <div className="flow-kpi-card__val-row">
-              <strong className="flow-kpi-card__val">$ 1,86,540</strong>
-              <span className="flow-trend-tag positive">
-                <TrendingUp size={12} /> 7.8%
-              </span>
-            </div>
-            <span className="flow-kpi-card__sub">vs last month</span>
-          </div>
-        </div>
+        <KpiCard
+          icon={Layers}
+          iconVariant="steel"
+          label="Valorización de Stock"
+          value={loading ? "…" : formatCurrencyCompact(stats.inventoryValueArs, "ARS")}
+          trend={{ text: "ARS", positive: true, icon: TrendingUp }}
+          sublabel="Almacén Central & Pañol"
+        />
 
-        {/* KPI 4: Pending Invoices */}
-        <div className="flow-kpi-card">
-          <div className="flow-kpi-card__icon-box dark">
-            <FileText size={20} />
-          </div>
-          <div className="flow-kpi-card__content">
-            <span className="flow-kpi-card__label">Pending Invoices</span>
-            <div className="flow-kpi-card__val-row">
-              <strong className="flow-kpi-card__val">34</strong>
-              <span className="flow-trend-tag negative">
-                <TrendingUp size={12} /> 8.3%
-              </span>
-            </div>
-            <span className="flow-kpi-card__sub">vs last month</span>
-          </div>
-        </div>
+        <KpiCard
+          icon={Wrench}
+          iconVariant="dark"
+          label="Equipos en Taller"
+          value={loading ? "…" : stats.repairsCount}
+          trend={{ text: "En Proceso", positive: true, icon: TrendingUp }}
+          sublabel="Con código de seguimiento"
+        />
       </section>
 
-      {/* Main Grid: Left (Performance Chart + Recent Orders) | Right (Profile, Actions, Stock) */}
+      {/* Main Grid */}
       <div className="flow-dashboard-grid">
         {/* Left Column */}
         <div className="flow-dashboard-main">
@@ -101,226 +487,165 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
           <section className="flow-card flow-performance-card" aria-label="Rendimiento del Negocio">
             <div className="flow-card__header">
               <div>
-                <h3 className="flow-card__title">Business Performance</h3>
-                <p className="flow-card__subtitle">Monthly order value (USD)</p>
+                <h3 className="flow-card__title">Evolución Comercial NicTech</h3>
+                <p className="flow-card__subtitle">Facturación consolidada y órdenes de trabajo (ARS / USD)</p>
               </div>
-              <div className="flow-select-pill">
-                <span>{selectedPeriod}</span>
-                <ChevronDown size={14} />
+              <div className="flow-period-selector-wrapper">
+                <select
+                  id="dashboard-period-select"
+                  aria-label="Seleccionar período"
+                  value={selectedPeriod}
+                  onChange={(e) => setSelectedPeriod(e.target.value as PeriodType)}
+                  className="flow-period-select"
+                >
+                  <option value="year">Este Año ({new Date().getFullYear()})</option>
+                  <option value="6m">Últimos 6 Meses</option>
+                  <option value="month">Este Mes</option>
+                  <option value="30d">Últimos 30 Días</option>
+                </select>
               </div>
             </div>
 
             <div className="flow-chart-container">
-              <svg className="flow-chart-svg" viewBox="0 0 700 220" preserveAspectRatio="none" aria-label="Gráfico de Rendimiento Mensual">
-                {/* Horizontal Grid lines */}
-                <line x1="45" y1="20" x2="680" y2="20" stroke="#F1F5F9" strokeWidth="1" strokeDasharray="3 3" />
-                <line x1="45" y1="60" x2="680" y2="60" stroke="#F1F5F9" strokeWidth="1" strokeDasharray="3 3" />
-                <line x1="45" y1="100" x2="680" y2="100" stroke="#F1F5F9" strokeWidth="1" strokeDasharray="3 3" />
-                <line x1="45" y1="140" x2="680" y2="140" stroke="#F1F5F9" strokeWidth="1" strokeDasharray="3 3" />
-                <line x1="45" y1="180" x2="680" y2="180" stroke="#E2E8F0" strokeWidth="1" />
-
-                {/* Y-Axis Left (Order Value) */}
-                <text x="40" y="24" textAnchor="end" className="chart-axis-label">$250k</text>
-                <text x="40" y="64" textAnchor="end" className="chart-axis-label">$200k</text>
-                <text x="40" y="104" textAnchor="end" className="chart-axis-label">$150k</text>
-                <text x="40" y="144" textAnchor="end" className="chart-axis-label">$100k</text>
-                <text x="40" y="184" textAnchor="end" className="chart-axis-label">$0</text>
-
-                {/* Y-Axis Right (Orders) */}
-                <text x="685" y="24" textAnchor="start" className="chart-axis-label">250</text>
-                <text x="685" y="64" textAnchor="start" className="chart-axis-label">200</text>
-                <text x="685" y="104" textAnchor="start" className="chart-axis-label">150</text>
-                <text x="685" y="144" textAnchor="start" className="chart-axis-label">100</text>
-                <text x="685" y="184" textAnchor="start" className="chart-axis-label">0</text>
-
-                {/* Vertical Soft Blue Bars (Order Value) */}
-                {[
-                  { x: 80, h: 65 },
-                  { x: 135, h: 80 },
-                  { x: 190, h: 105 },
-                  { x: 245, h: 120 },
-                  { x: 300, h: 135 },
-                  { x: 355, h: 155 },
-                  { x: 410, h: 140 },
-                  { x: 465, h: 110 },
-                  { x: 520, h: 125 },
-                  { x: 575, h: 160 },
-                  { x: 630, h: 145 },
-                ].map((bar, i) => (
-                  <rect
-                    key={i}
-                    x={bar.x - 7}
-                    y={180 - bar.h}
-                    width="14"
-                    height={bar.h}
-                    rx="4"
-                    fill="#DCE8F2"
-                  />
-                ))}
-
-                {/* Green Smooth Spline Curve for Orders */}
-                <path
-                  d="M 80 145 C 110 142, 115 130, 135 130 C 160 130, 170 95, 190 100 C 215 105, 230 130, 245 130 C 270 130, 280 80, 300 70 C 325 60, 335 85, 355 90 C 380 95, 390 115, 410 120 C 435 125, 445 75, 465 70 C 490 65, 505 110, 520 110 C 545 110, 555 60, 575 50 C 600 40, 615 65, 630 65"
-                  fill="none"
-                  stroke="#84CC16"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                />
-
-                {/* Curve Data Point Dots */}
-                {[
-                  { cx: 80, cy: 145 },
-                  { cx: 135, cy: 130 },
-                  { cx: 190, cy: 100 },
-                  { cx: 245, cy: 130 },
-                  { cx: 300, cy: 70 },
-                  { cx: 355, cy: 90 },
-                  { cx: 410, cy: 120 },
-                  { cx: 465, cy: 70 },
-                  { cx: 520, cy: 110 },
-                  { cx: 575, cy: 50 },
-                  { cx: 630, cy: 65 },
-                ].map((pt, i) => (
-                  <circle key={i} cx={pt.cx} cy={pt.cy} r="4.5" fill="#84CC16" stroke="#FFFFFF" strokeWidth="2" />
-                ))}
-
-                {/* Month Labels on X Axis */}
-                {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, i) => (
-                  <text key={m} x={80 + i * 50} y="202" textAnchor="middle" className="chart-x-label">
-                    {m}
-                  </text>
-                ))}
-              </svg>
+              {loading ? (
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", gap: "8px" }}>
+                  <Loader2 size={20} className="animate-spin" style={{ color: "var(--brand-primary)" }} />
+                  <span style={{ fontSize: "13px" }}>Cargando métricas comerciales…</span>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <ComposedChart
+                    data={chartData}
+                    margin={{ top: 12, right: 12, left: -4, bottom: 4 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      stroke="#64748b"
+                      fontSize={11}
+                      fontWeight={600}
+                      tickLine={false}
+                      axisLine={{ stroke: "#E2E8F0" }}
+                      dy={6}
+                      interval={selectedPeriod === "30d" ? 3 : selectedPeriod === "month" ? 2 : 0}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      orientation="left"
+                      stroke="#94a3b8"
+                      fontSize={10}
+                      fontWeight={600}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={formatAxisCurrency}
+                      domain={[0, (dataMax: number) => (dataMax > 0 ? Math.ceil(dataMax * 1.15) : 500000)]}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      stroke="#94a3b8"
+                      fontSize={10}
+                      fontWeight={600}
+                      tickLine={false}
+                      axisLine={false}
+                      allowDecimals={false}
+                      tickFormatter={formatAxisOrders}
+                      domain={[0, (dataMax: number) => (dataMax > 0 ? Math.max(5, Math.ceil(dataMax * 1.25)) : 10)]}
+                    />
+                    <Tooltip content={<CustomChartTooltip />} />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="revenue"
+                      name="Volumen Facturado"
+                      fill="#DCE8F2"
+                      radius={[5, 5, 0, 0]}
+                      maxBarSize={32}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="orders"
+                      name="Órdenes Concretadas"
+                      stroke="#005BD5"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: "#005BD5", stroke: "#FFFFFF", strokeWidth: 2 }}
+                      activeDot={{ r: 6, fill: "#005BD5", stroke: "#FFFFFF", strokeWidth: 2 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             {/* Chart Legend */}
             <div className="flow-chart-legend">
               <div className="legend-item">
                 <span className="legend-dot blue" />
-                <span>Order Value</span>
+                <span>Volumen Facturado</span>
               </div>
               <div className="legend-item">
                 <span className="legend-dot green" />
-                <span>Orders</span>
+                <span>Órdenes Concretadas</span>
               </div>
             </div>
           </section>
 
-          {/* Recent Orders Table */}
+          {/* Recent Repairs Table */}
           <section className="flow-card" aria-label="Órdenes Recientes">
             <div className="flow-card__header">
               <div>
-                <h3 className="flow-card__title">Recent Orders</h3>
-                <p className="flow-card__subtitle">Latest sales and purchase orders</p>
+                <h3 className="flow-card__title">Últimas Reparaciones en Taller</h3>
+                <p className="flow-card__subtitle">Órdenes de servicio técnico registradas en el laboratorio</p>
               </div>
-              <button type="button" className="flow-link-btn" onClick={() => onSelectModule("pos")}>
-                View All
+              <button type="button" className="flow-link-btn" onClick={() => onSelectModule("repairs")}>
+                Ver Taller →
               </button>
             </div>
 
-            <div className="flow-table-wrapper">
-              <table className="flow-table">
-                <thead>
-                  <tr>
-                    <th>Order ID</th>
-                    <th>Client</th>
-                    <th>Department</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th className="text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>
-                      <div className="order-id-cell">
-                        <span className="type-badge green">SO</span>
-                        <strong>SO-2024-1025</strong>
-                      </div>
-                    </td>
-                    <td>Metro Retail Ltd.</td>
-                    <td>Sales</td>
-                    <td>24 May, 2024</td>
-                    <td>
-                      <span className="flow-status-pill completed">Completed</span>
-                    </td>
-                    <td className="text-right amount-val">$12,450</td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <div className="order-id-cell">
-                        <span className="type-badge blue">PO</span>
-                        <strong>PO-2024-0876</strong>
-                      </div>
-                    </td>
-                    <td>Global Supplies Inc.</td>
-                    <td>Purchase</td>
-                    <td>23 May, 2024</td>
-                    <td>
-                      <span className="flow-status-pill confirmed">Confirmed</span>
-                    </td>
-                    <td className="text-right amount-val">$8,760</td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <div className="order-id-cell">
-                        <span className="type-badge purple">SO</span>
-                        <strong>SO-2024-1024</strong>
-                      </div>
-                    </td>
-                    <td>Bright Electronics</td>
-                    <td>Sales</td>
-                    <td>22 May, 2024</td>
-                    <td>
-                      <span className="flow-status-pill processing">Processing</span>
-                    </td>
-                    <td className="text-right amount-val">$15,230</td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <div className="order-id-cell">
-                        <span className="type-badge orange">PO</span>
-                        <strong>PO-2024-0875</strong>
-                      </div>
-                    </td>
-                    <td>Packwell Materials</td>
-                    <td>Purchase</td>
-                    <td>21 May, 2024</td>
-                    <td>
-                      <span className="flow-status-pill pending">Pending</span>
-                    </td>
-                    <td className="text-right amount-val">$4,890</td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <div className="order-id-cell">
-                        <span className="type-badge green">SO</span>
-                        <strong>SO-2024-1023</strong>
-                      </div>
-                    </td>
-                    <td>Alpha Traders</td>
-                    <td>Sales</td>
-                    <td>21 May, 2024</td>
-                    <td>
-                      <span className="flow-status-pill completed">Completed</span>
-                    </td>
-                    <td className="text-right amount-val">$6,540</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination Footer */}
-            <div className="flow-table-footer">
-              <span>Showing 1 to 5 of 15 entries</span>
-              <div className="flow-pagination">
-                <button type="button" className="pag-btn">&lt;</button>
-                <button type="button" className="pag-btn active">1</button>
-                <button type="button" className="pag-btn">2</button>
-                <button type="button" className="pag-btn">3</button>
-                <button type="button" className="pag-btn">&gt;</button>
+            {loading ? (
+              <div style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
+                <Loader2 size={24} className="animate-spin" style={{ margin: "0 auto 8px", color: "var(--brand-primary)" }} />
+                <p style={{ margin: 0, fontSize: "13px" }}>Cargando actividad reciente…</p>
               </div>
-            </div>
+            ) : recentRepairs.length === 0 ? (
+              <p style={{ padding: "16px", color: "var(--text-muted)", fontSize: "13px" }}>No hay reparaciones recientes.</p>
+            ) : (
+              <div className="flow-table-wrapper">
+                <table className="flow-table">
+                  <thead>
+                    <tr>
+                      <th>Código Tracking</th>
+                      <th>Cliente</th>
+                      <th>Dispositivo</th>
+                      <th>Estado</th>
+                      <th className="text-right">Presupuesto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentRepairs.map((r) => (
+                      <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => onSelectModule("repairs")}>
+                        <td>
+                          <div className="order-id-cell">
+                            <span className="type-badge green" style={{ fontFamily: "monospace" }}>
+                              {r.tracking_code}
+                            </span>
+                          </div>
+                        </td>
+                        <td>{r.client_name || "Cliente"}</td>
+                        <td>{r.device_brand} {r.device_model}</td>
+                        <td>
+                          <span className={`flow-status-pill ${r.status === "Finalizado" ? "completed" : "processing"}`}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="text-right amount-val">
+                          {r.quoted_price ? formatCurrency(r.quoted_price, "ARS") : "A presupuestar"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         </div>
 
@@ -331,39 +656,39 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
             <div className="operator-card__header">
               <div className="operator-avatar-wrapper">
                 <div className="operator-avatar">
-                  <span className="avatar-initials">RM</span>
+                  <span className="avatar-initials">{initials}</span>
                 </div>
                 <span className="online-dot" />
               </div>
               <div className="operator-info">
-                <strong>Rahul Mehta</strong>
-                <span className="operator-role-tag">Operations Manager</span>
+                <strong>{operatorName}</strong>
+                <span className="operator-role-tag">Administración & Taller</span>
               </div>
             </div>
 
             <div className="operator-metrics-grid">
               <div className="operator-stat">
-                <span className="stat-label">Team</span>
-                <strong className="stat-val">18</strong>
+                <span className="stat-label">Sucursal</span>
+                <strong className="stat-val">Central</strong>
               </div>
               <div className="operator-stat">
-                <span className="stat-label">Department</span>
-                <strong className="stat-val">Operations</strong>
+                <span className="stat-label">Rol</span>
+                <strong className="stat-val">Admin</strong>
               </div>
               <div className="operator-stat">
-                <span className="stat-label">Location</span>
-                <strong className="stat-val">Mumbai</strong>
+                <span className="stat-label">Caja</span>
+                <strong className="stat-val">01 Abierta</strong>
               </div>
               <div className="operator-stat">
-                <span className="stat-label">Role</span>
-                <strong className="stat-val">Manager</strong>
+                <span className="stat-label">Base de Datos</span>
+                <strong className="stat-val" style={{ color: "var(--emerald-success)" }}>Conectada</strong>
               </div>
             </div>
           </section>
 
           {/* Quick Actions Grid */}
           <section className="flow-card" aria-label="Acciones Rápidas">
-            <h3 className="flow-card__title">Quick Actions</h3>
+            <h3 className="flow-card__title">Accesos Directos</h3>
             <div className="quick-actions-grid">
               <button
                 type="button"
@@ -371,20 +696,20 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                 onClick={() => onSelectModule("pos")}
               >
                 <div className="tile-icon">
-                  <FileCheck size={20} color="#16a34a" />
+                  <Receipt size={20} />
                 </div>
-                <span>Create Invoice</span>
+                <span>Nueva Venta</span>
               </button>
 
               <button
                 type="button"
                 className="quick-action-tile"
-                onClick={() => onSelectModule("purchases")}
+                onClick={() => onSelectModule("repairs")}
               >
                 <div className="tile-icon">
-                  <ShoppingCart size={20} color="#16a34a" />
+                  <Wrench size={20} />
                 </div>
-                <span>New PO</span>
+                <span>Nuevo Ingreso Taller</span>
               </button>
 
               <button
@@ -393,9 +718,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                 onClick={() => onSelectModule("catalog")}
               >
                 <div className="tile-icon">
-                  <Package size={20} color="#16a34a" />
+                  <Package size={20} />
                 </div>
-                <span>Add Product</span>
+                <span>Agregar Producto</span>
               </button>
 
               <button
@@ -404,20 +729,31 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                 onClick={() => onSelectModule("cash")}
               >
                 <div className="tile-icon">
-                  <ShieldCheck size={20} color="#16a34a" />
+                  <CircleDollarSign size={20} />
                 </div>
-                <span>Approve Payment</span>
+                <span>Control de Caja</span>
               </button>
 
               <button
                 type="button"
                 className="quick-action-tile"
-                onClick={() => onSelectModule("users")}
+                onClick={() => onSelectModule("quotes")}
               >
                 <div className="tile-icon">
-                  <UserPlus size={20} color="#16a34a" />
+                  <FileText size={20} />
                 </div>
-                <span>Add Employee</span>
+                <span>Presupuestos</span>
+              </button>
+
+              <button
+                type="button"
+                className="quick-action-tile"
+                onClick={() => onSelectModule("audit")}
+              >
+                <div className="tile-icon">
+                  <ShieldCheck size={20} />
+                </div>
+                <span>Auditoría</span>
               </button>
             </div>
           </section>
@@ -425,65 +761,34 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
           {/* Low Stock Alerts */}
           <section className="flow-card" aria-label="Alertas de Stock Bajo">
             <div className="flow-card__header">
-              <h3 className="flow-card__title">Low Stock Alerts</h3>
+              <h3 className="flow-card__title">Stock Crítico en Base de Datos</h3>
               <button type="button" className="flow-link-btn" onClick={() => onSelectModule("stock")}>
-                View All
+                Ver Stock →
               </button>
             </div>
 
             <div className="low-stock-list">
-              <div className="low-stock-item">
-                <div className="item-thumbnail">
-                  <Warehouse size={18} color="#64748b" />
-                </div>
-                <div className="item-details">
-                  <strong>Stainless Steel Sheet</strong>
-                  <span>WH-01 • Shelf A2</span>
-                </div>
-                <div className="item-qty-badge">
-                  <strong className="qty-val">18</strong>
-                  <span className="qty-unit">Units Left</span>
-                </div>
-              </div>
-
-              <div className="low-stock-item">
-                <div className="item-thumbnail">
-                  <Package size={18} color="#64748b" />
-                </div>
-                <div className="item-details">
-                  <strong>Hydraulic Pump</strong>
-                  <span>WH-02 • Rack B1</span>
-                </div>
-                <div className="item-qty-badge">
-                  <strong className="qty-val">7</strong>
-                  <span className="qty-unit">Units Left</span>
-                </div>
-              </div>
-
-              <div className="low-stock-item">
-                <div className="item-thumbnail">
-                  <Layers size={18} color="#64748b" />
-                </div>
-                <div className="item-details">
-                  <strong>Packing Tape 48mm</strong>
-                  <span>WH-03 • Shelf C3</span>
-                </div>
-                <div className="item-qty-badge">
-                  <strong className="qty-val">12</strong>
-                  <span className="qty-unit">Units Left</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="low-stock-footer">
-              <span className="items-count-text">3 items low in stock</span>
-              <button
-                type="button"
-                className="view-inventory-btn"
-                onClick={() => onSelectModule("stock")}
-              >
-                View Inventory
-              </button>
+              {lowStockProducts.length === 0 ? (
+                <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "8px 0" }}>
+                  No hay artículos con stock crítico en este momento.
+                </p>
+              ) : (
+                lowStockProducts.map((p) => (
+                  <div key={p.id} className="low-stock-item" style={{ cursor: "pointer" }} onClick={() => onSelectModule("catalog")}>
+                    <div className="item-thumbnail">
+                      <Warehouse size={18} color="var(--text-muted)" />
+                    </div>
+                    <div className="item-details">
+                      <strong>{p.name}</strong>
+                      <span>Almacén Central</span>
+                    </div>
+                    <div className="item-qty-badge">
+                      <strong className="qty-val">{p.stock ?? 0}</strong>
+                      <span className="qty-unit">Unidades</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </section>
         </div>
