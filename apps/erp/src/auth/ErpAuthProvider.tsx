@@ -4,86 +4,31 @@ import { supabase, supabaseConfigError } from "../lib/supabase";
 import { ErpAuthContext } from "./ErpAuthContext";
 import { parseErpContext } from "./ErpContextValidation";
 
-const DEV_MOCK_SESSION: Session = {
-  access_token: "dev-token",
-  token_type: "bearer",
-  expires_in: 3600,
-  refresh_token: "dev-refresh",
-  user: {
-    id: "dev-user-0000-0000-0000-000000000000",
-    app_metadata: {
-      provider: "email",
-      permissions: [
-        "dashboard.view",
-        "sales.create",
-        "pos.operate",
-        "cash.view",
-        "orders.view",
-        "catalog.view",
-        "stock.view",
-        "stock_counts.view",
-        "labels.print",
-        "purchases.view",
-        "suppliers.view",
-        "customers.view",
-        "quotes.view",
-        "repairs.view",
-        "repair_tests.view",
-        "pc_builds.view",
-        "trade_ins.view",
-        "warranties.view",
-        "pricing.view",
-        "accounts_receivable.view",
-        "accounts_receivable.manage",
-        "accounting.view",
-        "accounting.post",
-        "accounting.close_period",
-        "profitability.view",
-        "reports.view",
-        "documents.view",
-        "messages.view",
-        "integraciones.view",
-        "users.view",
-        "locations.view",
-        "configuration.view",
-        "audit.view",
-      ],
-    },
-    user_metadata: { full_name: "Operador Local / NicTech Dev" },
-    aud: "authenticated",
-    created_at: new Date().toISOString(),
-  },
-};
-
 export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [session, setSession] = useState<Session | null>(import.meta.env.DEV ? DEV_MOCK_SESSION : null);
-  const [organizationId, setOrganizationId] = useState<string | null>("dev-org-0000");
-  const [loading, setLoading] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    const client = supabase;
 
-    if (!client) {
-      if (!import.meta.env.DEV) {
-        setError(supabaseConfigError ?? "Configuración de Supabase incompleta.");
-      }
+    if (supabaseConfigError) {
+      setError(supabaseConfigError);
       setLoading(false);
-      return () => { mounted = false; };
+      return () => {
+        mounted = false;
+      };
     }
+
+    const client = supabase;
 
     const loadErpContext = async (nextSession: Session | null) => {
       if (!mounted) return;
-      if (nextSession) {
-        setSession(nextSession);
-      } else if (import.meta.env.DEV) {
-        setSession(DEV_MOCK_SESSION);
-      } else {
-        setSession(null);
-      }
-      
+      setSession(nextSession);
+
       if (!nextSession) {
+        setOrganizationId(null);
         setLoading(false);
         return;
       }
@@ -91,10 +36,9 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
       setLoading(true);
       const { data, error: contextError } = await client.rpc("get_current_erp_context");
       if (!mounted) return;
+
       if (contextError) {
-        if (!import.meta.env.DEV) {
-          setError(contextError.message);
-        }
+        setError(contextError.message);
         setLoading(false);
         return;
       }
@@ -102,18 +46,17 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
       try {
         const context = parseErpContext(data);
         setOrganizationId(context.organization_id);
+        setError(null);
         setLoading(false);
       } catch (contextParseError) {
-        if (!import.meta.env.DEV) {
-          setError(contextParseError instanceof Error ? contextParseError.message : "Contexto ERP inválido");
-        }
+        setError(contextParseError instanceof Error ? contextParseError.message : "Contexto ERP inválido");
         setLoading(false);
       }
     };
 
     void client.auth.getSession().then(({ data, error: sessionError }) => {
       if (sessionError) {
-        if (mounted && !import.meta.env.DEV) setError(sessionError.message);
+        if (mounted) setError(sessionError.message);
         return;
       }
       void loadErpContext(data.session);
@@ -136,11 +79,16 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
       loading,
       error,
       hasPermission: (permission: string) => {
-        if (import.meta.env.DEV && (!session || session.access_token === "dev-token")) {
+        if (!session) return false;
+        const permissions = session.user.app_metadata?.permissions;
+        if (Array.isArray(permissions)) {
+          return permissions.includes(permission);
+        }
+        const role = session.user.app_metadata?.role ?? session.user.user_metadata?.role;
+        if (role === "owner" || role === "admin" || role === "super_admin") {
           return true;
         }
-        const permissions = session?.user.app_metadata?.permissions;
-        return Array.isArray(permissions) && permissions.includes(permission);
+        return false;
       },
     }),
     [error, loading, organizationId, session],
@@ -148,3 +96,4 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
 
   return <ErpAuthContext.Provider value={value}>{children}</ErpAuthContext.Provider>;
 };
+

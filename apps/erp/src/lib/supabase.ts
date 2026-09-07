@@ -5,17 +5,25 @@ import { resolveSupabaseConfig } from "./supabaseConfig";
 const runtimeEnv = (import.meta as ImportMeta & {
   env?: Record<string, string | undefined>;
 }).env ?? {};
-const supabaseUrl = runtimeEnv.VITE_SUPABASE_URL;
-const supabasePublishableKey = runtimeEnv.VITE_SUPABASE_PUBLISHABLE_KEY;
-const configResult = resolveSupabaseConfig({
-  VITE_SUPABASE_URL: supabaseUrl,
-  VITE_SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey,
+
+export const configResult = resolveSupabaseConfig({
+  VITE_SUPABASE_URL: runtimeEnv.VITE_SUPABASE_URL,
+  VITE_SUPABASE_PUBLISHABLE_KEY: runtimeEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
 });
 
-export const supabase: SupabaseClient | null = configResult.ok
+export const supabaseConfigError: string | null = configResult.ok ? null : configResult.message;
+
+export const supabase: SupabaseClient<any, "erp"> = configResult.ok
   ? createClient(configResult.config.url, configResult.config.publishableKey, {
+      db: { schema: "erp" },
       auth: { persistSession: true, autoRefreshToken: true, storage: localStorage },
     })
-  : null;
+  : (new Proxy({}, {
+      get(_target, prop) {
+        throw new Error(
+          supabaseConfigError ??
+            "Configuración de Supabase incompleta. Configure VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.",
+        );
+      },
+    }) as unknown as SupabaseClient<any, "erp">);
 
-export const supabaseConfigError = configResult.ok ? null : configResult.message;
