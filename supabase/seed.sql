@@ -772,3 +772,16 @@ insert into erp.role_permissions(organization_id,role_id,permission_id)
 select '10000000-0000-0000-0000-000000000001','40000000-0000-0000-0000-000000000004',id
 from erp.permissions where code in('documents.view','documents.issue')
 on conflict(role_id,permission_id) do update set is_active=true,updated_at=now();
+
+insert into erp.repair_credential_keys (
+  organization_id, key_version, key_material, is_active
+)
+select
+  '10000000-0000-0000-0000-000000000001'::uuid,
+  1,
+  extensions.gen_random_bytes(32),
+  true
+where not exists (
+  select 1 from erp.repair_credential_keys
+  where organization_id = '10000000-0000-0000-0000-000000000001'::uuid and is_active
+);
