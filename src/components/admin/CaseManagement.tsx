@@ -152,11 +152,6 @@ export const CaseManagement = () => {
                     .order('color');
                 setModalVariants(variants as unknown as Variant[] || []);
             } else {
-                    .select('*')
-                    .eq('product_id', stockUpdateData.caseId)
-                    .order('color');
-                setModalVariants(variants as unknown as Variant[] || []);
-            } else {
                 setModalVariants([]);
             }
         };
@@ -191,8 +186,13 @@ export const CaseManagement = () => {
             console.error("Error al cargar modelos:", modelsError);
         }
 
+        interface ModelQueryRow {
+            id: string;
+            name: string;
+            brands?: { id: string; name: string } | null;
+        }
         if (modelsData) {
-            const formatted = (modelsData as any[]).map((m: any) => ({
+            const formatted = (modelsData as unknown as ModelQueryRow[]).map((m) => ({
                 id: m.id,
                 name: m.brands?.name ? `${m.brands.name} ${m.name}`.trim() : m.name,
                 brand_name: m.brands?.name || '',
