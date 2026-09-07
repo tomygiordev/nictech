@@ -29,6 +29,66 @@ export const parseRpcId = (value: unknown, label: string): string => {
   return result.data;
 };
 
+export type BranchOption = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type CustomerOption = {
+  id: string;
+  code: string;
+  display_name: string;
+};
+
+export const listBranches = async (): Promise<BranchOption[]> => {
+  try {
+    const { data, error } = await getSupabase()
+      .from("branches")
+      .select("id,code,name")
+      .order("name");
+    if (error) {
+      console.warn("Aviso al consultar branches:", error.message);
+      return [];
+    }
+    return asRows<BranchOption>(data);
+  } catch (err) {
+    console.warn("Error en listBranches:", err);
+    return [];
+  }
+};
+
+export const listCustomers = async (): Promise<CustomerOption[]> => {
+  try {
+    const { data, error } = await getSupabase()
+      .from("customers")
+      .select("id,code,display_name")
+      .order("display_name");
+    if (error) {
+      console.warn("Aviso al consultar customers:", error.message);
+      return [];
+    }
+    return asRows<CustomerOption>(data);
+  } catch (err) {
+    console.warn("Error en listCustomers:", err);
+    return [];
+  }
+};
+
+export const bootstrapChartOfAccounts = async (): Promise<void> => {
+  const { error } = await getSupabase().rpc("bootstrap_chart_of_accounts");
+  if (error) throw error;
+};
+
+export const calculateFinancingStatus = async (contractId: string): Promise<string> => {
+  const { data, error } = await getSupabase().rpc("calculate_financing_status", {
+    target_contract_id: contractId,
+  });
+  if (error) throw error;
+  if (typeof data !== "string" || data.length === 0) throw new Error("Respuesta inválida para financing status");
+  return data;
+};
+
 export const listFinancingContracts = async (): Promise<FinancingContract[]> => {
   try {
     const { data, error } = await getSupabase()

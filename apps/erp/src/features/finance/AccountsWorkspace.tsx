@@ -6,6 +6,8 @@ import { CircleDollarSign, PlusCircle, CreditCard, Users, Clock, AlertCircle } f
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   createFinancingContract,
+  listBranches,
+  listCustomers,
   listFinancingContracts,
   recordReceivablePayment,
 } from "./api";
@@ -13,22 +15,23 @@ import { financingSchema, receivablePaymentSchema, type FinancingInput, type Rec
 import { StatePanel, WorkspaceHeader, FeedbackAlert, KpiCard } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
 
-const BRANCH_OPTIONS = [
-  { id: "dev-branch-0000", name: "Sucursal Central (Belgrano)" },
-  { id: "dev-branch-0001", name: "Depósito Central" },
-];
+const TERMINAL_CONTRACT_STATUSES = ["paid", "cancelled", "uncollectible"];
 
 export const AccountsWorkspace = () => {
   const { hasPermission } = useErpAuth();
   const queryClient = useQueryClient();
   const contractsQuery = useQuery({ queryKey: ["erp", "finance", "contracts"], queryFn: listFinancingContracts });
+  const branchesQuery = useQuery({ queryKey: ["erp", "finance", "branches"], queryFn: listBranches });
+  const customersQuery = useQuery({ queryKey: ["erp", "finance", "customers"], queryFn: listCustomers });
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [formGuardError, setFormGuardError] = useState<string | null>(null);
+  const [paymentGuardError, setPaymentGuardError] = useState<string | null>(null);
 
   const createForm = useForm<FinancingInput>({
     resolver: zodResolver(financingSchema),
     defaultValues: {
-      branchId: "dev-branch-0000",
-      customerId: "dev-cust-0001",
+      branchId: "",
+      customerId: "",
       currency: "ARS",
       principal: "250000",
       downPayment: "50000",
@@ -43,13 +46,59 @@ export const AccountsWorkspace = () => {
   const paymentForm = useForm<ReceivablePaymentInput>({
     resolver: zodResolver(receivablePaymentSchema),
     defaultValues: {
-      branchId: "dev-branch-0000",
+      branchId: "",
       contractId: "",
       amount: "50000",
       operationKey: generateIdempotencyKey("pay"),
       reason: "Cobro de cuota presencial en mostrador",
     },
   });
+
+  const submitFinancing = (values: FinancingInput) => {
+    if (!values.branchId || !values.customerId) {
+      setFormGuardError("Seleccioná una sucursal y un cliente válidos antes de crear la financiación.");
+      return;
+    }
+    if (Number(values.downPayment) > Number(values.principal)) {
+      setFormGuardError("El anticipo no puede superar el monto principal.");
+      return;
+    }
+    setFormGuardError(null);
+    createMutation.mutate(values);
+  };
+
+  const outstandingForContract = (contractId: string): number => {
+    const contract = (contractsQuery.data ?? []).find((c) => c.id === contractId);
+    if (!contract?.financing_installments?.length) return Number.NaN;
+    return contract.financing_installments.reduce((acc, i) => {
+      const due =
+        Number(i.principal_due || 0) + Number(i.interest_due || 0) + Number(i.late_fee_due || 0);
+      const paid =
+        Number(i.paid_principal || 0) + Number(i.paid_interest || 0) + Number(i.paid_late_fee || 0);
+      return acc + (due - paid);
+    }, 0);
+  };
+
+  const submitPayment = (values: ReceivablePaymentInput) => {
+    const contract = (contractsQuery.data ?? []).find((c) => c.id === values.contractId);
+    if (!contract) {
+      setPaymentGuardError("Seleccioná un contrato de financiación válido.");
+      return;
+    }
+    if (TERMINAL_CONTRACT_STATUSES.includes(contract.status)) {
+      setPaymentGuardError(`El contrato está en estado "${contract.status}" y ya no admite cobros.`);
+      return;
+    }
+    const outstanding = outstandingForContract(values.contractId);
+    if (!Number.isNaN(outstanding) && Number(values.amount) > outstanding + 0.001) {
+      setPaymentGuardError(
+        `El importe supera el saldo pendiente (${formatCurrency(outstanding, "ARS")}).`,
+      );
+      return;
+    }
+    setPaymentGuardError(null);
+    paymentMutation.mutate(values);
+  };
 
   const createMutation = useMutation({
     mutationFn: createFinancingContract,
@@ -82,6 +131,18 @@ export const AccountsWorkspace = () => {
   const contracts = contractsQuery.data ?? [];
   const totalPrincipal = contracts.reduce((acc, c) => acc + Number(c.principal_amount || 0), 0);
   const totalFinanced = contracts.reduce((acc, c) => acc + Number(c.financed_amount || 0), 0);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const allInstallments = contracts.flatMap((c) => c.financing_installments ?? []);
+  const pendingInstallments = allInstallments.filter((i) => i.status !== "paid" && i.status !== "cancelled").length;
+  const overdueInstallments = allInstallments.filter(
+    (i) => i.status !== "paid" && i.status !== "cancelled" && i.due_date.slice(0, 10) < todayIso,
+  ).length;
+  const averageMonthlyRate =
+    contracts.length > 0
+      ? contracts.reduce((acc, c) => acc + Number(c.monthly_interest_rate || 0), 0) / contracts.length
+      : null;
+  const averageRateLabel =
+    averageMonthlyRate === null ? "—" : `${(averageMonthlyRate * 100).toFixed(1)}% mensual`;
 
   const openPaymentForContract = (contractId: string) => {
     paymentForm.setValue("contractId", contractId);
@@ -133,9 +194,9 @@ export const AccountsWorkspace = () => {
         <KpiCard
           icon={Clock}
           iconVariant="dark"
-          label="Tasa Promedio Mensual"
-          value="5.0% TNA/TEM"
-          sublabel="Interés pactado de financiación"
+          label="Tasa Promedio Pactada"
+          value={averageRateLabel}
+          sublabel={`${overdueInstallments} cuotas vencidas · ${pendingInstallments} pendientes`}
         />
       </div>
 
@@ -234,16 +295,28 @@ export const AccountsWorkspace = () => {
               </div>
             </div>
 
-            <form onSubmit={createForm.handleSubmit((values) => createMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <form onSubmit={createForm.handleSubmit(submitFinancing)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
-                  <label className="erp-form-label">Sucursal</label>
+                  <label className="erp-form-label">Sucursal *</label>
                   <select className="erp-form-select" {...createForm.register("branchId")}>
-                    {BRANCH_OPTIONS.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                    <option value="">Seleccioná una sucursal</option>
+                    {(branchesQuery.data ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
                     ))}
                   </select>
                 </div>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Cliente *</label>
+                  <select className="erp-form-select" {...createForm.register("customerId")}>
+                    <option value="">Seleccioná un cliente</option>
+                    {(customersQuery.data ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>{c.code} - {c.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
                   <label className="erp-form-label">Moneda</label>
                   <input className="erp-form-input" placeholder="Moneda (ARS/USD)" {...createForm.register("currency")} />
@@ -281,6 +354,11 @@ export const AccountsWorkspace = () => {
                 <input className="erp-form-input" placeholder="Financiación de equipo en cuotas fijas" {...createForm.register("reason")} />
               </div>
 
+              {formGuardError ? (
+                <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> {formGuardError}
+                </div>
+              ) : null}
               {createMutation.error ? (
                 <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
                   <AlertCircle size={14} /> {createMutation.error.message}
@@ -304,7 +382,7 @@ export const AccountsWorkspace = () => {
               </div>
             </div>
 
-            <form onSubmit={paymentForm.handleSubmit((values) => paymentMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <form onSubmit={paymentForm.handleSubmit(submitPayment)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div className="erp-form-group">
                 <label className="erp-form-label">Contrato de Financiación *</label>
                 <select className="erp-form-select" {...paymentForm.register("contractId")}>
@@ -323,10 +401,11 @@ export const AccountsWorkspace = () => {
                   <input className="erp-form-input" type="number" placeholder="50000" {...paymentForm.register("amount")} />
                 </div>
                 <div className="erp-form-group">
-                  <label className="erp-form-label">Sucursal de Cobro</label>
+                  <label className="erp-form-label">Sucursal de Cobro *</label>
                   <select className="erp-form-select" {...paymentForm.register("branchId")}>
-                    {BRANCH_OPTIONS.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                    <option value="">Seleccioná una sucursal</option>
+                    {(branchesQuery.data ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
                     ))}
                   </select>
                 </div>
@@ -337,6 +416,11 @@ export const AccountsWorkspace = () => {
                 <input className="erp-form-input" placeholder="Cobro cuota 1 en efectivo" {...paymentForm.register("reason")} />
               </div>
 
+              {paymentGuardError ? (
+                <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> {paymentGuardError}
+                </div>
+              ) : null}
               {paymentMutation.error ? (
                 <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
                   <AlertCircle size={14} /> {paymentMutation.error.message}

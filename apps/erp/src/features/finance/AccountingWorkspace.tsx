@@ -24,8 +24,10 @@ import {
 } from "lucide-react";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
+  bootstrapChartOfAccounts,
   closeAccountingPeriod,
   listAccountingPeriods,
+  listBranches,
   listChartOfAccounts,
   listJournalEntries,
   postJournalEntry,
@@ -354,6 +356,14 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     queryFn: listJournalEntries,
     enabled: isAccountingMode && hasPermission("accounting.view"),
   });
+  const branches = useQuery({
+    queryKey: ["erp", "accounting", "branches"],
+    queryFn: listBranches,
+    enabled: isAccountingMode && hasPermission("accounting.view"),
+  });
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [bootstrapPending, setBootstrapPending] = useState(false);
+  const [periodGuardError, setPeriodGuardError] = useState<string | null>(null);
 
   const closeForm = useForm<ClosePeriodInput>({
     resolver: zodResolver(closePeriodSchema),
@@ -363,6 +373,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
   const journalForm = useForm<JournalEntryInput>({
     resolver: zodResolver(journalEntrySchema),
     defaultValues: {
+      branchId: "",
       entryDate: today(),
       operationKey: generateIdempotencyKey("jnl"),
       reason: "Asiento de ajuste contable",
@@ -387,13 +398,34 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     resolver: zodResolver(reconciliationSchema),
     defaultValues: {
       accountId: "",
-      branchId: "dev-branch-0000",
+      branchId: "",
       asOfDate: today(),
       subledgerBalance: "0",
       generalLedgerBalance: "0",
       reason: "Conciliación periódica de saldos",
     },
   });
+
+  const isDateInOpenPeriod = (isoDate: string): boolean => {
+    if (!isoDate) return false;
+    return (periods.data ?? []).some(
+      (p) => p.status === "open" && isoDate >= p.period_start.slice(0, 10) && isoDate <= p.period_end.slice(0, 10),
+    );
+  };
+
+  const handleBootstrap = async () => {
+    setBootstrapError(null);
+    setBootstrapPending(true);
+    try {
+      await bootstrapChartOfAccounts();
+      await queryClient.invalidateQueries({ queryKey: ["erp", "accounting", "accounts"] });
+      setFeedback("¡Plan de cuentas inicializado correctamente!");
+    } catch (err) {
+      setBootstrapError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBootstrapPending(false);
+    }
+  };
 
   const closeMutation = useMutation({
     mutationFn: closeAccountingPeriod,
@@ -409,6 +441,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["erp", "accounting", "entries"] });
       journalForm.reset({
+        branchId: journalForm.getValues().branchId,
         entryDate: today(),
         operationKey: generateIdempotencyKey("jnl"),
         reason: "",
@@ -417,10 +450,26 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
           { account_id: "", description: "Haber", debit: "0", credit: "0", currency_code: "ARS", exchange_rate: "1" },
         ],
       });
+      setPeriodGuardError(null);
       setIsJournalModalOpen(false);
       setFeedback("¡Asiento contable publicado y validado en el libro diario!");
     },
   });
+
+  const submitJournalEntry = (values: JournalEntryInput) => {
+    if (!values.branchId) {
+      setPeriodGuardError("Seleccioná una sucursal válida antes de publicar el asiento.");
+      return;
+    }
+    if ((periods.data ?? []).length > 0 && !isDateInOpenPeriod(values.entryDate)) {
+      setPeriodGuardError(
+        `La fecha ${values.entryDate} no cae en ningún período abierto. Revisá los períodos fiscales antes de postear.`,
+      );
+      return;
+    }
+    setPeriodGuardError(null);
+    journalMutation.mutate(values);
+  };
 
   const reversalMutation = useMutation({
     mutationFn: reverseJournalEntry,
@@ -596,7 +645,25 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
                 <span className="type-badge blue">{chartAccounts.length} cuentas</span>
               </div>
               {chartAccounts.length === 0 ? (
-                <p style={{ fontSize: "13px", color: "var(--text-muted)", padding: "16px" }}>No hay cuentas inicializadas todavía.</p>
+                <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}>No hay cuentas inicializadas todavía.</p>
+                  {hasPermission("accounting.post") && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ justifyContent: "center" }}
+                        disabled={bootstrapPending}
+                        onClick={() => void handleBootstrap()}
+                      >
+                        {bootstrapPending ? "Inicializando…" : "Inicializar plan de cuentas"}
+                      </button>
+                      {bootstrapError ? (
+                        <FeedbackAlert type="error" message={bootstrapError} />
+                      ) : null}
+                    </>
+                  )}
+                </div>
               ) : (
                 <div style={{ maxHeight: "240px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
                   {chartAccounts.map((account) => (
@@ -815,7 +882,19 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
         icon={BookOpen}
         maxWidth="600px"
       >
-        <form onSubmit={journalForm.handleSubmit((values) => journalMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        <form onSubmit={journalForm.handleSubmit(submitJournalEntry)} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div className="erp-form-group">
+            <label className="erp-form-label">Sucursal *</label>
+            <select className="erp-form-select" {...journalForm.register("branchId")}>
+              <option value="">Seleccioná una sucursal</option>
+              {(branches.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
+              ))}
+            </select>
+            {journalForm.formState.errors.branchId ? (
+              <span style={{ fontSize: "12px", color: "var(--rose-accent)" }}>Seleccioná una sucursal válida.</span>
+            ) : null}
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
             <div className="erp-form-group">
               <label className="erp-form-label">Fecha del Asiento *</label>
@@ -858,6 +937,9 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             </div>
           </div>
 
+          {periodGuardError ? (
+            <FeedbackAlert type="error" message={periodGuardError} />
+          ) : null}
           {journalMutation.error ? (
             <FeedbackAlert type="error" message={journalMutation.error.message} />
           ) : null}
@@ -930,6 +1012,15 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
         maxWidth="500px"
       >
         <form onSubmit={reconciliationForm.handleSubmit((values) => reconciliationMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div className="erp-form-group">
+            <label className="erp-form-label">Sucursal *</label>
+            <select className="erp-form-select" {...reconciliationForm.register("branchId")}>
+              <option value="">Seleccioná una sucursal</option>
+              {(branches.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="erp-form-group">
             <label className="erp-form-label">Cuenta Contable a Conciliar *</label>
             <select className="erp-form-select" {...reconciliationForm.register("accountId")}>
