@@ -16,7 +16,7 @@ export interface ErpModuleDefinition {
   stage: number;
 }
 
-export const ERP_MODULES: readonly ErpModuleDefinition[] = [
+export const ERP_MODULES = [
   { id: "dashboard", area: "operaciones", label: "Centro operativo", description: "Tareas, excepciones y estado diario", permission: "dashboard.view", stage: 10 },
   { id: "pos", area: "operaciones", label: "Punto de venta", description: "Ventas presenciales y pagos", permission: "sales.create", stage: 5 },
   { id: "cash", area: "operaciones", label: "Caja", description: "Apertura, movimientos, arqueo y cierre", permission: "cash.view", stage: 5 },
@@ -46,4 +46,183 @@ export const ERP_MODULES: readonly ErpModuleDefinition[] = [
   { id: "locations", area: "sistema", label: "Sucursales y ubicaciones", description: "Estructura fisica y operativa", permission: "locations.view", stage: 2 },
   { id: "settings", area: "sistema", label: "Configuracion", description: "Reglas, plantillas y parametros", permission: "configuration.view", stage: 1 },
   { id: "audit", area: "sistema", label: "Auditoria", description: "Actores, cambios y correlacion", permission: "audit.view", stage: 1 },
-] as const;
+] as const satisfies readonly ErpModuleDefinition[];
+
+export type ErpModuleId = (typeof ERP_MODULES)[number]["id"];
+
+export type ErpWorkspaceId =
+  | "dashboard"
+  | "pos"
+  | "cash"
+  | "online-orders"
+  | "catalog"
+  | "stock"
+  | "purchases"
+  | "customers"
+  | "quotes"
+  | "repairs"
+  | "pc-builds"
+  | "trade-ins"
+  | "accounts"
+  | "accounting"
+  | "documents"
+  | "whatsapp"
+  | "integration-health"
+  | "system"
+  | "audit";
+
+export interface ErpWorkspaceDefinition {
+  id: ErpWorkspaceId;
+  area: ErpArea;
+  label: string;
+  description: string;
+  moduleIds: readonly ErpModuleId[];
+}
+
+export const ERP_WORKSPACES = [
+  {
+    id: "dashboard",
+    area: "operaciones",
+    label: "Centro operativo",
+    description: "Tareas, excepciones y estado diario",
+    moduleIds: ["dashboard"],
+  },
+  {
+    id: "pos",
+    area: "operaciones",
+    label: "Punto de venta",
+    description: "Ventas presenciales y pagos",
+    moduleIds: ["pos"],
+  },
+  {
+    id: "cash",
+    area: "operaciones",
+    label: "Caja",
+    description: "Apertura, movimientos, arqueo y cierre",
+    moduleIds: ["cash"],
+  },
+  {
+    id: "online-orders",
+    area: "operaciones",
+    label: "Pedidos online",
+    description: "Preparación, entrega y devoluciones",
+    moduleIds: ["online-orders"],
+  },
+  {
+    id: "catalog",
+    area: "inventario",
+    label: "Catálogo y precios",
+    description: "Catálogo maestro de artículos, servicios y listas de precios",
+    moduleIds: ["catalog", "pricing"],
+  },
+  {
+    id: "stock",
+    area: "inventario",
+    label: "Stock y almacén",
+    description: "Ubicaciones, depósitos, inventarios físicos y etiquetas",
+    moduleIds: ["stock", "stock-counts", "labels"],
+  },
+  {
+    id: "purchases",
+    area: "comercial",
+    label: "Compras y proveedores",
+    description: "Órdenes de compra, recepción de mercadería y proveedores",
+    moduleIds: ["purchases", "suppliers"],
+  },
+  {
+    id: "customers",
+    area: "comercial",
+    label: "Clientes",
+    description: "Historial unificado de clientes y equipos vinculados",
+    moduleIds: ["customers"],
+  },
+  {
+    id: "quotes",
+    area: "comercial",
+    label: "Presupuestos",
+    description: "Presupuestos comerciales, versiones y vigencia",
+    moduleIds: ["quotes"],
+  },
+  {
+    id: "repairs",
+    area: "taller",
+    label: "Servicio técnico",
+    description: "Órdenes de reparación, pruebas técnicas y garantías",
+    moduleIds: ["repairs", "repair-tests", "warranties"],
+  },
+  {
+    id: "pc-builds",
+    area: "taller",
+    label: "Armados de PC",
+    description: "Compatibilidad, reservas y pruebas de ensamblado",
+    moduleIds: ["pc-builds"],
+  },
+  {
+    id: "trade-ins",
+    area: "taller",
+    label: "Equipos usados",
+    description: "Canjes, evaluación técnica y cuarentena",
+    moduleIds: ["trade-ins"],
+  },
+  {
+    id: "accounts",
+    area: "finanzas",
+    label: "Cuentas corrientes",
+    description: "Saldos, cuotas y vencimientos por cliente",
+    moduleIds: ["accounts"],
+  },
+  {
+    id: "accounting",
+    area: "finanzas",
+    label: "Contabilidad y análisis",
+    description: "Libro diario, períodos, rentabilidad e informes",
+    moduleIds: ["accounting", "profitability", "reports"],
+  },
+  {
+    id: "documents",
+    area: "integraciones",
+    label: "Documentos y ARCA",
+    description: "Comprobantes fiscales electrónicos, CAE y entregas",
+    moduleIds: ["documents"],
+  },
+  {
+    id: "whatsapp",
+    area: "integraciones",
+    label: "WhatsApp",
+    description: "Conversaciones, avisos y automatizaciones",
+    moduleIds: ["whatsapp"],
+  },
+  {
+    id: "integration-health",
+    area: "integraciones",
+    label: "Integraciones",
+    description: "Estado de webhooks, intentos y reintentos",
+    moduleIds: ["integration-health"],
+  },
+  {
+    id: "system",
+    area: "sistema",
+    label: "Configuración y accesos",
+    description: "Usuarios, sucursales y parámetros generales del sistema",
+    moduleIds: ["users", "locations", "settings"],
+  },
+  {
+    id: "audit",
+    area: "sistema",
+    label: "Auditoría",
+    description: "Registro inmutable de actores, cambios y correlación",
+    moduleIds: ["audit"],
+  },
+] as const satisfies readonly ErpWorkspaceDefinition[];
+
+export const getErpModuleById = (id: string): ErpModuleDefinition | undefined => {
+  return ERP_MODULES.find((m) => m.id === id);
+};
+
+export const getErpWorkspaceById = (id: string): ErpWorkspaceDefinition | undefined => {
+  return ERP_WORKSPACES.find((w) => w.id === id);
+};
+
+export const getErpWorkspaceByModuleId = (moduleId: string): ErpWorkspaceDefinition | undefined => {
+  return ERP_WORKSPACES.find((w) => (w.moduleIds as readonly string[]).includes(moduleId));
+};
