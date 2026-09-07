@@ -135,14 +135,22 @@ export const Promos = () => {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-6">
                 {products.map((product) => (
-                  <button
+                  <div
                     key={product.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       supabase.from('product_clicks').insert({ product_id: product.id });
                       setSelectedProduct(product);
                     }}
-                    className="cursor-pointer text-left w-full outline-none transition-all duration-100 ease-out-default active:scale-[0.98]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        supabase.from('product_clicks').insert({ product_id: product.id });
+                        setSelectedProduct(product);
+                      }
+                    }}
+                    className="cursor-pointer text-left w-full outline-none transition-all duration-100 ease-out-default active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary focus-visible:rounded-2xl"
                     aria-label={`Ver detalles de ${product.name}`}
                   >
                     <ProductCard
@@ -157,7 +165,7 @@ export const Promos = () => {
                       category={product.category?.name || 'Varios'}
                       tags={product.tags}
                     />
-                  </button>
+                  </div>
                 ))}
               </div>
             )}

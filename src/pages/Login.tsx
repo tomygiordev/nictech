@@ -189,7 +189,7 @@ const Login = () => {
                                     Ingresando...
                                 </>
                             ) : lockoutUntil && Date.now() < lockoutUntil ? (
-                                'Acesso Bloqueado'
+                                'Acceso Bloqueado'
                             ) : (
                                 'Iniciar Sesión'
                             )}

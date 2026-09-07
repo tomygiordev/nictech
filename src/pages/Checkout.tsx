@@ -219,7 +219,7 @@ const Checkout = () => {
               Volver a la Tienda
             </Button>
 
-            <div className="flex flex-col-reverse lg:grid lg:grid-cols-12 gap-8">
+            <div className="flex flex-col lg:grid lg:grid-cols-12 gap-8">
               {/* Payment Form */}
               <div className="lg:col-span-7 space-y-6">
                 <div className="bg-card rounded-2xl p-6 border border-border">

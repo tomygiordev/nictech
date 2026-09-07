@@ -3,11 +3,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Search, Loader2, Package, Gift, Percent, ChevronRight, Wallet, CreditCard, Landmark } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Layout } from '@/components/layout/Layout';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { ProductCard } from '@/components/shop/ProductCard';
 import { ProductFilters } from '@/components/shop/ProductFilters';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -411,8 +411,6 @@ const Tienda = () => {
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  const showBanner = !selectedCategory && !selectedBrand && !selectedModel && !searchQuery && !selectedTag;
-
   return (
     <>
       <Helmet>
@@ -454,7 +452,7 @@ const Tienda = () => {
                 </div>
               </div>
 
-              {/* Promos y Combos Quick Access (Emil Kowalski dynamic premium design) */}
+              {/* Promos y Combos Quick Access */}
               <div className="flex justify-center gap-4 mt-6">
                 {/* Promos Link */}
                 <Link
@@ -599,14 +597,22 @@ const Tienda = () => {
                   <>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-6">
                       {displayedProducts.map((product) => (
-                        <button
+                        <div
                           key={product.id}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => {
                             supabase.from('product_clicks').insert({ product_id: product.id });
                             setSelectedProduct(product);
                           }}
-                          className="cursor-pointer text-left w-full outline-none transition-all duration-100 ease-out-default active:scale-[0.98]"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              supabase.from('product_clicks').insert({ product_id: product.id });
+                              setSelectedProduct(product);
+                            }
+                          }}
+                          className="cursor-pointer text-left w-full outline-none transition-all duration-100 ease-out-default active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary focus-visible:rounded-2xl"
                           aria-label={`Ver detalles de ${product.name}`}
                         >
                           <ProductCard
@@ -626,19 +632,21 @@ const Tienda = () => {
                             category={product.category?.name || 'Varios'}
                             tags={product.tags}
                           />
-                        </button>
+                        </div>
                       ))}
                     </div>
 
                     {visibleCount < filteredProducts.length && (
                       <div className="flex justify-center mt-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <button
+                        <Button
+                          variant="secondary"
+                          size="lg"
                           onClick={() => setVisibleCount(prev => prev + INITIAL_VISIBLE_COUNT)}
-                          className="px-8 py-3 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 font-medium transition-all shadow-sm flex items-center gap-2"
+                          className="rounded-full px-8 gap-2 font-medium shadow-sm transition-all active:scale-[0.97]"
                         >
                           Cargar más productos
                           <ChevronRight className="h-4 w-4" />
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </>
@@ -659,4 +667,3 @@ const Tienda = () => {
 };
 
 export default Tienda;
- 

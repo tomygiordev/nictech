@@ -143,7 +143,7 @@ const Seguimiento = () => {
                     className="pl-12 h-12 rounded-xl"
                   />
                 </div>
-                <Button type="submit" size="lg" disabled={loading}>
+                <Button type="submit" size="lg" disabled={loading} className="h-12 rounded-xl px-6 font-medium">
                   {loading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
                   ) : (
@@ -192,7 +192,7 @@ const Seguimiento = () => {
                             {item.tracking_code}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {new Date(item.created_at).toLocaleDateString('es-PE')}
+                            {new Date(item.created_at).toLocaleDateString('es-AR')}
                           </span>
                         </div>
                         <h3 className="font-semibold text-lg group-hover:text-primary transition-colors">
@@ -264,7 +264,7 @@ const Seguimiento = () => {
                       <div>
                         <p className="text-sm text-muted-foreground">Fecha de ingreso</p>
                         <p className="font-medium text-foreground">
-                          {new Date(selectedRepair.created_at).toLocaleDateString('es-PE', {
+                          {new Date(selectedRepair.created_at).toLocaleDateString('es-AR', {
                             day: '2-digit',
                             month: 'long',
                             year: 'numeric',
