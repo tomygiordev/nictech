@@ -18,35 +18,12 @@ import {
   KpiCard,
 } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDateTime } from "../../lib/formatters";
-import { supabase } from "../../lib/supabase";
-
-export interface OrderPayerInfo {
-  name?: string;
-  first_name?: string;
-  last_name?: string;
-  email?: string;
-  phone?: string;
-}
-
-export interface OrderItemInfo {
-  title?: string;
-  name?: string;
-  quantity?: number;
-  unit_price?: number;
-  price?: number;
-}
-
-export interface DbOrder {
-  id: string;
-  payment_id: string | null;
-  status: string;
-  total: number;
-  items: OrderItemInfo[] | null;
-  payer: OrderPayerInfo | null;
-  created_at: string;
-  stock_decremented: boolean | null;
-  payment_method_id: string | null;
-}
+import {
+  listOnlineOrders,
+  fulfillOnlineOrder,
+  type DbOrder,
+  type FulfillOnlineOrderResult,
+} from "./api";
 
 export const OnlineOrdersWorkspace = () => {
   const [orders, setOrders] = useState<DbOrder[]>([]);
@@ -57,17 +34,19 @@ export const OnlineOrdersWorkspace = () => {
   const [selectedOrder, setSelectedOrder] = useState<DbOrder | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  const [fulfillOrder, setFulfillOrder] = useState<DbOrder | null>(null);
+  const [paymentReference, setPaymentReference] = useState<string>("");
+  const [operationReason, setOperationReason] = useState<string>("");
+  const [fulfilling, setFulfilling] = useState<boolean>(false);
+  const [fulfillError, setFulfillError] = useState<string | null>(null);
+  const [fulfillResult, setFulfillResult] = useState<FulfillOnlineOrderResult | null>(null);
+
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const { data, error: dbErr } = await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (dbErr) throw dbErr;
-      setOrders(data || []);
+      const data = await listOnlineOrders();
+      setOrders(data);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error al cargar pedidos";
       setError(msg);
@@ -80,23 +59,41 @@ export const OnlineOrdersWorkspace = () => {
     fetchOrders();
   }, [fetchOrders]);
 
-  const handleUpdateOrderStatus = async (orderId: string, nextStatus: string) => {
+  const openFulfill = (order: DbOrder) => {
+    setFulfillOrder(order);
+    setPaymentReference(order.payment_id ?? "");
+    setOperationReason("");
+    setFulfillError(null);
+    setFulfillResult(null);
+  };
+
+  const closeFulfill = () => {
+    if (fulfilling) return;
+    setFulfillOrder(null);
+    setPaymentReference("");
+    setOperationReason("");
+    setFulfillError(null);
+    setFulfillResult(null);
+  };
+
+  const handleFulfill = async () => {
+    if (!fulfillOrder) return;
     try {
-      const { error: updErr } = await supabase
-        .from("orders")
-        .update({ status: nextStatus, updated_at: new Date().toISOString() })
-        .eq("id", orderId);
-
-      if (updErr) throw updErr;
-
-      setFeedback({ type: "success", message: `¡Pedido actualizado a "${nextStatus}"!` });
-      if (selectedOrder && selectedOrder.id === orderId) {
-        setSelectedOrder({ ...selectedOrder, status: nextStatus });
-      }
-      fetchOrders();
+      setFulfilling(true);
+      setFulfillError(null);
+      setFulfillResult(null);
+      const result = await fulfillOnlineOrder(fulfillOrder.id, paymentReference, operationReason);
+      setFulfillResult(result);
+      setFeedback({
+        type: "success",
+        message: `Pedido cumplido. Venta ${result.sale_id.slice(0, 8).toUpperCase()} · Stock ${result.stock_document_id.slice(0, 8).toUpperCase()} · Asiento ${result.journal_entry_id.slice(0, 8).toUpperCase()}.`,
+      });
+      await fetchOrders();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al actualizar estado del pedido";
-      setFeedback({ type: "error", message: msg });
+      const msg = err instanceof Error ? err.message : "Error al cumplir el pedido";
+      setFulfillError(msg);
+    } finally {
+      setFulfilling(false);
     }
   };
 
@@ -242,12 +239,12 @@ export const OnlineOrdersWorkspace = () => {
             <table className="flow-table">
               <thead>
                 <tr>
-                  <th>Nro Orden / ID</th>
-                  <th>Cliente & Contacto</th>
-                  <th>Fecha</th>
-                  <th>Pago</th>
+                  <th>ID Orden</th>
+                  <th>Cliente</th>
                   <th>Total</th>
                   <th>Estado</th>
+                  <th>Creada</th>
+                  <th>Stock</th>
                   <th className="text-right">Acción</th>
                 </tr>
               </thead>
@@ -269,16 +266,6 @@ export const OnlineOrdersWorkspace = () => {
                         </div>
                       </td>
                       <td>
-                        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                          {formatDateTime(order.created_at)}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{ fontSize: "12px", textTransform: "uppercase", color: "var(--steel-blue)", fontWeight: 700 }}>
-                          {order.payment_method_id || "Mercado Pago"}
-                        </span>
-                      </td>
-                      <td>
                         <strong style={{ color: "var(--brand-primary)" }}>{formatCurrency(Number(order.total || 0), "ARS")}</strong>
                       </td>
                       <td>
@@ -290,18 +277,37 @@ export const OnlineOrdersWorkspace = () => {
                           <span className="flow-status-pill processing">{order.status}</span>
                         )}
                       </td>
+                      <td>
+                        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                          {formatDateTime(order.created_at)}
+                        </span>
+                      </td>
+                      <td>
+                        {order.stock_decremented ? (
+                          <span className="flow-status-pill completed">Descontado</span>
+                        ) : (
+                          <span className="flow-status-pill pending">Pendiente</span>
+                        )}
+                      </td>
                       <td className="text-right">
-                        <button
-                          type="button"
-                          className="pag-btn"
-                          style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedOrder(order);
-                          }}
-                        >
-                          <Eye size={12} /> Ver Detalle
-                        </button>
+                        <div style={{ display: "inline-flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="pag-btn"
+                            style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                            onClick={() => setSelectedOrder(order)}
+                          >
+                            <Eye size={12} /> Ver
+                          </button>
+                          <button
+                            type="button"
+                            className="pag-btn"
+                            style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                            onClick={() => openFulfill(order)}
+                          >
+                            <CheckCircle2 size={12} /> Cumplir
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -323,23 +329,31 @@ export const OnlineOrdersWorkspace = () => {
           maxWidth="600px"
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            {/* Status Change Buttons */}
             <div style={{ padding: "12px", background: "var(--surface-white)", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
               <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
-                Marcar Estado del Pedido:
+                Estado actual
               </span>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {["approved", "preparing", "shipped", "delivered", "cancelled"].map((st) => (
-                  <button
-                    key={st}
-                    type="button"
-                    className={`flow-select-pill ${selectedOrder.status === st ? "active" : ""}`}
-                    onClick={() => handleUpdateOrderStatus(selectedOrder.id, st)}
-                  >
-                    {st === "approved" ? "Aprobado" : st === "preparing" ? "En Preparación" : st === "shipped" ? "Despachado" : st === "delivered" ? "Entregado" : "Cancelado"}
-                  </button>
-                ))}
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                <span className="flow-status-pill processing">{selectedOrder.status}</span>
+                <span className={`flow-status-pill ${selectedOrder.stock_decremented ? "completed" : "pending"}`}>
+                  Stock: {selectedOrder.stock_decremented ? "descontado" : "pendiente"}
+                </span>
+                <button
+                  type="button"
+                  className="pag-btn"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                  onClick={() => {
+                    const current = selectedOrder;
+                    setSelectedOrder(null);
+                    openFulfill(current);
+                  }}
+                >
+                  <CheckCircle2 size={12} /> Cumplir pedido
+                </button>
               </div>
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "8px 0 0" }}>
+                El cumplimiento se ejecuta vía transacción (venta + stock + asiento). No hay cambios manuales de estado.
+              </p>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", background: "var(--canvas-bg)", padding: "12px", borderRadius: "10px" }}>
@@ -363,12 +377,11 @@ export const OnlineOrdersWorkspace = () => {
               </div>
             </div>
 
-            {/* Items breakdown */}
             {selectedOrder.items && Array.isArray(selectedOrder.items) && selectedOrder.items.length > 0 && (
               <div style={{ background: "var(--surface-white)", padding: "12px", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
                 <span className="stat-label" style={{ marginBottom: "6px", display: "block" }}>Ítems Comprados:</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {selectedOrder.items.map((it: OrderItemInfo, idx: number) => (
+                  {selectedOrder.items.map((it, idx: number) => (
                     <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border-light)", paddingBottom: "6px" }}>
                       <div>
                         <strong style={{ fontSize: "13px" }}>{it.title || it.name || `Producto ${idx + 1}`}</strong>
@@ -380,6 +393,83 @@ export const OnlineOrdersWorkspace = () => {
                 </div>
               </div>
             )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Fulfill Modal */}
+      {fulfillOrder && (
+        <Modal
+          isOpen={Boolean(fulfillOrder)}
+          onClose={closeFulfill}
+          title={`Cumplir pedido ORD-${fulfillOrder.id.slice(0, 8).toUpperCase()}`}
+          subtitle={`Total ${formatCurrency(Number(fulfillOrder.total || 0), "ARS")} • Transacción: venta + stock + asiento`}
+          icon={CheckCircle2}
+          maxWidth="520px"
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div>
+              <label htmlFor="fulfill-payment-ref" style={{ fontSize: "12px", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                Referencia de pago (MercadoPago) *
+              </label>
+              <input
+                id="fulfill-payment-ref"
+                type="text"
+                className="flow-input"
+                placeholder="Ej. payment_id de MercadoPago"
+                value={paymentReference}
+                onChange={(e) => setPaymentReference(e.target.value)}
+                disabled={fulfilling}
+                style={{ width: "100%" }}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="fulfill-reason" style={{ fontSize: "12px", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                Motivo de la operación
+              </label>
+              <input
+                id="fulfill-reason"
+                type="text"
+                className="flow-input"
+                placeholder="Cumplimiento de pedido online"
+                value={operationReason}
+                onChange={(e) => setOperationReason(e.target.value)}
+                disabled={fulfilling}
+                style={{ width: "100%" }}
+              />
+            </div>
+
+            {fulfillError && (
+              <StatePanel type="error" title="No se pudo cumplir el pedido" message={fulfillError} />
+            )}
+
+            {fulfillResult && (
+              <div style={{ background: "var(--canvas-bg)", padding: "12px", borderRadius: "10px", fontSize: "12px" }}>
+                <strong style={{ display: "block", marginBottom: "6px" }}>Transacción completada:</strong>
+                <span style={{ display: "block", fontFamily: "monospace" }}>sale_id: {fulfillResult.sale_id}</span>
+                <span style={{ display: "block", fontFamily: "monospace" }}>stock_document_id: {fulfillResult.stock_document_id}</span>
+                <span style={{ display: "block", fontFamily: "monospace" }}>journal_entry_id: {fulfillResult.journal_entry_id}</span>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button type="button" className="pag-btn" onClick={closeFulfill} disabled={fulfilling}>
+                {fulfillResult ? "Cerrar" : "Cancelar"}
+              </button>
+              {!fulfillResult && (
+                <button
+                  type="button"
+                  className="pag-btn"
+                  onClick={handleFulfill}
+                  disabled={fulfilling || paymentReference.trim() === ""}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  {fulfilling && <Loader2 size={14} className="animate-spin" />}
+                  Confirmar fulfill
+                </button>
+              )}
+            </div>
           </div>
         </Modal>
       )}
