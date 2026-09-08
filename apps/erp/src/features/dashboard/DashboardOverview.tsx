@@ -54,6 +54,7 @@ interface OrderRecordItem {
   total: number;
   status: string;
   created_at: string;
+  payment_state?: string | null;
 }
 
 type PeriodType = "year" | "6m" | "month" | "30d";
@@ -335,23 +336,74 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
       const repairs = (repData || []) as RecentRepairItem[];
       const activeRepairs = repairs.filter((r) => r.status !== "Finalizado");
 
-      // 3. Orders
-      const { data: ordData } = await supabase
-        .from("orders")
-        .select("id, total, status, created_at")
+      // 3. Orders (fuente real: erp.web_orders + fulfillments + events; erp.orders no existe)
+      const { data: webOrdersData } = await supabase
+        .from("web_orders")
+        .select("id, total_amount, created_at")
         .order("created_at", { ascending: false });
 
-      const orders = (ordData || []) as OrderRecordItem[];
+      const { data: fulfillData } = await supabase
+        .from("web_order_fulfillments")
+        .select("web_order_id, fulfilled_at");
+
+      const { data: eventsData } = await supabase
+        .from("web_order_events")
+        .select("web_order_id, order_state, payment_state, event_sequence")
+        .order("event_sequence", { ascending: false });
+
+      interface WebOrderRow {
+        id: string;
+        total_amount: string | number | null;
+        created_at: string;
+      }
+      interface FulfillmentRow {
+        web_order_id: string;
+        fulfilled_at: string | null;
+      }
+      interface WebOrderEventRow {
+        web_order_id: string;
+        order_state: string | null;
+        payment_state: string | null;
+        event_sequence: number;
+      }
+
+      const webOrders = ((webOrdersData ?? []) as WebOrderRow[]);
+      const fulfillments = ((fulfillData ?? []) as FulfillmentRow[]);
+      const events = ((eventsData ?? []) as WebOrderEventRow[]);
+
+      const fulfilledIds = new Set(
+        fulfillments.filter((f) => f.fulfilled_at != null).map((f) => f.web_order_id)
+      );
+      const latestEventByOrder = new Map<string, { order_state: string | null; payment_state: string | null }>();
+      for (const ev of events) {
+        if (!latestEventByOrder.has(ev.web_order_id)) {
+          latestEventByOrder.set(ev.web_order_id, {
+            order_state: ev.order_state,
+            payment_state: ev.payment_state,
+          });
+        }
+      }
+
+      const orders: OrderRecordItem[] = webOrders.map((w) => {
+        const fulfilled = fulfilledIds.has(w.id);
+        const latest = latestEventByOrder.get(w.id);
+        return {
+          id: w.id,
+          total: Number(w.total_amount ?? 0),
+          status: fulfilled ? "fulfilled" : (latest?.order_state ?? "placed"),
+          created_at: w.created_at,
+          payment_state: latest?.payment_state ?? null,
+        };
+      });
 
       // Fórmula de ingresos (cada peso contado una sola vez):
-      //   ingresos = ventas web aprobadas (orders approved/completed, campo total)
+      //   ingresos = ventas web efectivas (web_orders con fulfillment o
+      //              último evento con payment_state === "paid", campo total_amount)
       //            + reparaciones cobradas.
-      // Antes se calculaba Math.max(order+repair, movement+repair, order) mezclando
-      // una fuente de movimientos que duplica las ventas ya registradas en orders.
       // Reparaciones: public.repairs no tiene columna de monto cobrado (ver tipos
       // generados y migraciones) → repairRevenue = 0, "Sin datos fuente" en UI.
       const orderRevenue = orders
-        .filter((o) => o.status === "approved" || o.status === "completed")
+        .filter((o) => o.status === "fulfilled" || o.payment_state === "paid")
         .reduce((a, b) => a + Number(b.total || 0), 0);
       const repairRevenue = 0;
 
