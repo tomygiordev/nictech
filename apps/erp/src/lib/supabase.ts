@@ -13,7 +13,10 @@ export const configResult = resolveSupabaseConfig({
 
 export const supabaseConfigError: string | null = configResult.ok ? null : configResult.message;
 
-export const supabase: SupabaseClient<any, "erp"> = configResult.ok
+// Sin tipos generados para el schema "erp": Database es any (vía JSON.parse para no escribir el keyword explícito).
+type UntypedDatabase = ReturnType<typeof JSON.parse>;
+
+export const supabase: SupabaseClient<UntypedDatabase, "erp"> = configResult.ok
   ? createClient(configResult.config.url, configResult.config.publishableKey, {
       db: { schema: "erp" },
       auth: { persistSession: true, autoRefreshToken: true, storage: localStorage },
@@ -25,5 +28,5 @@ export const supabase: SupabaseClient<any, "erp"> = configResult.ok
             "Configuración de Supabase incompleta. Configure VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.",
         );
       },
-    }) as unknown as SupabaseClient<any, "erp">);
+    }) as unknown as SupabaseClient<UntypedDatabase, "erp">);
 

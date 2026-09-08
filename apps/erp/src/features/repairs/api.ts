@@ -145,6 +145,85 @@ export interface ConsumedPartRecord {
   occurred_at: string;
 }
 
+type RepairStatusNested = {
+  name?: string | null;
+  code?: string | null;
+};
+
+type StateEventRow = {
+  id: string;
+  repair_order_id: string;
+  status_id: string;
+  repair_statuses?: RepairStatusNested | null;
+  public_message: string;
+  internal_reason: string;
+  occurred_at: string;
+  actor_id: string | null;
+};
+
+type TransitionRow = {
+  id: string;
+  to_status_id: string;
+  repair_statuses?: (RepairStatusNested & {
+    requires_final_tests?: boolean | null;
+    is_terminal?: boolean | null;
+  }) | null;
+};
+
+type TestTemplateNested = {
+  name?: string | null;
+  code?: string | null;
+  kind?: string | null;
+};
+
+type TestRunRow = {
+  id: string;
+  repair_order_id: string;
+  repair_orders?: { order_code?: string } | null;
+  template_version_id: string;
+  kind: "intake" | "final";
+  run_sequence: number;
+  run_notes: string | null;
+  completed_at: string;
+  repair_test_results?: Array<{ item_key: string; result: "pass" | "fail"; notes?: string }> | null;
+};
+
+type WarrantyRow = {
+  id: string;
+  repair_order_id: string;
+  delivery_id: string;
+  starts_at: string;
+  ends_at: string;
+  terms_snapshot: string;
+  repair_orders?: {
+    order_code?: string | null;
+    customers?: { display_name?: string | null; phone?: string | null } | null;
+    customer_equipment?: { brand_snapshot?: string | null; model_snapshot?: string | null } | null;
+  } | null;
+};
+
+type WarrantyClaimRow = {
+  id: string;
+  warranty_id: string;
+  claim_code: string;
+  reported_issue: string;
+  opened_at: string;
+  repair_warranties?: {
+    repair_orders?: {
+      order_code?: string;
+      customers?: { display_name?: string } | null;
+    } | null;
+  } | null;
+};
+
+type TestTemplateVersionRow = {
+  id: string;
+  template_id: string;
+  version: number;
+  definition: TestTemplateVersion["definition"];
+  repair_test_templates?: TestTemplateNested | TestTemplateNested[] | null;
+};
+
 // 1. Overview and orders listing
 export const listRepairOrders = async (): Promise<RepairOrderOverview[]> => {
   const { data, error } = await client()
@@ -179,7 +258,7 @@ export const listRepairStateEvents = async (repairOrderId: string): Promise<Repa
 
   if (error) throw error;
 
-  return (data || []).map((row: any) => ({
+  return ((data || []) as unknown as StateEventRow[]).map((row) => ({
     id: row.id,
     repair_order_id: row.repair_order_id,
     status_id: row.status_id,
@@ -215,7 +294,7 @@ export const listAvailableTransitions = async (fromStatusId: string): Promise<Re
     return [];
   }
 
-  return (data || []).map((t: any) => ({
+  return ((data || []) as unknown as TransitionRow[]).map((t) => ({
     id: t.id,
     to_status_id: t.to_status_id,
     to_status_name: t.repair_statuses?.name ?? "Próximo estado",
@@ -297,12 +376,12 @@ export const getActiveTestTemplate = async (kind: "intake" | "final" = "final"):
 
   if (error) throw error;
 
-  const match = (data || []).find((v: any) => v.repair_test_templates?.kind === kind);
+  const match = (data || []).find((v: TestTemplateVersionRow) => (v.repair_test_templates as TestTemplateNested | undefined)?.kind === kind);
   if (!match) return null;
 
   const tpl = Array.isArray(match.repair_test_templates)
     ? match.repair_test_templates[0]
-    : (match.repair_test_templates as any);
+    : (match.repair_test_templates as TestTemplateNested | undefined);
 
   return {
     id: match.id,
@@ -357,7 +436,7 @@ export const listRepairTestRuns = async (repairOrderId?: string): Promise<TestRu
   const { data, error } = await query;
   if (error) throw error;
 
-  return (data || []).map((r: any) => ({
+  return ((data || []) as unknown as TestRunRow[]).map((r) => ({
     id: r.id,
     repair_order_id: r.repair_order_id,
     order_code: r.repair_orders?.order_code,
@@ -466,7 +545,7 @@ export const listWarranties = async (): Promise<WarrantyRecord[]> => {
   if (error) throw error;
 
   const now = new Date().toISOString();
-  return (data || []).map((w: any) => ({
+  return ((data || []) as unknown as WarrantyRow[]).map((w) => ({
     id: w.id,
     repair_order_id: w.repair_order_id,
     delivery_id: w.delivery_id,
@@ -501,7 +580,7 @@ export const listWarrantyClaims = async (): Promise<WarrantyClaimRecord[]> => {
 
   if (error) throw error;
 
-  return (data || []).map((c: any) => ({
+  return ((data || []) as unknown as WarrantyClaimRow[]).map((c) => ({
     id: c.id,
     warranty_id: c.warranty_id,
     claim_code: c.claim_code,

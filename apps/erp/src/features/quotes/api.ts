@@ -52,6 +52,36 @@ export interface CreateQuoteInput {
   reason?: string;
 }
 
+interface QuoteApiLine {
+  id: string;
+  line_number: number;
+  kind: "product" | "service" | "free_concept";
+  description: string;
+  quantity: number | string;
+  unit_price: number | string;
+  tax_rate_percent: number | string;
+  tax_amount: number | string;
+  line_total: number | string;
+}
+
+interface QuoteApiRow {
+  id: string;
+  repair_order_id: string;
+  version: number;
+  currency_code: string;
+  subtotal_amount: number | string;
+  tax_amount: number | string;
+  total_amount: number | string;
+  issued_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  repair_orders?: {
+    order_code?: string | null;
+    customers?: { display_name?: string | null; phone?: string | null } | null;
+  } | null;
+  repair_quote_lines?: QuoteApiLine[] | null;
+}
+
 export const listQuotes = async (): Promise<QuoteOverview[]> => {
   const { data, error } = await client()
     .from("repair_quotes")
@@ -92,11 +122,11 @@ export const listQuotes = async (): Promise<QuoteOverview[]> => {
     .select("quote_id, decision, occurred_at");
 
   const decisionMap = new Map<string, { decision: "approved" | "rejected"; at: string }>();
-  (responses || []).forEach((r: any) => {
+  (responses || []).forEach((r: { quote_id: string; decision: "approved" | "rejected"; occurred_at: string }) => {
     decisionMap.set(r.quote_id, { decision: r.decision, at: r.occurred_at });
   });
 
-  return (data || []).map((q: any) => {
+  return ((data || []) as unknown as QuoteApiRow[]).map((q) => {
     const dec = decisionMap.get(q.id);
     return {
       id: q.id,
@@ -114,7 +144,7 @@ export const listQuotes = async (): Promise<QuoteOverview[]> => {
       created_at: q.created_at,
       decision: dec?.decision ?? null,
       decision_at: dec?.at ?? null,
-      lines: (q.repair_quote_lines || []).map((l: any) => ({
+      lines: (q.repair_quote_lines || []).map((l: QuoteApiLine) => ({
         id: l.id,
         line_number: l.line_number,
         kind: l.kind,

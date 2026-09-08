@@ -273,7 +273,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
     setPoLines((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const updatePoLine = (index: number, field: keyof NewOrderLine, value: any) => {
+  const updatePoLine = (index: number, field: keyof NewOrderLine, value: NewOrderLine[keyof NewOrderLine]) => {
     setPoLines((prev) =>
       prev.map((line, i) => {
         if (i !== index) return line;

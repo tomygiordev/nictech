@@ -158,9 +158,9 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         .select("product_id, variant_id, kind, value")
         .eq("kind", "barcode");
 
-      const rows: DbStockRow[] = (balData || []).map((b: any) => {
+      const rows: DbStockRow[] = ((balData || []) as unknown as DbStockRow[]).map((b) => {
         const identifiers = (piData || []).filter(
-          (pi: any) => pi.product_id === b.product_id && pi.variant_id === b.variant_id,
+          (pi: { product_id: string; variant_id: string | null }) => pi.product_id === b.product_id && pi.variant_id === b.variant_id,
         );
         return {
           ...b,

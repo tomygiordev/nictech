@@ -125,7 +125,7 @@ export const QuotesWorkspace = () => {
           .order("internal_name", { ascending: true }),
       ]);
 
-      const ordersList: RepairOrderOption[] = (ordersRes.data || []).map((o: any) => ({
+      const ordersList: RepairOrderOption[] = (ordersRes.data || []).map((o: { id: string; order_code: string; customer_name: string | null; brand: string | null; model: string | null; status: string | null }) => ({
         id: o.id,
         order_code: o.order_code,
         customer_name: o.customer_name || "Cliente taller",
@@ -291,7 +291,7 @@ export const QuotesWorkspace = () => {
       const isApproved = q.decision === "approved";
       const isRejected = q.decision === "rejected";
 
-      let statusIntro = isApproved
+      const statusIntro = isApproved
         ? "✅ *Presupuesto Aprobado*"
         : isRejected
         ? "❌ *Presupuesto Rechazado*"
@@ -894,7 +894,7 @@ export const QuotesWorkspace = () => {
                 >
                   <select
                     value={item.kind}
-                    onChange={(e) => handleUpdateLine(idx, { kind: e.target.value as any })}
+                    onChange={(e) => handleUpdateLine(idx, { kind: e.target.value as LineFormItem["kind"] })}
                     className="erp-form-select"
                     style={{ fontSize: "11px", padding: "4px 6px" }}
                   >

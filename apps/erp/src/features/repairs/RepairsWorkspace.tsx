@@ -620,7 +620,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       <WorkspaceModuleTabs
         moduleIds={["repairs", "repair-tests", "warranties"] as const}
         activeModuleId={activeModuleId}
-        onSelectModule={(id) => onSelectModule?.(id as any)}
+        onSelectModule={(id) => onSelectModule?.(id)}
       />
 
       {feedback && (

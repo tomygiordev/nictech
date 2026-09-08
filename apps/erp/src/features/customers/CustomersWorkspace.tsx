@@ -88,7 +88,7 @@ export const CustomersWorkspace = () => {
       if (customersRes.error) throw customersRes.error;
 
       const repairsByCustomer = new Map<string, Array<{ id: string; order_code: string; brand: string; model: string; status: string; status_is_terminal: boolean }>>();
-      (repairsRes.data || []).forEach((r: any) => {
+      (repairsRes.data || []).forEach((r: { customer_id: string | null; id: string; order_code: string; brand: string | null; model: string | null; status: string | null; status_is_terminal: boolean | null }) => {
         if (!r.customer_id) return;
         const list = repairsByCustomer.get(r.customer_id) || [];
         list.push({
@@ -103,7 +103,7 @@ export const CustomersWorkspace = () => {
       });
 
       const salesByCustomer = new Map<string, { count: number; totalArs: number }>();
-      (salesRes.data || []).forEach((s: any) => {
+      (salesRes.data || []).forEach((s: { customer_id: string | null; total_amount: number | string | null }) => {
         if (!s.customer_id) return;
         const cur = salesByCustomer.get(s.customer_id) || { count: 0, totalArs: 0 };
         cur.count += 1;
