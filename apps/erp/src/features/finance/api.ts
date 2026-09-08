@@ -4,7 +4,11 @@ import type {
   AccountingPeriod,
   ChartAccount,
   FinancingContract,
+  IvaComprasRow,
+  IvaVentasRow,
   JournalEntry,
+  ProfitabilityByLineRow,
+  TrialBalanceRow,
 } from "./types";
 import type {
   ClosePeriodInput,
@@ -241,4 +245,77 @@ export const reconcileAccountBalance = async (input: ReconciliationInput): Promi
   });
   if (error) throw error;
   return parseRpcId(data, "reconciliation");
+};
+
+export type ReportDateRange = {
+  from?: string;
+  to?: string;
+};
+
+export const listIvaVentas = async (range?: ReportDateRange): Promise<IvaVentasRow[]> => {
+  try {
+    let query = getSupabase().from("v_iva_ventas").select("*").order("sale_date", { ascending: false });
+    if (range?.from) query = query.gte("sale_date", range.from);
+    if (range?.to) query = query.lte("sale_date", range.to);
+    const { data, error } = await query;
+    if (error) {
+      console.warn("Aviso al consultar v_iva_ventas:", error.message);
+      return [];
+    }
+    return asRows<IvaVentasRow>(data);
+  } catch (err) {
+    console.warn("Error en listIvaVentas:", err);
+    return [];
+  }
+};
+
+export const listIvaCompras = async (range?: ReportDateRange): Promise<IvaComprasRow[]> => {
+  try {
+    let query = getSupabase().from("v_iva_compras").select("*").order("purchase_date", { ascending: false });
+    if (range?.from) query = query.gte("purchase_date", range.from);
+    if (range?.to) query = query.lte("purchase_date", range.to);
+    const { data, error } = await query;
+    if (error) {
+      console.warn("Aviso al consultar v_iva_compras:", error.message);
+      return [];
+    }
+    return asRows<IvaComprasRow>(data);
+  } catch (err) {
+    console.warn("Error en listIvaCompras:", err);
+    return [];
+  }
+};
+
+export const listTrialBalance = async (range?: ReportDateRange): Promise<TrialBalanceRow[]> => {
+  try {
+    let query = getSupabase().from("v_trial_balance").select("*").order("account_code", { ascending: true });
+    if (range?.from) query = query.gte("period_start", range.from);
+    if (range?.to) query = query.lte("period_end", range.to);
+    const { data, error } = await query;
+    if (error) {
+      console.warn("Aviso al consultar v_trial_balance:", error.message);
+      return [];
+    }
+    return asRows<TrialBalanceRow>(data);
+  } catch (err) {
+    console.warn("Error en listTrialBalance:", err);
+    return [];
+  }
+};
+
+export const listProfitabilityByLine = async (): Promise<ProfitabilityByLineRow[]> => {
+  try {
+    const { data, error } = await getSupabase()
+      .from("v_profitability_by_line")
+      .select("*")
+      .order("gross_revenue", { ascending: false, nullsFirst: false });
+    if (error) {
+      console.warn("Aviso al consultar v_profitability_by_line:", error.message);
+      return [];
+    }
+    return asRows<ProfitabilityByLineRow>(data);
+  } catch (err) {
+    console.warn("Error en listProfitabilityByLine:", err);
+    return [];
+  }
 };

@@ -40,7 +40,6 @@ interface RecentRepairItem {
   device_brand: string | null;
   device_model: string | null;
   status: string;
-  quoted_price: number | null;
   created_at: string;
 }
 
@@ -54,14 +53,6 @@ interface OrderRecordItem {
   id: string;
   total: number;
   status: string;
-  created_at: string;
-}
-
-interface StockMovementItem {
-  id: string;
-  quantity: number;
-  unit_price: number | null;
-  type: string;
   created_at: string;
 }
 
@@ -83,8 +74,7 @@ const MONTHS_FULL = [
 function generateCommercialEvolution(
   period: PeriodType,
   orders: OrderRecordItem[],
-  repairs: RecentRepairItem[],
-  movements: StockMovementItem[]
+  repairs: RecentRepairItem[]
 ): ChartPoint[] {
   const now = new Date();
 
@@ -110,19 +100,10 @@ function generateCommercialEvolution(
         }
       }
 
-      for (const mov of movements) {
-        const d = getParsedDate(mov.created_at);
-        if (d && d.getFullYear() === currentYear && d.getMonth() === m) {
-          revenue += Math.abs(mov.quantity || 1) * Number(mov.unit_price || 0);
-          orderCount += 1;
-        }
-      }
-
       for (const r of repairs) {
         if (r.status !== "Finalizado") continue;
         const d = getParsedDate(r.created_at);
         if (d && d.getFullYear() === currentYear && d.getMonth() === m) {
-          revenue += Number(r.quoted_price || 0);
           orderCount += 1;
         }
       }
@@ -156,19 +137,10 @@ function generateCommercialEvolution(
         }
       }
 
-      for (const mov of movements) {
-        const d = getParsedDate(mov.created_at);
-        if (d && d.getFullYear() === y && d.getMonth() === m) {
-          revenue += Math.abs(mov.quantity || 1) * Number(mov.unit_price || 0);
-          orderCount += 1;
-        }
-      }
-
       for (const r of repairs) {
         if (r.status !== "Finalizado") continue;
         const d = getParsedDate(r.created_at);
         if (d && d.getFullYear() === y && d.getMonth() === m) {
-          revenue += Number(r.quoted_price || 0);
           orderCount += 1;
         }
       }
@@ -202,19 +174,10 @@ function generateCommercialEvolution(
         }
       }
 
-      for (const mov of movements) {
-        const d = getParsedDate(mov.created_at);
-        if (d && d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day) {
-          revenue += Math.abs(mov.quantity || 1) * Number(mov.unit_price || 0);
-          orderCount += 1;
-        }
-      }
-
       for (const r of repairs) {
         if (r.status !== "Finalizado") continue;
         const d = getParsedDate(r.created_at);
         if (d && d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day) {
-          revenue += Number(r.quoted_price || 0);
           orderCount += 1;
         }
       }
@@ -249,19 +212,10 @@ function generateCommercialEvolution(
       }
     }
 
-    for (const mov of movements) {
-      const d = getParsedDate(mov.created_at);
-      if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
-        revenue += Math.abs(mov.quantity || 1) * Number(mov.unit_price || 0);
-        orderCount += 1;
-      }
-    }
-
-    for (const r of repairs) {
-      if (r.status !== "Finalizado") continue;
-      const d = getParsedDate(r.created_at);
-      if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
-        revenue += Number(r.quoted_price || 0);
+      for (const r of repairs) {
+        if (r.status !== "Finalizado") continue;
+        const d = getParsedDate(r.created_at);
+        if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
         orderCount += 1;
       }
     }
@@ -344,7 +298,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
   const [loading, setLoading] = useState<boolean>(true);
   const [rawOrders, setRawOrders] = useState<OrderRecordItem[]>([]);
   const [rawRepairs, setRawRepairs] = useState<RecentRepairItem[]>([]);
-  const [rawMovements, setRawMovements] = useState<StockMovementItem[]>([]);
   const [stats, setStats] = useState({
     productsCount: 0,
     inventoryValueArs: 0,
@@ -362,20 +315,20 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
     try {
       setLoading(true);
 
-      // 1. Products
+      // 1. Products (la tabla public.products no tiene columna is_active)
       const { data: prodData } = await supabase
         .from("products")
-        .select("id, name, price, stock, is_active");
+        .select("id, name, price, stock");
 
       const products = prodData || [];
       const prodCount = products.length;
       const invValue = products.reduce((acc, p) => acc + (p.price || 0) * (p.stock || 0), 0);
-      const lowStock = products.filter((p) => (p.stock ?? 0) <= 3 && (p.is_active ?? true)).slice(0, 3);
+      const lowStock = products.filter((p) => (p.stock ?? 0) <= 3).slice(0, 3);
 
-      // 2. Repairs
+      // 2. Repairs (public.repairs no expone monto cobrado: sin quoted_price)
       const { data: repData } = await supabase
         .from("repairs")
-        .select("id, tracking_code, client_name, device_brand, device_model, status, quoted_price, created_at")
+        .select("id, tracking_code, client_name, device_brand, device_model, status, created_at")
         .or("is_deleted.is.null,is_deleted.eq.false")
         .order("created_at", { ascending: false });
 
@@ -390,37 +343,30 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
 
       const orders = (ordData || []) as OrderRecordItem[];
 
-      // 4. Inventory Movements (sales)
-      const { data: movData } = await supabase
-        .from("inventory_movements")
-        .select("id, quantity, unit_price, type, created_at")
-        .eq("type", "sale")
-        .order("created_at", { ascending: false });
-
-      const movements = (movData || []) as StockMovementItem[];
-
+      // Fórmula de ingresos (cada peso contado una sola vez):
+      //   ingresos = ventas web aprobadas (orders approved/completed, campo total)
+      //            + reparaciones cobradas.
+      // Antes se calculaba Math.max(order+repair, movement+repair, order) mezclando
+      // una fuente de movimientos que duplica las ventas ya registradas en orders.
+      // Reparaciones: public.repairs no tiene columna de monto cobrado (ver tipos
+      // generados y migraciones) → repairRevenue = 0, "Sin datos fuente" en UI.
       const orderRevenue = orders
         .filter((o) => o.status === "approved" || o.status === "completed")
         .reduce((a, b) => a + Number(b.total || 0), 0);
-      const movementRevenue = movements
-        .reduce((a, b) => a + Math.abs(b.quantity || 1) * Number(b.unit_price || 0), 0);
-      const repairRevenue = repairs
-        .filter((r) => r.status === "Finalizado")
-        .reduce((a, b) => a + Number(b.quoted_price || 0), 0);
+      const repairRevenue = 0;
 
-      const totalRevenue = Math.max(orderRevenue + repairRevenue, movementRevenue + repairRevenue, orderRevenue);
+      const totalRevenue = orderRevenue + repairRevenue;
 
       setStats({
         productsCount: prodCount,
         inventoryValueArs: invValue,
         repairsCount: activeRepairs.length,
-        ordersCount: orders.length + movements.length,
+        ordersCount: orders.length,
         totalRevenueArs: totalRevenue,
       });
 
       setRawOrders(orders);
       setRawRepairs(repairs);
-      setRawMovements(movements);
       setRecentRepairs(repairs.slice(0, 5));
       setLowStockProducts(lowStock);
     } catch (e) {
@@ -435,8 +381,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
   }, [fetchDashboardData]);
 
   const chartData = useMemo(() => {
-    return generateCommercialEvolution(selectedPeriod, rawOrders, rawRepairs, rawMovements);
-  }, [selectedPeriod, rawOrders, rawRepairs, rawMovements]);
+    return generateCommercialEvolution(selectedPeriod, rawOrders, rawRepairs);
+  }, [selectedPeriod, rawOrders, rawRepairs]);
 
   return (
     <div className="flow-dashboard">
@@ -638,7 +584,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                           </span>
                         </td>
                         <td className="text-right amount-val">
-                          {r.quoted_price ? formatCurrency(r.quoted_price, "ARS") : "A presupuestar"}
+                          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Sin datos fuente</span>
                         </td>
                       </tr>
                     ))}
