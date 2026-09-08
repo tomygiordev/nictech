@@ -25,11 +25,32 @@ import {
   type FulfillOnlineOrderResult,
 } from "./api";
 
+type OrderFilter = "all" | "fulfilled" | "paid" | "pending";
+
+const shortId = (id: string): string => id.slice(0, 8).toUpperCase();
+
+/** Etiqueta de pago derivada del último evento (nunca inventada): paid/partial/... o "—" sin eventos. */
+const paymentLabel = (order: DbOrder): string => {
+  if (order.fulfilled || order.order_state === "fulfilled") return "Cumplido";
+  switch (order.payment_state) {
+    case "paid":
+      return "Aprobado";
+    case "partial":
+      return "Parcial";
+    case "refunded":
+      return "Reembolsado";
+    case "unpaid":
+      return "Pendiente";
+    default:
+      return order.last_payment_status ?? "—";
+  }
+};
+
 export const OnlineOrdersWorkspace = () => {
   const [orders, setOrders] = useState<DbOrder[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [activeFilter, setActiveFilter] = useState<OrderFilter>("all");
   const [search, setSearch] = useState<string>("");
   const [selectedOrder, setSelectedOrder] = useState<DbOrder | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -61,7 +82,7 @@ export const OnlineOrdersWorkspace = () => {
 
   const openFulfill = (order: DbOrder) => {
     setFulfillOrder(order);
-    setPaymentReference(order.payment_id ?? "");
+    setPaymentReference("");
     setOperationReason("");
     setFulfillError(null);
     setFulfillResult(null);
@@ -86,7 +107,7 @@ export const OnlineOrdersWorkspace = () => {
       setFulfillResult(result);
       setFeedback({
         type: "success",
-        message: `Pedido cumplido. Venta ${result.sale_id.slice(0, 8).toUpperCase()} · Stock ${result.stock_document_id.slice(0, 8).toUpperCase()} · Asiento ${result.journal_entry_id.slice(0, 8).toUpperCase()}.`,
+        message: `Pedido cumplido. Venta ${shortId(result.sale_id)} · Stock ${shortId(result.stock_document_id)} · Asiento ${shortId(result.journal_entry_id)}.`,
       });
       await fetchOrders();
     } catch (err: unknown) {
@@ -97,30 +118,45 @@ export const OnlineOrdersWorkspace = () => {
     }
   };
 
+  const matchesFilter = (o: DbOrder): boolean => {
+    switch (activeFilter) {
+      case "fulfilled":
+        return o.fulfilled;
+      case "paid":
+        return !o.fulfilled && o.payment_state === "paid";
+      case "pending":
+        return !o.fulfilled && o.payment_state !== "paid";
+      default:
+        return true;
+    }
+  };
+
   const filteredOrders = useMemo(() => {
+    const q = search.toLowerCase();
     return orders.filter((o) => {
-      const matchFilter = activeFilter === "all" || o.status === activeFilter;
-      const q = search.toLowerCase();
-      const payerName = o.payer?.name || `${o.payer?.first_name || ""} ${o.payer?.last_name || ""}`.trim() || "";
-      const payerEmail = o.payer?.email || "";
-      const matchSearch =
+      if (!matchesFilter(o)) return false;
+      if (q === "") return true;
+      return (
         o.id.toLowerCase().includes(q) ||
-        (o.payment_id && o.payment_id.toLowerCase().includes(q)) ||
-        payerName.toLowerCase().includes(q) ||
-        payerEmail.toLowerCase().includes(q);
-      return matchFilter && matchSearch;
+        (o.customer_id ?? "").toLowerCase().includes(q) ||
+        (o.sale_id ?? "").toLowerCase().includes(q)
+      );
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orders, activeFilter, search]);
 
-  const approvedCount = orders.filter((o) => o.status === "approved" || o.status === "completed").length;
-  const pendingCount = orders.filter((o) => o.status === "pending" || o.status === "in_process").length;
-  const totalRevenue = orders.filter((o) => o.status === "approved" || o.status === "completed").reduce((a, b) => a + Number(b.total || 0), 0);
+  const fulfilledCount = orders.filter((o) => o.fulfilled).length;
+  const paidCount = orders.filter((o) => !o.fulfilled && o.payment_state === "paid").length;
+  const pendingCount = orders.filter((o) => !o.fulfilled && o.payment_state !== "paid").length;
+  const paidRevenue = orders
+    .filter((o) => o.payment_state === "paid" || o.fulfilled)
+    .reduce((a, b) => a + Number(b.total_amount || 0), 0);
 
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
         title="Pedidos de la Tienda Online (E-commerce Fulfillment)"
-        description="Bandeja centralizada de ventas web, confirmación de pagos de Mercado Pago, remisión de stock y despacho."
+        description="Bandeja centralizada de ventas web (erp.web_orders): pago aprobado, remisión de stock y despacho vía fulfill transaccional."
         badge={`${orders.length} Pedidos en Base de Datos`}
       />
 
@@ -140,16 +176,16 @@ export const OnlineOrdersWorkspace = () => {
           label="Total Pedidos"
           value={orders.length}
           trend={{ text: "Web", positive: true }}
-          sublabel="Sincronizados con Storefront"
+          sublabel="erp.web_orders"
         />
 
         <KpiCard
           icon={CreditCard}
           iconVariant="navy"
           label="Cobrado Online"
-          value={formatCurrency(totalRevenue, "ARS")}
+          value={formatCurrency(paidRevenue, "ARS")}
           trend={{ text: "ARS", positive: true }}
-          sublabel={`${approvedCount} pedidos aprobados`}
+          sublabel={`${paidCount + fulfilledCount} pedidos con pago aprobado`}
         />
 
         <KpiCard
@@ -158,16 +194,16 @@ export const OnlineOrdersWorkspace = () => {
           label="Pendientes de Pago"
           value={pendingCount}
           trend={{ text: "Aguardando", positive: false }}
-          sublabel="Mercado Pago / Transf."
+          sublabel="Sin pago aprobado / sin eventos"
         />
 
         <KpiCard
           icon={Truck}
           iconVariant="dark"
-          label="Despachos"
-          value={approvedCount}
-          trend={{ text: "Logística", positive: true }}
-          sublabel="Correo / Retiro local"
+          label="Cumplidos"
+          value={fulfilledCount}
+          trend={{ text: "Fulfillment", positive: true }}
+          sublabel="Venta + stock remitido"
         />
       </div>
 
@@ -176,7 +212,7 @@ export const OnlineOrdersWorkspace = () => {
         <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h2 className="flow-card__title">Bandeja de Pedidos Web</h2>
-            <p className="flow-card__subtitle">Preparación de paquetes, remisión de stock y control de entrega</p>
+            <p className="flow-card__subtitle">Estado derivado de fulfillment + último evento (web_order_events). Sin estados manuales.</p>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -194,7 +230,7 @@ export const OnlineOrdersWorkspace = () => {
               <Search size={15} />
               <input
                 type="text"
-                placeholder="Buscar por ID, cliente o pago..."
+                placeholder="Buscar por ID de orden, cliente o venta..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -206,14 +242,15 @@ export const OnlineOrdersWorkspace = () => {
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px", overflowX: "auto" }}>
           {[
             { id: "all", label: `Todos (${orders.length})` },
-            { id: "approved", label: `Aprobados (${approvedCount})` },
+            { id: "paid", label: `Pagados p/ cumplir (${paidCount})` },
             { id: "pending", label: `Pendientes (${pendingCount})` },
+            { id: "fulfilled", label: `Cumplidos (${fulfilledCount})` },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
               className={`flow-select-pill ${activeFilter === tab.id ? "active" : ""}`}
-              onClick={() => setActiveFilter(tab.id)}
+              onClick={() => setActiveFilter(tab.id as OrderFilter)}
             >
               {tab.label}
             </button>
@@ -240,65 +277,60 @@ export const OnlineOrdersWorkspace = () => {
               <thead>
                 <tr>
                   <th>ID Orden</th>
-                  <th>Cliente</th>
                   <th>Total</th>
-                  <th>Estado</th>
+                  <th>Estado pago</th>
+                  <th>Cumplimiento</th>
                   <th>Creada</th>
-                  <th>Stock</th>
                   <th className="text-right">Acción</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredOrders.map((order) => {
-                  const payerName = order.payer?.name || `${order.payer?.first_name || ""} ${order.payer?.last_name || ""}`.trim() || "Consumidor Web";
-                  const payerEmail = order.payer?.email || "—";
-                  return (
-                    <tr key={order.id} style={{ cursor: "pointer" }} onClick={() => setSelectedOrder(order)}>
-                      <td>
-                        <span className="type-badge green" style={{ fontFamily: "monospace" }}>
-                          {order.id.slice(0, 8).toUpperCase()}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", flexDirection: "column" }}>
-                          <strong>{payerName}</strong>
-                          <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{payerEmail}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <strong style={{ color: "var(--brand-primary)" }}>{formatCurrency(Number(order.total || 0), "ARS")}</strong>
-                      </td>
-                      <td>
-                        {order.status === "approved" || order.status === "completed" ? (
-                          <span className="flow-status-pill completed">Aprobado</span>
-                        ) : order.status === "pending" ? (
-                          <span className="flow-status-pill pending">Pendiente</span>
-                        ) : (
-                          <span className="flow-status-pill processing">{order.status}</span>
-                        )}
-                      </td>
-                      <td>
-                        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                          {formatDateTime(order.created_at)}
-                        </span>
-                      </td>
-                      <td>
-                        {order.stock_decremented ? (
-                          <span className="flow-status-pill completed">Descontado</span>
-                        ) : (
-                          <span className="flow-status-pill pending">Pendiente</span>
-                        )}
-                      </td>
-                      <td className="text-right">
-                        <div style={{ display: "inline-flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            className="pag-btn"
-                            style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-                            onClick={() => setSelectedOrder(order)}
-                          >
-                            <Eye size={12} /> Ver
-                          </button>
+                {filteredOrders.map((order) => (
+                  <tr key={order.id} style={{ cursor: "pointer" }} onClick={() => setSelectedOrder(order)}>
+                    <td>
+                      <span className="type-badge green" style={{ fontFamily: "monospace" }}>
+                        {shortId(order.id)}
+                      </span>
+                    </td>
+                    <td>
+                      <strong style={{ color: "var(--brand-primary)" }}>{formatCurrency(Number(order.total_amount || 0), "ARS")}</strong>
+                    </td>
+                    <td>
+                      {order.payment_state === "paid" ? (
+                        <span className="flow-status-pill completed">Aprobado</span>
+                      ) : order.payment_state === "partial" ? (
+                        <span className="flow-status-pill processing">Parcial</span>
+                      ) : order.payment_state === "refunded" ? (
+                        <span className="flow-status-pill processing">Reembolsado</span>
+                      ) : order.payment_state === "unpaid" ? (
+                        <span className="flow-status-pill pending">Pendiente</span>
+                      ) : (
+                        <span className="flow-status-pill pending">{order.last_payment_status ?? "Sin eventos"}</span>
+                      )}
+                    </td>
+                    <td>
+                      {order.fulfilled ? (
+                        <span className="flow-status-pill completed">Cumplido</span>
+                      ) : (
+                        <span className="flow-status-pill pending">Pendiente</span>
+                      )}
+                    </td>
+                    <td>
+                      <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                        {formatDateTime(order.created_at)}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      <div style={{ display: "inline-flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="pag-btn"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                          onClick={() => setSelectedOrder(order)}
+                        >
+                          <Eye size={12} /> Ver
+                        </button>
+                        {!order.fulfilled && (
                           <button
                             type="button"
                             className="pag-btn"
@@ -307,11 +339,11 @@ export const OnlineOrdersWorkspace = () => {
                           >
                             <CheckCircle2 size={12} /> Cumplir
                           </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -323,71 +355,77 @@ export const OnlineOrdersWorkspace = () => {
         <Modal
           isOpen={Boolean(selectedOrder)}
           onClose={() => setSelectedOrder(null)}
-          title={`Pedido Web: ORD-${selectedOrder.id.slice(0, 8).toUpperCase()}`}
-          subtitle={`Cliente: ${selectedOrder.payer?.name || selectedOrder.payer?.email || "Consumidor"} • ${formatDateTime(selectedOrder.created_at)}`}
+          title={`Pedido Web: ORD-${shortId(selectedOrder.id)}`}
+          subtitle={`${formatCurrency(Number(selectedOrder.total_amount || 0), "ARS")} • ${formatDateTime(selectedOrder.created_at)}`}
           icon={ShoppingBag}
           maxWidth="600px"
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div style={{ padding: "12px", background: "var(--surface-white)", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
               <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
-                Estado actual
+                Estado derivado (fulfillment + último evento)
               </span>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-                <span className="flow-status-pill processing">{selectedOrder.status}</span>
-                <span className={`flow-status-pill ${selectedOrder.stock_decremented ? "completed" : "pending"}`}>
-                  Stock: {selectedOrder.stock_decremented ? "descontado" : "pendiente"}
+                <span className="flow-status-pill processing">{paymentLabel(selectedOrder)}</span>
+                <span className={`flow-status-pill ${selectedOrder.fulfilled ? "completed" : "pending"}`}>
+                  Stock: {selectedOrder.fulfilled ? "remitido" : "pendiente"}
                 </span>
-                <button
-                  type="button"
-                  className="pag-btn"
-                  style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-                  onClick={() => {
-                    const current = selectedOrder;
-                    setSelectedOrder(null);
-                    openFulfill(current);
-                  }}
-                >
-                  <CheckCircle2 size={12} /> Cumplir pedido
-                </button>
+                {!selectedOrder.fulfilled && (
+                  <button
+                    type="button"
+                    className="pag-btn"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                    onClick={() => {
+                      const current = selectedOrder;
+                      setSelectedOrder(null);
+                      openFulfill(current);
+                    }}
+                  >
+                    <CheckCircle2 size={12} /> Cumplir pedido
+                  </button>
+                )}
               </div>
               <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "8px 0 0" }}>
-                El cumplimiento se ejecuta vía transacción (venta + stock + asiento). No hay cambios manuales de estado.
+                order_state: {selectedOrder.order_state ?? "—"} · payment_state: {selectedOrder.payment_state ?? "—"} · delivery_state: {selectedOrder.delivery_state ?? "—"}
+                {selectedOrder.fulfilled && selectedOrder.sale_id ? ` · venta ${shortId(selectedOrder.sale_id)}` : ""}
+                {selectedOrder.fulfilled && selectedOrder.stock_document_id ? ` · stock ${shortId(selectedOrder.stock_document_id)}` : ""}. El cumplimiento se ejecuta
+                vía transacción (venta + stock + asiento). No hay cambios manuales de estado.
               </p>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", background: "var(--canvas-bg)", padding: "12px", borderRadius: "10px" }}>
               <div>
-                <span className="stat-label">ID de Pago MP</span>
+                <span className="stat-label">Cliente (ID)</span>
                 <strong style={{ display: "block", fontSize: "12px", marginTop: "2px", fontFamily: "monospace" }}>
-                  {selectedOrder.payment_id || "—"}
+                  {selectedOrder.customer_id ? shortId(selectedOrder.customer_id) : "—"}
                 </strong>
               </div>
               <div>
-                <span className="stat-label">Email de Contacto</span>
+                <span className="stat-label">Último pago (evento)</span>
                 <span style={{ display: "block", fontSize: "12px", marginTop: "2px", fontWeight: 600 }}>
-                  {selectedOrder.payer?.email || "Sin email"}
+                  {selectedOrder.last_payment_status ?? "Sin eventos"}
+                  {selectedOrder.last_payment_amount != null ? ` · ${formatCurrency(selectedOrder.last_payment_amount, "ARS")}` : ""}
                 </span>
               </div>
               <div>
                 <span className="stat-label">Total Facturado</span>
                 <strong style={{ display: "block", fontSize: "14px", marginTop: "2px", color: "var(--brand-primary)" }}>
-                  {formatCurrency(Number(selectedOrder.total || 0), "ARS")}
+                  {formatCurrency(Number(selectedOrder.total_amount || 0), "ARS")}
                 </strong>
               </div>
             </div>
 
-            {selectedOrder.items && Array.isArray(selectedOrder.items) && selectedOrder.items.length > 0 && (
+            {selectedOrder.lines.length > 0 && (
               <div style={{ background: "var(--surface-white)", padding: "12px", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
-                <span className="stat-label" style={{ marginBottom: "6px", display: "block" }}>Ítems Comprados:</span>
+                <span className="stat-label" style={{ marginBottom: "6px", display: "block" }}>Ítems Comprados (web_order_lines):</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {selectedOrder.items.map((it, idx: number) => (
+                  {selectedOrder.lines.map((it, idx: number) => (
                     <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border-light)", paddingBottom: "6px" }}>
                       <div>
-                        <strong style={{ fontSize: "13px" }}>{it.title || it.name || `Producto ${idx + 1}`}</strong>
+                        <strong style={{ fontSize: "13px" }}>{it.description || `Producto ${idx + 1}`}</strong>
                         <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>Cantidad: {it.quantity || 1}</span>
                       </div>
-                      <strong style={{ color: "var(--text-main)" }}>{formatCurrency(Number(it.unit_price || it.price || 0), "ARS")}</strong>
+                      <strong style={{ color: "var(--text-main)" }}>{formatCurrency(Number(it.unit_price || 0), "ARS")}</strong>
                     </div>
                   ))}
                 </div>
@@ -402,8 +440,8 @@ export const OnlineOrdersWorkspace = () => {
         <Modal
           isOpen={Boolean(fulfillOrder)}
           onClose={closeFulfill}
-          title={`Cumplir pedido ORD-${fulfillOrder.id.slice(0, 8).toUpperCase()}`}
-          subtitle={`Total ${formatCurrency(Number(fulfillOrder.total || 0), "ARS")} • Transacción: venta + stock + asiento`}
+          title={`Cumplir pedido ORD-${shortId(fulfillOrder.id)}`}
+          subtitle={`Total ${formatCurrency(Number(fulfillOrder.total_amount || 0), "ARS")} • Transacción: venta + stock + asiento`}
           icon={CheckCircle2}
           maxWidth="520px"
         >
@@ -416,12 +454,15 @@ export const OnlineOrdersWorkspace = () => {
                 id="fulfill-payment-ref"
                 type="text"
                 className="flow-input"
-                placeholder="Ej. payment_id de MercadoPago"
+                placeholder="Ej. provider_payment_id aprobado por el total"
                 value={paymentReference}
                 onChange={(e) => setPaymentReference(e.target.value)}
                 disabled={fulfilling}
                 style={{ width: "100%" }}
               />
+              <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "4px 0 0" }}>
+                El RPC exige pago aprobado por el total y referencia coincidente con el provider payment.
+              </p>
             </div>
 
             <div>
