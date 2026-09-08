@@ -3,9 +3,11 @@
 Branch: `dev/erp` · HEAD verificado: `3ce94fe`
 Fecha de verificación: 2026-09-08 (git log / rev-parse / ls-files / grep — nada de memoria).
 
-> Correcciones honestas respecto al borrador: la suite pgTAP real es **17 archivos / 1215 asserts
-> (suma de `plan()`)**, no 18/1265. El archivo phase E declara `plan(30)` y sus fixes de cierre son
-> 2 commits (`eb7a151`, `ad9d4e5`); no existe un tercer commit de E-cierre en el log.
+> Correcciones honestas respecto al borrador: la suite pgTAP real es **18 archivos / 1265 tests
+> (medición real de corrida con `npx supabase test db`: 17 archivos en `supabase/tests/database/`
+> + `supabase/tests/erp_finance_accounting.test.sql`)**, no 17/1215. El archivo phase E declara
+> `plan(30)` y sus fixes de cierre son 2 commits (`eb7a151`, `ad9d4e5`); no existe un tercer
+> commit de E-cierre en el log.
 
 ## 1. Estado por fase (A–G) con commits verificados
 
@@ -87,13 +89,14 @@ Frontend E (verificado con `git show --stat`):
   (`dashboard/DashboardOverview.tsx`) ← HEAD
 
 ### Suite pgTAP real (verificada, no la del borrador)
-- `git ls-files "supabase/tests/database/*.test.sql"` → **17 archivos** (el borrador decía 18).
-- Suma de `plan(N)` en los 17 archivos → **1215 asserts** (el borrador decía 1265):
-  30 (phase_e) + 10 (ops_visibility) + 28 (master_data) + 31 (foundation) + 77 (inventory_ledger)
-  + 30 (phase_d) + 12 (system_settings) + 14 (phase_b) + 133 (documents_communications)
-  + 244 (pc_tradeins_imei) + 12 (phase_c) + 250 (repairs_quotes_warranties)
-  + 85 (purchases_costs_pricing) + 24 (fulfill_online_order) + 67 (stock_cost_ledger)
-  + 22 (reporting_views) + 146 (sales_cash_orders) = 1215.
+- `git ls-files "supabase/tests/database/*.test.sql"` → 17 archivos + `supabase/tests/erp_finance_accounting.test.sql` = **18 archivos** (el borrador decía 17).
+- Medición real de corrida (`npx supabase test db`) → **1265 tests PASS** (el borrador decía 1215).
+  Suma de `plan(N)` en los 18 archivos:
+  133 (documents_communications) + 50 (finance_accounting) + 31 (foundation)
+  + 24 (fulfill_online_order) + 77 (inventory_ledger) + 28 (master_data) + 10 (ops_visibility)
+  + 244 (pc_tradeins_imei) + 14 (phase_b) + 12 (phase_c) + 30 (phase_d) + 30 (phase_e)
+  + 85 (purchases_costs_pricing) + 250 (repairs_quotes_warranties) + 22 (reporting_views)
+  + 146 (sales_cash_orders) + 67 (stock_cost_ledger) + 12 (system_settings) = 1265.
 - Migraciones ERP en repo: 43 archivos `supabase/migrations/*erp*.sql` (incluye serie `erp5_*`,
   fases B–E `202609070001`–`202609070009`, sistema `...010`, grants `...011`, fulfill `...012`,
   vistas `...013`).
@@ -124,7 +127,7 @@ npm run build:erp
 
 Qué hace cada uno (según `package.json` raíz y `apps/erp/package.json`):
 - `npm run db:reset` → `supabase db reset` (aplica las 43 migraciones ERP locales desde cero).
-- `npm run db:test` → `supabase test db` (corre los 17 archivos pgTAP; total 1215 asserts, phase E `plan(30)`).
+- `npm run db:test` → `supabase test db` (corre los 18 archivos pgTAP; total 1265 tests, phase E `plan(30)`).
 - `npm run typecheck:erp` → `npm run typecheck --workspace @nictech/erp` → `tsc --noEmit` en `apps/erp`.
 - `npm run lint` → `eslint .` (los `no-explicit-any` citados en §2-c5 son preexistentes y están fuera
   de las features nuevas E/F/G).
