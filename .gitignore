@@ -11,6 +11,14 @@ node_modules
 dist
 dist-ssr
 *.local
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Local browser/QA session artifacts (screenshots, profiles, downloads)
+.codex-browser-erp/
 
 # Editor directories and files
 .vscode/*
