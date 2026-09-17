@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CreditCard, Wallet, Loader2, ArrowLeft, CheckCircle, XCircle, Clock } from 'lucide-react';
@@ -19,6 +19,7 @@ const Checkout = () => {
   const { items, totalPrice, clearCart, validateCart, isValidating } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mercadopago');
   const [loading, setLoading] = useState(false);
+  const checkoutIdRef = useRef(crypto.randomUUID());
   const [initialValidationDone, setInitialValidationDone] = useState(false);
   const [payerInfo, setPayerInfo] = useState({
     name: '',
@@ -154,10 +155,10 @@ const Checkout = () => {
       // All stock is valid — proceed with payment
       const { data, error } = await supabase.functions.invoke('create-mercadopago-preference', {
         body: {
+          checkout_id: checkoutIdRef.current,
           items: items.map(item => ({
             id: item.id,
-            name: item.name,
-            price: item.price,
+            variant_id: item.variant?.id ?? null,
             quantity: item.quantity,
             image_url: item.image_url,
           })),
@@ -297,7 +298,7 @@ const Checkout = () => {
 
                   <div className="space-y-4">
                     {items.map((item) => (
-                      <div key={item.id} className="flex gap-4">
+                      <div key={`${item.id}:${item.variant?.id ?? 'base'}`} className="flex gap-4">
                         <div className="h-16 w-16 rounded-lg bg-background border overflow-hidden flex-shrink-0">
                           {item.image_url ? (
                             <img
@@ -312,6 +313,9 @@ const Checkout = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm truncate">{item.name}</p>
+                          {item.variant && (
+                            <p className="text-muted-foreground text-xs">Color: {item.variant.color}</p>
+                          )}
                           <p className="text-muted-foreground text-sm">
                             Cantidad: {item.quantity}
                           </p>
@@ -354,7 +358,7 @@ const Checkout = () => {
 
                   <Button
                     onClick={handleCheckout}
-                    disabled={loading}
+                    disabled={loading || isValidating}
                     size="lg"
                     className="w-full h-12 text-base"
                   >

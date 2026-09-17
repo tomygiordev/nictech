@@ -1,62 +1,12 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- external payment payload is runtime validated. */
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+/* eslint-disable @typescript-eslint/no-explicit-any -- email templates consume provider payloads defensively. */
+import { createClient } from "supabase";
+import { isUuid, mapPaymentStatus, normalizeOrderItems } from "./domain.ts";
+import { verifyMercadoPagoSignature } from "./signature.ts";
 
 // ── Webhook signature verification ────────────────────────────────────────────
 // MercadoPago signs each webhook with HMAC-SHA256.
 // Requires MERCADOPAGO_WEBHOOK_SECRET env var (set in Supabase secrets).
 // Reference: https://www.mercadopago.com.ar/developers/en/docs/your-integrations/notifications/webhooks
-async function verifyMercadoPagoSignature(req: Request, dataId: string): Promise<boolean> {
-  const secret = Deno.env.get("MERCADOPAGO_WEBHOOK_SECRET");
-  if (!secret) {
-    console.warn("MERCADOPAGO_WEBHOOK_SECRET not set — skipping signature verification");
-    return true; // allow through but log warning so operator knows to set it
-  }
-
-  const xSignature = req.headers.get("x-signature");
-  const xRequestId = req.headers.get("x-request-id") || "";
-
-  if (!xSignature) {
-    console.error("Missing x-signature header");
-    return false;
-  }
-
-  // Parse ts and v1 from header (format: "ts=<timestamp>,v1=<hash>")
-  const parts = Object.fromEntries(
-    xSignature.split(",").map((part) => part.split("=").map((s) => s.trim()) as [string, string])
-  );
-  const ts = parts["ts"];
-  const v1 = parts["v1"];
-  if (!ts || !v1) {
-    console.error("Malformed x-signature header");
-    return false;
-  }
-
-  // Build signed manifest
-  const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts}`;
-
-  // Compute HMAC-SHA256
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(manifest));
-  const computedHash = Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  if (computedHash !== v1) {
-    console.error("Signature mismatch — possible forged webhook");
-    return false;
-  }
-
-  return true;
-}
-
 const ALLOWED_ORIGINS = [
   "https://nictech.vercel.app",
   "https://www.nictech.vercel.app",
@@ -190,8 +140,10 @@ function buildOrderEmail(payer: any, items: any[], total: number, paymentId: str
 function buildAdminEmail(payer: any, items: any[], total: number, paymentId: string): string {
   const name = [payer?.first_name, payer?.last_name].filter(Boolean).join(" ") || payer?.name || "Sin nombre";
   const email = payer?.email || "-";
-  const phone = payer?.phone ? `${payer.phone.area_code || ""}${payer.phone.number || ""}` : "-";
-  const dni = payer?.identification?.number || "-";
+  const phone = typeof payer?.phone === "string"
+    ? payer.phone
+    : payer?.phone ? `${payer.phone.area_code || ""}${payer.phone.number || ""}` : "-";
+  const dni = payer?.dni || payer?.identification?.number || "-";
   const now = new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" });
 
   const itemRows = items.map((item: any) => `
@@ -257,188 +209,264 @@ async function sendConfirmationEmail(payer: any, items: any[], total: number, pa
   const toEmail = payer?.email;
   if (!toEmail) { console.warn("No payer email found, skipping email."); return; }
 
-  const ADMIN_EMAIL = "Nictech.ar@gmail.com";
+  const adminEmail = Deno.env.get("SALES_NOTIFICATION_EMAIL")?.trim() || "Nictech.ar@gmail.com";
+  const fromEmail = Deno.env.get("SALES_FROM_EMAIL")?.trim() || "Nictech Ventas <ventas@nictech.com.ar>";
 
   // Email al cliente
   const clientRes = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
+    headers: {
+      "Authorization": `Bearer ${resendKey}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `mercadopago-${paymentId}-customer`,
+    },
     body: JSON.stringify({
-      from: "Nictech Ventas <ventas@nictech.com.ar>",
+      from: fromEmail,
       to: [toEmail],
       subject: "Confirmacion de compra - Nictech",
       html: buildOrderEmail(payer, items, total, paymentId),
     }),
   });
-  if (!clientRes.ok) console.error("Resend client error:", await clientRes.text());
-  else console.log(`Email cliente enviado a ${toEmail}`);
+  if (!clientRes.ok) {
+    console.error("Resend client error:", await clientRes.text());
+    throw new Error("No se pudo enviar la confirmación al cliente");
+  }
 
   // Aviso al negocio
   const adminRes = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
+    headers: {
+      "Authorization": `Bearer ${resendKey}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `mercadopago-${paymentId}-admin`,
+    },
     body: JSON.stringify({
-      from: "Nictech Ventas <ventas@nictech.com.ar>",
-      to: [ADMIN_EMAIL],
+      from: fromEmail,
+      to: [adminEmail],
       subject: `Nueva venta - $${Number(total).toLocaleString("es-AR")}`,
       html: buildAdminEmail(payer, items, total, paymentId),
     }),
   });
-  if (!adminRes.ok) console.error("Resend admin error:", await adminRes.text());
-  else console.log(`Aviso de venta enviado a ${ADMIN_EMAIL}`);
+  if (!adminRes.ok) {
+    console.error("Resend admin error:", await adminRes.text());
+    throw new Error("No se pudo enviar el aviso de venta");
+  }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: getCorsHeaders(req) });
+interface WebhookEnvelope {
+  id?: unknown;
+  type?: unknown;
+  action?: unknown;
+  data?: { id?: unknown };
+}
+
+function jsonResponse(req: Request, body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+  });
+}
+
+function requireEnvironment(name: string): string {
+  const value = Deno.env.get(name)?.trim();
+  if (!value) throw new Error(`${name} no está configurado`);
+  return value;
+}
+
+function requireUuidEnvironment(name: string): string {
+  const value = requireEnvironment(name);
+  if (!isUuid(value)) throw new Error(`${name} no contiene un UUID válido`);
+  return value;
+}
+
+function asRecord(value: unknown, errorMessage: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(errorMessage);
+  return value as Record<string, unknown>;
+}
+
+function getNestedRecord(record: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = record[key];
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+async function readEnvelope(req: Request): Promise<WebhookEnvelope> {
+  if (req.method !== "POST") return {};
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) return {};
+  try {
+    return await req.json() as WebhookEnvelope;
+  } catch {
+    return {};
+  }
+}
+
+function extractPaymentId(url: URL, envelope: WebhookEnvelope): string | null {
+  const queryId = url.searchParams.get("data.id") ?? url.searchParams.get("id");
+  const bodyId = envelope.data?.id === undefined ? null : String(envelope.data.id);
+  if (queryId && bodyId && queryId !== bodyId) return null;
+  const candidate = queryId ?? bodyId;
+  return candidate && /^\d+$/.test(candidate) ? candidate : null;
+}
+
+function isPaymentNotification(url: URL, envelope: WebhookEnvelope): boolean {
+  const topic = url.searchParams.get("topic") ?? url.searchParams.get("type");
+  return topic === "payment" || envelope.type === "payment" ||
+    (typeof envelope.action === "string" && envelope.action.startsWith("payment."));
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: getCorsHeaders(req) });
+  if (req.method !== "POST" && req.method !== "GET") {
+    return jsonResponse(req, { error: "Método no permitido" }, 405);
   }
 
   try {
     const url = new URL(req.url);
-    const topic = url.searchParams.get("topic") || url.searchParams.get("type");
-    const id = url.searchParams.get("id") || url.searchParams.get("data.id");
-
-    if (topic !== "payment") {
-      let bodyId: string | undefined;
-      try {
-        const body = await req.json();
-        if (body.type === "payment" && body.data && body.data.id) {
-          bodyId = String(body.data.id);
-        }
-      } catch (_e) {
-        // ignore JSON parse error
-      }
-
-      if (bodyId) {
-        const valid = await verifyMercadoPagoSignature(req, bodyId);
-        if (!valid) {
-          return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(req) });
-        }
-        return processPayment(bodyId, req);
-      }
-
-      if (!id) {
-        return new Response("Ignored", { status: 200, headers: getCorsHeaders(req) });
-      }
+    const envelope = await readEnvelope(req);
+    if (!isPaymentNotification(url, envelope)) {
+      return jsonResponse(req, { ignored: true }, 200);
     }
 
-    if (id) {
-      const valid = await verifyMercadoPagoSignature(req, id);
-      if (!valid) {
-        return new Response("Unauthorized", { status: 401, headers: getCorsHeaders(req) });
-      }
-      return processPayment(id, req);
+    const paymentId = extractPaymentId(url, envelope);
+    if (!paymentId) return jsonResponse(req, { error: "Identificador de pago inválido" }, 400);
+
+    const secret = Deno.env.get("MERCADOPAGO_WEBHOOK_SECRET")?.trim();
+    if (!secret) {
+      console.error("MERCADOPAGO_WEBHOOK_SECRET is required");
+      return jsonResponse(req, { error: "Webhook no configurado" }, 503);
+    }
+    const requestId = req.headers.get("x-request-id")?.trim() ?? "";
+    const signatureIsValid = await verifyMercadoPagoSignature(
+      secret,
+      paymentId,
+      requestId,
+      req.headers.get("x-signature"),
+    );
+    if (!signatureIsValid) {
+      console.error("Mercado Pago webhook signature rejected", { paymentId, requestId });
+      return jsonResponse(req, { error: "Firma inválida" }, 401);
     }
 
-    return new Response("OK", { status: 200, headers: getCorsHeaders(req) });
-  } catch (error) {
-    console.error("Webhook error:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: getCorsHeaders(req) });
+    return await processPayment(paymentId, requestId, envelope, req);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error desconocido";
+    console.error("Mercado Pago webhook failed", message);
+    return jsonResponse(req, { error: "No se pudo procesar la notificación" }, 500);
   }
 });
 
-async function processPayment(paymentId: string, req: Request) {
-  const accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
+async function processPayment(
+  paymentId: string,
+  requestId: string,
+  envelope: WebhookEnvelope,
+  req: Request,
+): Promise<Response> {
+  const accessToken = requireEnvironment("MERCADOPAGO_ACCESS_TOKEN");
+  const supabaseUrl = requireEnvironment("SUPABASE_URL");
+  const supabaseKey = requireEnvironment("SUPABASE_SERVICE_ROLE_KEY");
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 
-  // 1. Fetch payment info from Mercado Pago
   const mpResponse = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-    headers: { "Authorization": `Bearer ${accessToken}` }
+    headers: { "Authorization": `Bearer ${accessToken}` },
   });
+  if (!mpResponse.ok) {
+    console.error("Mercado Pago payment lookup failed", { paymentId, status: mpResponse.status });
+    throw new Error("No se pudo verificar el pago con el proveedor");
+  }
 
-  if (!mpResponse.ok) throw new Error("Failed to fetch payment");
+  const paymentData = asRecord(await mpResponse.json(), "Respuesta de pago inválida");
+  if (String(paymentData.id ?? "") !== paymentId) throw new Error("El pago verificado no coincide");
+  if (!isUuid(paymentData.external_reference)) throw new Error("La referencia externa no es válida");
 
-  const paymentData = await mpResponse.json();
-
-  const status = paymentData.status;
+  const storefrontOrderId = paymentData.external_reference;
   const total = paymentData.transaction_amount;
-  const items = paymentData.additional_info?.items || [];
-  const payer = paymentData.payer;
-  const metadata = paymentData.metadata || {};
+  if (typeof total !== "number" || !Number.isFinite(total) || total <= 0) {
+    throw new Error("El total del pago no es válido");
+  }
+  const currencyCode = paymentData.currency_id;
+  if (currencyCode !== "ARS") throw new Error("La moneda del pago no está permitida");
 
-  // 2. Check if order already exists
-  const { data: existingOrder } = await supabase
+  const { data: storefrontOrder, error: orderError } = await supabase
     .from("orders")
-    .select("stock_decremented, email_sent")
-    .eq("payment_id", String(paymentId))
+    .select("id, status, total, items, payer")
+    .eq("id", storefrontOrderId)
     .single();
+  if (orderError || !storefrontOrder) throw new Error("La orden de storefront no existe");
+  if (storefrontOrder.total !== total) throw new Error("El total pagado no coincide con la orden");
 
-  const stockAlreadyDecremented = existingOrder?.stock_decremented || false;
-  const emailAlreadySent = existingOrder?.email_sent || false;
-  const shouldDecrementStock = status === "approved" && !stockAlreadyDecremented;
+  const items = normalizeOrderItems(storefrontOrder.items);
+  const payer = asRecord(storefrontOrder.payer, "Comprador de orden inválido");
+  const status = mapPaymentStatus(paymentData.status);
+  const paymentMethod = typeof paymentData.payment_method_id === "string"
+    ? paymentData.payment_method_id
+    : null;
 
-  // 3. Upsert order (status + data only, stock_decremented handled atomically below)
-  const { error: dbError } = await supabase
-    .from("orders")
-    .upsert({
-      payment_id: String(paymentId),
-      status,
-      total,
-      items,
-      payer,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "payment_id" });
-
-  if (dbError) {
-    console.error("Error saving order:", dbError);
-    throw dbError;
-  }
-
-  // 4. Decrement stock using an atomic conditional UPDATE to prevent race conditions.
-  // Only the process that flips stock_decremented from false → true will proceed.
-  // Concurrent calls will get 0 rows back and skip decrement.
-  if (shouldDecrementStock) {
-    const { data: claimed, error: claimError } = await supabase
-      .from("orders")
-      .update({ stock_decremented: true })
-      .eq("payment_id", String(paymentId))
-      .eq("stock_decremented", false)
-      .select("payment_id");
-
-    if (claimError) {
-      console.error("Error claiming stock decrement lock:", claimError);
-    } else if (claimed && claimed.length > 0) {
-      // This process won the atomic claim — safe to decrement
-      let itemsToProcess = items;
-      if (items.length === 0 && metadata.items) {
-        try { itemsToProcess = JSON.parse(metadata.items); } catch (_e) { /* ignore */ }
-      }
-
-      for (const item of itemsToProcess) {
-        if (item.id) {
-          const { error: rpcError } = await supabase.rpc("decrement_stock", {
-            row_id: item.id,
-            qty: Number(item.quantity)
-          });
-          if (rpcError) console.error(`Error decrementing stock for ${item.id}:`, rpcError);
-        }
-      }
-    } else {
-      console.log(`Stock for payment ${paymentId} already claimed by another process — skipping`);
+  if (status !== "approved") {
+    if (storefrontOrder.status !== "approved" || status === "refunded") {
+      const { error: updateError } = await supabase
+        .from("orders")
+        .update({
+          status,
+          payment_id: paymentId,
+          payment_method_id: paymentMethod,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", storefrontOrderId);
+      if (updateError) throw updateError;
     }
+    return jsonResponse(req, { success: true, status }, 200);
   }
 
-  // 5. Send confirmation email (only once per approved order)
-  if (status === "approved" && !emailAlreadySent) {
-    let itemsForEmail = items;
-    if (itemsForEmail.length === 0 && metadata.items) {
-      try { itemsForEmail = JSON.parse(metadata.items); } catch (_e) { /* ignore */ }
-    }
-    await sendConfirmationEmail(payer, itemsForEmail, total, String(paymentId));
-
-    // Mark email as sent (best-effort, ignore error)
-    await supabase
-      .from("orders")
-      .update({ email_sent: true })
-      .eq("payment_id", String(paymentId));
+  const metadata = getNestedRecord(paymentData, "metadata");
+  const metadataCheckoutId = metadata.checkout_id;
+  if (metadataCheckoutId !== storefrontOrderId) {
+    throw new Error("La metadata del pago no coincide con la orden");
   }
 
-  return new Response(JSON.stringify({ success: true }), {
-    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-    status: 200
-  });
+  const providerOccurredAt = [paymentData.date_approved, paymentData.date_last_updated, paymentData.date_created]
+    .find((value): value is string => typeof value === "string" && !Number.isNaN(Date.parse(value)));
+  if (!providerOccurredAt) throw new Error("El pago no contiene una fecha válida");
+
+  const providerEventId = typeof envelope.id === "string" || typeof envelope.id === "number"
+    ? String(envelope.id)
+    : requestId;
+  const { data: result, error: processError } = await supabase.schema("erp").rpc(
+    "process_mercadopago_payment",
+    {
+      p_organization_id: requireUuidEnvironment("ERP_ORGANIZATION_ID"),
+      p_branch_id: requireUuidEnvironment("ERP_BRANCH_ID"),
+      p_location_id: requireUuidEnvironment("ERP_STOREFRONT_LOCATION_ID"),
+      p_storefront_order_id: storefrontOrderId,
+      p_customer_id: requireUuidEnvironment("ERP_STOREFRONT_CUSTOMER_ID"),
+      p_exchange_snapshot_id: requireUuidEnvironment("ERP_STORE_EXCHANGE_SNAPSHOT_ID"),
+      p_payment_method_id: requireUuidEnvironment("ERP_MERCADOPAGO_PAYMENT_METHOD_ID"),
+      p_provider_payment_id: paymentId,
+      p_provider_event_id: providerEventId,
+      p_status: status,
+      p_total: total,
+      p_currency_code: currencyCode,
+      p_external_reference: storefrontOrderId,
+      p_payer: payer,
+      p_items: items,
+      p_provider_occurred_at: providerOccurredAt,
+      p_raw_data: paymentData,
+    },
+  );
+  if (processError) {
+    console.error("Transactional payment processing failed", {
+      paymentId,
+      code: processError.code,
+      details: processError.details,
+    });
+    throw new Error("La venta no pudo asentarse de forma transaccional");
+  }
+
+  await sendConfirmationEmail(payer, items, total, paymentId);
+  return jsonResponse(req, { success: true, status, result }, 200);
 }
  
