@@ -1,0 +1,4 @@
+-- Remote storefront migration history marker.
+-- This version is already applied in the target Supabase project. Its original
+-- SQL depends on a pre-migration storefront baseline that is intentionally
+-- outside the ERP-only local stack, so this marker must remain a no-op.
