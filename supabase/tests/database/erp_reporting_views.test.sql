@@ -135,7 +135,7 @@ select lives_ok(
 );
 select is((
   select total_debit from erp.v_trial_balance where account_code = '1.1.10'
-), 500::numeric, 'Closed-period debit reaches the trial balance');
+), 742::numeric, 'Closed-period debit includes the automatic sale and report fixture');
 select is((
   select gross_revenue from erp.v_profitability_by_line
   where product_id = 'd2000000-0000-0000-0000-000000000001'

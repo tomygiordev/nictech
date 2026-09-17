@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(85);
+select plan(111);
 
 select has_table('erp', 'organization_currencies', 'Organization currencies exist');
 select has_table('erp', 'exchange_rate_snapshots', 'Immutable FX snapshots exist');
@@ -10,12 +10,16 @@ select has_table('erp', 'purchase_orders', 'Purchase orders exist');
 select has_table('erp', 'purchase_receipts', 'Partial purchase receipts exist');
 select has_table('erp', 'inventory_cost_entries', 'Inventory cost ledger exists');
 select has_table('erp', 'supplier_payables', 'Supplier payables exist');
+select has_table('erp', 'supplier_payments', 'Supplier payment facts exist');
+select has_table('erp', 'supplier_payment_reversals', 'Supplier payment reversal facts exist');
 select has_table('erp', 'price_entries', 'Immutable price entries exist');
 select has_function('erp', 'capture_exchange_rate', array['text','numeric','text','timestamp with time zone','text','text'], 'FX capture command exists');
 select has_function('erp', 'create_purchase_order', array['uuid','uuid','text','uuid','text','text','jsonb'], 'Purchase-order command exists');
 select has_function('erp', 'approve_purchase_order', array['uuid','text','text'], 'Approval command exists');
 select has_function('erp', 'reject_purchase_order', array['uuid','text','text'], 'Rejection command exists');
 select has_function('erp', 'post_purchase_receipt', array['uuid','text','text','jsonb','jsonb','boolean'], 'Receipt command exists');
+select has_function('erp', 'record_supplier_payment', array['uuid','uuid','uuid','numeric','text','text','text'], 'Atomic supplier payment command exists');
+select has_function('erp', 'reverse_supplier_payment', array['uuid','text','text'], 'Append-only supplier payment reversal exists');
 select has_function('erp', 'preview_price_change', array['uuid','text','text','jsonb'], 'Price preview command exists');
 select has_function('erp', 'apply_price_change', array['uuid','text','text'], 'Price apply command exists');
 select has_column('erp', 'price_change_preview_lines', 'baseline_entry_id', 'Price previews freeze their baseline entry');
@@ -27,8 +31,12 @@ select ok((select relrowsecurity from pg_class where oid = 'erp.price_entries'::
 select is(has_table_privilege('authenticated', 'erp.purchase_receipts', 'INSERT'), false, 'Authenticated clients cannot insert receipts');
 select is(has_table_privilege('authenticated', 'erp.inventory_cost_entries', 'UPDATE'), false, 'Authenticated clients cannot mutate costs');
 select is(has_table_privilege('service_role', 'erp.supplier_payables', 'INSERT'), false, 'Service clients cannot insert supplier debt');
+select is(has_table_privilege('authenticated', 'erp.supplier_payments', 'INSERT'), false, 'Authenticated clients cannot insert supplier payments directly');
 select is(has_function_privilege('service_role', 'erp.post_purchase_receipt(uuid,text,text,jsonb,jsonb,boolean)', 'EXECUTE'), false, 'Service role cannot post unscoped receipts');
 select is(has_function_privilege('authenticated', 'erp.post_purchase_receipt(uuid,text,text,jsonb,jsonb,boolean)', 'EXECUTE'), true, 'Authenticated actors may invoke the checked receipt command');
+select is(has_function_privilege('authenticated', 'erp.post_purchase_receipt_unchecked(uuid,text,text,jsonb,jsonb,boolean)', 'EXECUTE'), false, 'Authenticated actors cannot bypass the receipt destination guard');
+select is(has_function_privilege('authenticated', 'erp.record_supplier_payment(uuid,uuid,uuid,numeric,text,text,text)', 'EXECUTE'), true, 'Authenticated actors may invoke the checked supplier payment command');
+select is(has_function_privilege('authenticated', 'erp.reverse_supplier_payment(uuid,text,text)', 'EXECUTE'), true, 'Authenticated actors may invoke the checked supplier reversal command');
 select is(has_function_privilege('authenticated', 'erp.post_stock_document_core(erp.stock_document_kind,uuid,text,text,jsonb,boolean,text,uuid)', 'EXECUTE'), false, 'Stock core is not directly executable');
 select is(has_column_privilege('authenticated', 'erp.products', 'base_cost', 'SELECT'), false, 'Catalog readers cannot read product costs directly');
 
@@ -91,6 +99,12 @@ select ok(
   and erp.has_permission('costs.manage', '20000000-0000-0000-0000-000000000001')
   and erp.has_permission('pricing.manage', '20000000-0000-0000-0000-000000000001'),
   'The seeded inventory role can execute the stage 4 workflow'
+);
+select is(
+  (select count(*) from erp.list_supplier_payment_methods('20000000-0000-0000-0000-000000000001')
+   where settlement_kind = 'credit'),
+  0::bigint,
+  'Supplier settlements never offer customer trade-in credit'
 );
 
 select lives_ok(
@@ -183,6 +197,35 @@ select throws_ok(
 select is((select exchange_rate from erp.purchase_orders where idempotency_key = 'stage4-order-1'), 1000::numeric, 'Purchase order preserves its historical FX rate');
 
 select throws_ok(
+  $$select erp.post_purchase_receipt_unchecked(
+    (select id from erp.purchase_orders where idempotency_key = 'stage4-order-1'),
+    'stage4-quarantine-bypass', 'Direct implementation bypass attempt',
+    jsonb_build_array(jsonb_build_object(
+      'line_number', 1,
+      'purchase_order_line_id', (select id from erp.purchase_order_lines where purchase_order_id = (select id from erp.purchase_orders where idempotency_key = 'stage4-order-1') and line_number = 1),
+      'to_location_id', '30000000-0000-0000-0000-000000000008', 'quantity', 1
+    )), '[]'::jsonb, false
+  )$$,
+  '42501', null,
+  'The private receipt implementation cannot be invoked directly'
+);
+select is((select count(*) from erp.purchase_receipts), 0::bigint, 'A denied receipt bypass has no side effects');
+
+select throws_ok(
+  $$select erp.post_purchase_receipt(
+    (select id from erp.purchase_orders where idempotency_key = 'stage4-order-1'),
+    'stage4-quarantine-receipt', 'Quarantine destination must be rejected',
+    jsonb_build_array(jsonb_build_object(
+      'line_number', 1,
+      'purchase_order_line_id', (select id from erp.purchase_order_lines where purchase_order_id = (select id from erp.purchase_orders where idempotency_key = 'stage4-order-1') and line_number = 1),
+      'to_location_id', '30000000-0000-0000-0000-000000000008', 'quantity', 1
+    )), '[]'::jsonb, false
+  )$$,
+  '23514', 'purchase receipts cannot target quarantine locations',
+  'Purchase receipts reject quarantine destinations before posting side effects'
+);
+
+select throws_ok(
   $$select erp.post_stock_document(
     'receipt', '20000000-0000-0000-0000-000000000001', 'raw-receipt', 'Bypass attempt',
     '[{"product_id":"85000000-0000-0000-0000-000000000001","to_location_id":"30000000-0000-0000-0000-000000000002","quantity":1}]'::jsonb,
@@ -247,6 +290,113 @@ select is((select count(*) from erp.supplier_payables where receipt_id = (select
 select is((select sum(amount_base_delta) from erp.supplier_account_entries where supplier_id = '84000000-0000-0000-0000-000000000001'), 8400::numeric, 'Supplier debt equals landed receipt value');
 select is((select count(*) from erp.inventory_cost_entries where receipt_id = (select id from erp.purchase_receipts where idempotency_key = 'stage4-receipt-1')), 1::bigint, 'Receipt retry does not duplicate cost entries');
 select is((select count(*) from erp.supplier_account_entries where payable_id = (select id from erp.supplier_payables where receipt_id = (select id from erp.purchase_receipts where idempotency_key = 'stage4-receipt-1'))), 1::bigint, 'Receipt retry does not duplicate supplier account entries');
+
+select lives_ok(
+  $$select erp.record_supplier_payment(
+    (select id from erp.supplier_payables where receipt_id = (select id from erp.purchase_receipts where idempotency_key = 'stage4-receipt-1')),
+    '82000000-0000-0000-0000-000000000002', null, 4,
+    'supplier-transfer-001', 'stage4-supplier-payment-1', 'Partial supplier payment'
+  )$$,
+  'Supplier payable can be settled partially through a real non-cash payment'
+);
+select is(
+  (select amount_base from erp.supplier_payments where idempotency_key = 'stage4-supplier-payment-1'),
+  4000::numeric,
+  'Supplier payment preserves the payable exchange rate'
+);
+select is(
+  (select sum(amount_base_delta) from erp.supplier_account_entries
+   where supplier_id = '84000000-0000-0000-0000-000000000001'),
+  4400::numeric,
+  'Supplier subledger reflects the partial payment'
+);
+reset role;
+select is(
+  (select total_debit = total_credit and total_debit = 4000::numeric
+   from erp.journal_entries
+   where source_type = 'supplier_payment'
+     and source_id = (select id from erp.supplier_payments where idempotency_key = 'stage4-supplier-payment-1')),
+  true,
+  'Supplier payment posts a balanced payable-versus-settlement journal'
+);
+set local role authenticated;
+select is(
+  erp.record_supplier_payment(
+    (select id from erp.supplier_payables where receipt_id = (select id from erp.purchase_receipts where idempotency_key = 'stage4-receipt-1')),
+    '82000000-0000-0000-0000-000000000002', null, 4,
+    'supplier-transfer-001', 'stage4-supplier-payment-1', 'Partial supplier payment'
+  ),
+  (select id from erp.supplier_payments where idempotency_key = 'stage4-supplier-payment-1'),
+  'Supplier payment retry returns the original immutable fact'
+);
+select throws_ok(
+  $$select erp.record_supplier_payment(
+    (select id from erp.supplier_payables where receipt_id = (select id from erp.purchase_receipts where idempotency_key = 'stage4-receipt-1')),
+    '82000000-0000-0000-0000-000000000002', null, 5,
+    'supplier-transfer-over', 'stage4-supplier-payment-over', 'Reject supplier overpayment'
+  )$$,
+  '23514', 'payment exceeds the outstanding supplier balance',
+  'Supplier payment cannot exceed the remaining payable balance'
+);
+select is(
+  (select outstanding_currency from erp.list_supplier_open_payables('84000000-0000-0000-0000-000000000001') limit 1),
+  4.4::numeric,
+  'Open-payables lookup exposes the remaining amount in supplier currency'
+);
+select lives_ok(
+  $$select erp.reverse_supplier_payment(
+    (select id from erp.supplier_payments where idempotency_key = 'stage4-supplier-payment-1'),
+    'stage4-supplier-payment-reversal-1', 'Reverse partial supplier payment'
+  )$$,
+  'Supplier payment reversal restores every derived ledger append-only'
+);
+select is(
+  (select sum(amount_base_delta) from erp.supplier_account_entries
+   where supplier_id = '84000000-0000-0000-0000-000000000001'),
+  8400::numeric,
+  'Supplier subledger balance is restored by the reversal entry'
+);
+reset role;
+select is(
+  (select total_debit = total_credit and total_debit = 4000::numeric
+   from erp.journal_entries
+   where source_type = 'supplier_payment_reversal'
+     and source_id = (
+       select id from erp.supplier_payment_reversals
+       where idempotency_key = 'stage4-supplier-payment-reversal-1'
+     )),
+  true,
+  'Supplier reversal posts an exact balanced counter-entry'
+);
+select is(
+  (select status::text from erp.journal_entries
+   where source_type = 'supplier_payment'
+     and source_id = (select id from erp.supplier_payments where idempotency_key = 'stage4-supplier-payment-1')),
+  'reversed'::text,
+  'Original supplier-payment journal is marked reversed'
+);
+set local role authenticated;
+select is(
+  (select outstanding_currency from erp.list_supplier_open_payables('84000000-0000-0000-0000-000000000001') limit 1),
+  8.4::numeric,
+  'Reversal restores the supplier payable outstanding amount'
+);
+select is(
+  erp.reverse_supplier_payment(
+    (select id from erp.supplier_payments where idempotency_key = 'stage4-supplier-payment-1'),
+    'stage4-supplier-payment-reversal-1', 'Reverse partial supplier payment'
+  ),
+  (select id from erp.supplier_payment_reversals where idempotency_key = 'stage4-supplier-payment-reversal-1'),
+  'Supplier payment reversal retry is idempotent'
+);
+select throws_ok(
+  $$select erp.reverse_supplier_payment(
+    (select id from erp.supplier_payments where idempotency_key = 'stage4-supplier-payment-1'),
+    'stage4-supplier-payment-reversal-2', 'Duplicate supplier reversal'
+  )$$,
+  '55000', 'supplier payment is already reversed',
+  'A supplier payment cannot be reversed twice'
+);
 
 select throws_ok(
   $$select erp.post_purchase_receipt(

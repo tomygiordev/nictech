@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(250);
+select plan(253);
 
 select has_table('erp','customer_equipment','Customer equipment exists');
 select has_table('erp','equipment_ownership_events','Equipment ownership history exists');
@@ -36,6 +36,7 @@ select has_column('erp','payments','repair_order_id','Payments support repair ow
 select has_function('erp','create_repair_order',array['uuid','uuid','uuid','jsonb','text','text','text','text','text','text'],'Checked repair order command exists');
 select has_function('erp','get_repair_credentials',array['uuid'],'Audited credential read command exists');
 select has_function('erp','create_repair_quote_version',array['uuid','text','uuid','jsonb','text','text'],'Quote version command exists');
+select is(has_function_privilege('authenticated','erp.create_repair_quote_version_unchecked(uuid,text,uuid,jsonb,text,text)','EXECUTE'),false,'Authenticated actors cannot bypass service-line quote validation');
 select has_function('erp','reserve_repair_parts',array['uuid','timestamp with time zone','jsonb','text','text'],'Repair reservation wrapper exists');
 select has_function('erp','consume_repair_parts',array['uuid','uuid','text','text'],'Repair consumption wrapper exists');
 select has_function('erp','record_repair_payment',array['uuid','uuid','uuid','numeric','text','uuid','text','text','text'],'Repair payment command exists');
@@ -44,8 +45,8 @@ select has_function('public','respond_repair_quote',array['text','text','text'],
 select has_function('public','register_repair_private_media',array['text','integer','text','text','bigint','text'],'Public metadata registration wrapper exists');
 select has_function('erp','provision_repair_credential_key',array['uuid','bytea','text'],'Service-only credential key provisioning exists');
 select has_function('erp','get_customer_equipment_identifiers',array['uuid'],'Audited equipment identifier RPC exists');
-select ok(pg_get_functiondef('erp.create_repair_quote_version(uuid,text,uuid,jsonb,text,text)'::regprocedure) like '%pg_advisory_xact_lock%hashtextextended%org_id%branch%','Quote cost reads use the canonical organization-branch stock advisory lock');
-select ok(pg_get_functiondef('erp.create_repair_quote_version(uuid,text,uuid,jsonb,text,text)'::regprocedure) like '%jsonb_array_elements(normalized_lines)%','Quote inserts consume the once-frozen normalized line set');
+select ok(pg_get_functiondef('erp.create_repair_quote_version_unchecked(uuid,text,uuid,jsonb,text,text)'::regprocedure) like '%pg_advisory_xact_lock%hashtextextended%org_id%branch%','Quote cost reads use the canonical organization-branch stock advisory lock');
+select ok(pg_get_functiondef('erp.create_repair_quote_version_unchecked(uuid,text,uuid,jsonb,text,text)'::regprocedure) like '%jsonb_array_elements(normalized_lines)%','Quote inserts consume the once-frozen normalized line set');
 select has_function('erp','get_repair_quote_costs',array['uuid'],'Checked quote cost RPC exists');
 
 select ok((select relrowsecurity from pg_class where oid='erp.customer_equipment'::regclass),'Equipment enforces RLS');
@@ -137,6 +138,14 @@ select set_config('request.jwt.claim.role','authenticated',true);
 set local role authenticated;
 
 select lives_ok($$select erp.capture_exchange_rate('ARS',1,'stage7-local','2026-08-19 12:00:00+00','stage7-fx','Stage 7 FX')$$,'Base FX snapshot is available');
+select throws_ok(
+  $$select erp.create_repair_quote_version((select id from stage7_ids where kind='order'),'ARS',(select id from erp.exchange_rate_snapshots where source='stage7-local'),'[{"kind":"service","description":"Labor without service catalog","quantity":1,"unit_price":100,"unit_cost":20,"tax_rate_percent":21}]','stage7-service-missing','Service without catalog item')$$,
+  '23503', 'active repair service unavailable on quote line 1', 'Service quote lines require an active catalog service'
+);
+select throws_ok(
+  $$select erp.create_repair_quote_version((select id from stage7_ids where kind='order'),'ARS',(select id from erp.exchange_rate_snapshots where source='stage7-local'),jsonb_build_array(jsonb_build_object('kind','service','product_id','b2000000-0000-0000-0000-000000000001','description','Product used as service','quantity',1,'unit_price',100,'unit_cost',20,'tax_rate_percent',21)),'stage7-service-wrong-kind','Product as service')$$,
+  '23503', 'active repair service unavailable on quote line 1', 'Service quote lines reject ordinary products'
+);
 select lives_ok($$select erp.post_stock_document('opening','20000000-0000-0000-0000-000000000001','stage7-stock','Stage 7 stock','[{"product_id":"b2000000-0000-0000-0000-000000000001","to_location_id":"30000000-0000-0000-0000-000000000002","quantity":10,"unit_cost":25}]')$$,'Repair stock is opened with cost');
 select lives_ok($$insert into stage7_ids(kind,id) values('serial-unit',erp.register_inventory_unit('b2000000-0000-0000-0000-000000000002',null,'STAGE7-SERIAL-1',null,40))$$,'Serialized repair part unit is registered');
 select lives_ok($$select erp.post_stock_document('opening','20000000-0000-0000-0000-000000000001','stage7-serial-stock','Stage 7 serial stock',jsonb_build_array(jsonb_build_object('product_id','b2000000-0000-0000-0000-000000000002','inventory_unit_id',(select id from stage7_ids where kind='serial-unit'),'to_location_id','30000000-0000-0000-0000-000000000002','quantity',1,'unit_cost',40)))$$,'Serialized repair stock is opened with cost');

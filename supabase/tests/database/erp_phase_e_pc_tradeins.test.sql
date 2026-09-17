@@ -37,7 +37,7 @@ grant all on e_test_ids to authenticated, service_role;
 
 -- 2. Setup customer and products
 insert into erp.customers(id, organization_id, code, display_name, phone, email)
-values('c2000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','41999888','Pedro Canje','+5491177778888','pedro@test.com');
+values('c2000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','CLI-TRADEIN-0001','Pedro Canje','+5491177778888','pedro@test.com');
 
 insert into erp.products(id, organization_id, product_type_id, item_kind, unit_id, internal_code, internal_name, inventory_tracking)
 values('d3000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000001','product','50000000-0000-0000-0000-000000000001','IPHONE-12-USADO','iPhone 12 64GB Usado','imei');

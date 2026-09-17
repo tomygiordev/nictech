@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(40);
 
 select has_function(
   'erp', 'fulfill_online_order',
@@ -111,6 +111,13 @@ select lives_ok(
   )$$,
   'Fulfillment order reaches preparing delivery state'
 );
+select lives_ok(
+  $$select erp.record_web_order_event(
+    (select id from erp.web_orders where idempotency_key = 'fulfill-web-order'),
+    null, 'ready', 'fulfill-ready', 'Order is ready for dispatch'
+  )$$,
+  'Fulfillment order reaches ready delivery state'
+);
 
 reset role;
 select set_config('request.jwt.claim.role', 'service_role', true);
@@ -179,6 +186,134 @@ select is((
   where web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order')
     and order_state is not null order by event_sequence desc limit 1
 ), 'fulfilled', 'Fulfilled state is recorded on the order timeline');
+select lives_ok(
+  $$select erp.record_web_order_event(
+    (select id from erp.web_orders where idempotency_key = 'fulfill-web-order'),
+    null, 'delivered', 'fulfill-delivered', 'Order delivered before physical return'
+  )$$,
+  'Fulfillment order reaches delivered delivery state'
+);
+
+reset role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+set local role service_role;
+select lives_ok(
+  $$select erp.record_web_payment_event(
+    (select id from erp.web_orders where idempotency_key = 'fulfill-web-order'),
+    'mercadopago', 'mp-fulfill-refund-ev1', 'mp-fulfill-pay1', 'refunded', null, 242,
+    '2026-09-07 14:00:00+00', '{"local_fixture":true}'::jsonb
+  )$$,
+  'Provider full refund for the fulfilled order is recorded unapplied'
+);
+select set_config(
+  'test.fulfill_refund_event_id',
+  (select id::text from erp.web_payment_events where provider_event_id = 'mp-fulfill-refund-ev1'),
+  true
+);
+
+reset role;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+set local role authenticated;
+select throws_ok(
+  $$select erp.refund_fulfilled_online_order(
+    (select id from erp.web_orders where idempotency_key = 'fulfill-web-order'),
+    current_setting('test.fulfill_refund_event_id')::uuid,
+    false, 'fulfill-refund-no-return', 'Missing physical return', null
+  )$$,
+  '22023', 'physical return confirmation, operation key and reason are required',
+  'Fulfilled order cannot be refunded without explicit physical return confirmation'
+);
+select lives_ok(
+  $$select erp.refund_fulfilled_online_order(
+    (select id from erp.web_orders where idempotency_key = 'fulfill-web-order'),
+    current_setting('test.fulfill_refund_event_id')::uuid,
+    true, 'fulfill-refund-k1', 'Physical return confirmed and provider refund received', null
+  )$$,
+  'Fulfilled online order refund compensates sale, stock, payment and journal atomically'
+);
+select is(
+  (select applied from erp.web_payment_events where id = current_setting('test.fulfill_refund_event_id')::uuid),
+  true,
+  'Atomic refund marks the provider event as applied'
+);
+select is(
+  (select count(*) from erp.online_order_refunds
+   where web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order')),
+  1::bigint,
+  'Atomic refund persists exactly one immutable receipt'
+);
+select is((
+  select order_state from erp.web_order_events
+  where web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order')
+    and order_state is not null order by event_sequence desc limit 1
+), 'refunded', 'Atomic refund advances the order state to refunded');
+select is((
+  select payment_state from erp.web_order_events
+  where web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order')
+    and payment_state is not null order by event_sequence desc limit 1
+), 'refunded', 'Atomic refund advances the payment state to refunded');
+select is((
+  select delivery_state from erp.web_order_events
+  where web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order')
+    and delivery_state is not null order by event_sequence desc limit 1
+), 'returned', 'Atomic refund records the physical return');
+select is(
+  (select sum(amount) from erp.payments
+   where sale_id = (select sale_id from erp.web_order_fulfillments
+                    where web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order'))),
+  0::numeric,
+  'Original online payment and its reversal net to zero'
+);
+select ok(
+  exists(
+    select 1 from erp.sale_state_events
+    where sale_id = (select sale_id from erp.web_order_fulfillments
+                     where web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order'))
+      and sale_state = 'cancelled'
+  ),
+  'Fulfilled sale is cancelled by an append-only state event'
+);
+select is(
+  (select quantity_on_hand from erp.stock_balances
+   where product_id = 'b2000000-0000-0000-0000-000000000001'
+     and variant_id = 'b3000000-0000-0000-0000-000000000001'
+     and location_id = '30000000-0000-0000-0000-000000000002'),
+  3::numeric,
+  'Atomic refund restores the exact fulfilled stock quantity'
+);
+select ok(
+  exists(
+    select 1
+    from erp.online_order_refunds receipt
+    join erp.journal_entries original on original.id = receipt.original_journal_entry_id
+    where receipt.web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order')
+      and original.status = 'reversed'
+      and original.reversal_of_entry_id = receipt.journal_reversal_entry_id
+  ),
+  'Atomic refund links the balanced journal reversal to its original entry'
+);
+select ok(
+  exists(
+    select 1 from erp.integration_outbox
+    where aggregate_type = 'web_order'
+      and aggregate_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order')
+      and event_type = 'web_order.refunded'
+      and idempotency_key = 'fulfill-refund-k1:outbox'
+  ),
+  'Atomic refund emits one idempotent integration event'
+);
+select is(
+  (
+    erp.refund_fulfilled_online_order(
+      (select id from erp.web_orders where idempotency_key = 'fulfill-web-order'),
+      current_setting('test.fulfill_refund_event_id')::uuid,
+      true, 'fulfill-refund-k1', 'Physical return confirmed and provider refund received', null
+    )->>'refund_id'
+  )::uuid,
+  (select id from erp.online_order_refunds
+   where web_order_id = (select id from erp.web_orders where idempotency_key = 'fulfill-web-order')),
+  'Exact retry returns the original refund receipt without duplicating facts'
+);
 
 select throws_ok(
   $$select erp.fulfill_online_order(

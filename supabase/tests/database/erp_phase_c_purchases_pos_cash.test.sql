@@ -11,7 +11,7 @@
 
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(12);
+select plan(20);
 
 -- Setup test user with owner permissions
 insert into auth.users (
@@ -330,6 +330,108 @@ select is(
   )),
   (select receipt_id from _rcpt_c),
   'Receipt replay returns existing receipt ID without duplicate stock or payables'
+);
+
+-- 13-20. POS sale, document and fiscal request are one idempotent operation
+select has_function(
+  'erp',
+  'create_sale_with_fiscal_document',
+  array['uuid','uuid','text','uuid','text','text','jsonb','jsonb','uuid'],
+  'POS fiscal sale command exists'
+);
+
+select is(
+  has_function_privilege(
+    'service_role',
+    'erp.create_sale_with_fiscal_document(uuid,uuid,text,uuid,text,text,jsonb,jsonb,uuid)',
+    'EXECUTE'
+  ),
+  false,
+  'Service role cannot invoke the POS fiscal sale command directly'
+);
+
+select is(
+  has_function_privilege(
+    'authenticated',
+    'erp.create_sale_with_fiscal_document(uuid,uuid,text,uuid,text,text,jsonb,jsonb,uuid)',
+    'EXECUTE'
+  ),
+  true,
+  'Authenticated actors use the checked POS fiscal sale command'
+);
+
+create temporary table _fiscal_sale_c as
+select erp.create_sale_with_fiscal_document(
+  (select branch_id from _test_ctx),
+  (select customer_id from _test_ctx),
+  'ARS',
+  (select snapshot_id from _test_ctx),
+  'op-fiscal-sale-c01',
+  'Venta POS con comprobante fiscal',
+  jsonb_build_array(
+    jsonb_build_object(
+      'kind', 'product',
+      'product_id', (select product_id from _sale_prod),
+      'from_location_id', (select location_id from _test_ctx),
+      'description', 'Cargador Rápido 20W',
+      'quantity', 1,
+      'unit_price', 8500,
+      'discount_amount', 0,
+      'tax_rate_percent', 0,
+      'tax_amount', 0
+    )
+  ),
+  '[]'::jsonb
+) as result;
+
+select ok(
+  (select result ? 'sale_id' and result ? 'document_id' and result ? 'fiscal_request_id' and result->>'fiscal_status' = 'queued' from _fiscal_sale_c),
+  'POS fiscal sale returns sale, document, request and queued status'
+);
+
+select is(
+  (select count(*) from erp.documents where owner_type = 'sale' and owner_id = ((select result->>'sale_id' from _fiscal_sale_c))::uuid),
+  1::bigint,
+  'POS fiscal sale creates exactly one persisted sale document'
+);
+
+select is(
+  (select count(*) from erp.fiscal_requests where document_id = ((select result->>'document_id' from _fiscal_sale_c))::uuid),
+  1::bigint,
+  'POS fiscal sale creates exactly one fiscal request'
+);
+
+select is(
+  (select count(*) from erp.integration_outbox where event_type = 'fiscal.issue.requested' and aggregate_id = ((select result->>'fiscal_request_id' from _fiscal_sale_c))::uuid),
+  1::bigint,
+  'POS fiscal sale enqueues exactly one fiscal outbox event'
+);
+
+select is(
+  (select erp.create_sale_with_fiscal_document(
+    (select branch_id from _test_ctx),
+    (select customer_id from _test_ctx),
+    'ARS',
+    (select snapshot_id from _test_ctx),
+    'op-fiscal-sale-c01',
+    'Venta POS con comprobante fiscal',
+    jsonb_build_array(
+      jsonb_build_object(
+        'kind', 'product',
+        'product_id', (select product_id from _sale_prod),
+        'from_location_id', (select location_id from _test_ctx),
+        'description', 'Cargador Rápido 20W',
+        'quantity', 1,
+        'unit_price', 8500,
+        'discount_amount', 0,
+        'tax_rate_percent', 0,
+        'tax_amount', 0
+      )
+    ),
+    '[]'::jsonb
+  )),
+  (select result from _fiscal_sale_c),
+  'POS fiscal sale replay returns the same complete result without duplicates'
 );
 
 select * from finish();

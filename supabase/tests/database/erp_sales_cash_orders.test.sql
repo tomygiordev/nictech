@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(146);
+select plan(151);
 
 select has_table('erp', 'sales', 'Sales header exists');
 select has_table('erp', 'sale_lines', 'Sales lines exist');
@@ -34,6 +34,7 @@ select has_function('erp', 'reverse_sale_payment', array['uuid','text','text','u
 select has_function('erp', 'cancel_sale', array['uuid','text','text','uuid'], 'Sale cancellation accepts a safe refund cash session');
 select has_function('erp', 'open_cash_session', array['uuid','text','text','jsonb'], 'Cash opening command exists');
 select has_function('erp', 'close_cash_session', array['uuid','text','text','jsonb'], 'Counted close command exists');
+select has_function('erp', 'reverse_manual_cash_movement', array['uuid','text','text'], 'Manual cash reversal command exists');
 select has_function(
   'erp', 'record_web_payment_event',
   array['uuid','text','text','text','erp.web_payment_status','uuid','numeric','timestamp with time zone','jsonb'],
@@ -297,6 +298,26 @@ select lives_ok(
   )$$,
   'Cash expense persists with negative sign'
 );
+select lives_ok(
+  $$select erp.reverse_manual_cash_movement(
+    (select id from erp.cash_movements where idempotency_key = 'stage6-expense'),
+    'stage6-expense-reversal', 'Expense entered by mistake'
+  )$$,
+  'Manual expense can be reversed while its cash session remains open'
+);
+select is(
+  (select amount from erp.cash_movements where idempotency_key = 'stage6-expense-reversal'),
+  5::numeric,
+  'Manual cash reversal carries the exact inverse amount'
+);
+select is(
+  erp.reverse_manual_cash_movement(
+    (select id from erp.cash_movements where idempotency_key = 'stage6-expense'),
+    'stage6-expense-reversal', 'Expense entered by mistake'
+  ),
+  (select id from erp.cash_movements where idempotency_key = 'stage6-expense-reversal'),
+  'Manual cash reversal retry returns the original compensating movement'
+);
 select throws_ok(
   $$select erp.post_cash_movement(
     (select id from erp.cash_sessions where idempotency_key = 'stage6-cash-open'),
@@ -329,12 +350,12 @@ select lives_ok(
   $$select erp.close_cash_session(
     (select id from erp.cash_sessions where idempotency_key = 'stage6-cash-open'),
     'stage6-cash-close', 'Count test cash',
-    '[{"currency_code":"ARS","amount":116}]'::jsonb
+    '[{"currency_code":"ARS","amount":121}]'::jsonb
   )$$,
   'Cash close stores expected and counted amounts'
 );
-select is((select expected_amount from erp.cash_close_counts where cash_closure_id = (select id from erp.cash_closures where idempotency_key = 'stage6-cash-close')), 115::numeric, 'Expected cash includes opening and signed movements');
-select is((select counted_amount from erp.cash_close_counts where cash_closure_id = (select id from erp.cash_closures where idempotency_key = 'stage6-cash-close')), 116::numeric, 'Counted cash is immutable');
+select is((select expected_amount from erp.cash_close_counts where cash_closure_id = (select id from erp.cash_closures where idempotency_key = 'stage6-cash-close')), 120::numeric, 'Expected cash includes opening, manual movement and append-only reversal');
+select is((select counted_amount from erp.cash_close_counts where cash_closure_id = (select id from erp.cash_closures where idempotency_key = 'stage6-cash-close')), 121::numeric, 'Counted cash is immutable');
 select is((select difference_amount from erp.cash_close_counts where cash_closure_id = (select id from erp.cash_closures where idempotency_key = 'stage6-cash-close')), 1::numeric, 'Cash difference reconciles exactly');
 select throws_ok(
   $$select erp.post_cash_movement(
@@ -562,6 +583,13 @@ select throws_ok(
   'Manual web event retry rejects a changed request hash'
 );
 select lives_ok(
+  $$select erp.record_web_order_event(
+    (select id from erp.web_orders where idempotency_key = 'stage6-web-order'),
+    null, 'ready', 'stage6-web-ready', 'Order is ready for dispatch'
+  )$$,
+  'Preparation state reaches ready before fulfillment'
+);
+select lives_ok(
   $$select erp.fulfill_web_order(
     (select id from erp.web_orders where idempotency_key = 'stage6-web-order'),
     'stage6-web-fulfill', 'Dispatch paid web order'
@@ -607,7 +635,6 @@ select is(
   'Fulfilled-order refund does not regress business state'
 );
 select is((select quantity_on_hand from erp.stock_balances where product_id = 'a2000000-0000-0000-0000-000000000001' and variant_id = 'a3000000-0000-0000-0000-000000000001' and location_id = '30000000-0000-0000-0000-000000000002'), 7::numeric, 'Unapplied refund does not claim stock compensation');
-
 reset role;
 select set_config('request.jwt.claim.role', 'authenticated', true);
 set local role authenticated;
@@ -636,6 +663,9 @@ select is((select sum(amount_base_delta) from erp.customer_account_entries where
 select is((select quantity_on_hand from erp.stock_balances where product_id = 'a2000000-0000-0000-0000-000000000001' and variant_id = 'a3000000-0000-0000-0000-000000000001' and location_id = '30000000-0000-0000-0000-000000000002'), 7::numeric, 'Stock reversal restores exact quantity');
 select is((select count(*) from erp.stock_cost_movements where reversal_of_cost_movement_id is not null and document_id = (select id from erp.stock_documents where idempotency_key = 'stage6-cancel-sale-undo:stock')), 1::bigint, 'Cost reversal links to original COGS fact');
 
+reset role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+set local role service_role;
 select lives_ok(
   $$select erp.record_integration_attempt(
     (select id from erp.integration_outbox where idempotency_key = 'stage6-web-fulfill:outbox'),
@@ -643,18 +673,21 @@ select lives_ok(
   )$$,
   'Failed outbox attempt remains visible'
 );
-select lives_ok(
+select throws_ok(
   $$select erp.record_integration_attempt(
     (select id from erp.integration_outbox where idempotency_key = 'stage6-web-fulfill:outbox'),
     'succeeded', null
   )$$,
-  'Successful retry appends a new attempt'
+  '55000', 'subsequent integration attempts require a claimed retry request',
+  'Direct integration retry is rejected without a worker claim'
 );
-select is((select count(*) from erp.integration_attempts where outbox_id = (select id from erp.integration_outbox where idempotency_key = 'stage6-web-fulfill:outbox')), 2::bigint, 'Outbox history contains both attempts');
-select is((select max(attempt_number) from erp.integration_attempts where outbox_id = (select id from erp.integration_outbox where idempotency_key = 'stage6-web-fulfill:outbox')), 2, 'Retry numbers increase monotonically');
+select is((select count(*) from erp.integration_attempts where outbox_id = (select id from erp.integration_outbox where idempotency_key = 'stage6-web-fulfill:outbox')), 1::bigint, 'Outbox history keeps the initial failed attempt');
+select is((select max(attempt_number) from erp.integration_attempts where outbox_id = (select id from erp.integration_outbox where idempotency_key = 'stage6-web-fulfill:outbox')), 1, 'Initial attempt number is recorded');
 select ok(exists(select 1 from erp.integration_attempts where status = 'failed' and error_message = 'Local test failure'), 'Integration error is query-visible');
 
 reset role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+set local role postgres;
 select throws_ok(
   $$update erp.payments set amount = 1 where id = (select id from erp.payments limit 1)$$,
   '23000', 'erp.payments facts are append-only',
