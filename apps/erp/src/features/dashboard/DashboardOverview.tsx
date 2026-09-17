@@ -24,7 +24,7 @@ import {
   Tooltip,
 } from "recharts";
 import { type ErpModuleId } from "@nictech/domain";
-import { KpiCard } from "../../components/erp/WorkspaceUi";
+import { KpiCard, StatePanel } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatCurrencyCompact, getInitials } from "../../lib/formatters";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import { supabase } from "../../lib/supabase";
@@ -40,6 +40,7 @@ interface RecentRepairItem {
   device_brand: string | null;
   device_model: string | null;
   status: string;
+  is_terminal: boolean;
   created_at: string;
 }
 
@@ -102,7 +103,7 @@ function generateCommercialEvolution(
       }
 
       for (const r of repairs) {
-        if (r.status !== "Finalizado") continue;
+        if (!r.is_terminal) continue;
         const d = getParsedDate(r.created_at);
         if (d && d.getFullYear() === currentYear && d.getMonth() === m) {
           orderCount += 1;
@@ -139,7 +140,7 @@ function generateCommercialEvolution(
       }
 
       for (const r of repairs) {
-        if (r.status !== "Finalizado") continue;
+        if (!r.is_terminal) continue;
         const d = getParsedDate(r.created_at);
         if (d && d.getFullYear() === y && d.getMonth() === m) {
           orderCount += 1;
@@ -176,7 +177,7 @@ function generateCommercialEvolution(
       }
 
       for (const r of repairs) {
-        if (r.status !== "Finalizado") continue;
+        if (!r.is_terminal) continue;
         const d = getParsedDate(r.created_at);
         if (d && d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day) {
           orderCount += 1;
@@ -214,7 +215,7 @@ function generateCommercialEvolution(
     }
 
       for (const r of repairs) {
-        if (r.status !== "Finalizado") continue;
+        if (!r.is_terminal) continue;
         const d = getParsedDate(r.created_at);
         if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
         orderCount += 1;
@@ -294,9 +295,10 @@ const formatAxisOrders = (val: number): string => {
 };
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectModule }) => {
-  const { session } = useErpAuth();
+  const { session, branchIds, permissions } = useErpAuth();
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>("year");
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [rawOrders, setRawOrders] = useState<OrderRecordItem[]>([]);
   const [rawRepairs, setRawRepairs] = useState<RecentRepairItem[]>([]);
   const [stats, setStats] = useState({
@@ -311,65 +313,99 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
 
   const operatorName = session?.user.user_metadata?.full_name || "Operador NicTech";
   const initials = getInitials(operatorName, "NT");
+  const branchScopeLabel = branchIds.length === 0
+    ? "Sin asignar"
+    : branchIds.length === 1
+      ? "1 asignada"
+      : `${branchIds.length} asignadas`;
 
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadError(null);
 
-      // 1. Products (la tabla public.products no tiene columna is_active)
-      const { data: prodData } = await supabase
+      // 1. Productos y existencias desde el esquema ERP.
+      const { data: prodData, error: productsError } = await supabase
         .from("products")
-        .select("id, name, price, stock");
+        .select("id, internal_name, base_sale_price");
+
+      const { data: balancesData, error: balancesError } = await supabase
+        .from("stock_balances")
+        .select("product_id, quantity_on_hand");
+
+      if (productsError) throw productsError;
+      if (balancesError) throw balancesError;
+
+      const stockByProduct = new Map<string, number>();
+      for (const balance of balancesData ?? []) {
+        stockByProduct.set(
+          balance.product_id,
+          (stockByProduct.get(balance.product_id) ?? 0) + balance.quantity_on_hand,
+        );
+      }
 
       const products = prodData || [];
       const prodCount = products.length;
-      const invValue = products.reduce((acc, p) => acc + (p.price || 0) * (p.stock || 0), 0);
-      const lowStock = products.filter((p) => (p.stock ?? 0) <= 3).slice(0, 3);
+      const invValue = products.reduce(
+        (acc, product) =>
+          acc + product.base_sale_price * (stockByProduct.get(product.id) ?? 0),
+        0,
+      );
+      const lowStock: LowStockProductItem[] = products
+        .map((product) => ({
+          id: product.id,
+          name: product.internal_name,
+          stock: stockByProduct.get(product.id) ?? 0,
+        }))
+        .filter((product) => (product.stock ?? 0) <= 3)
+        .slice(0, 3);
 
-      // 2. Repairs (public.repairs no expone monto cobrado: sin quoted_price)
-      const { data: repData } = await supabase
-        .from("repairs")
-        .select("id, tracking_code, client_name, device_brand, device_model, status, created_at")
-        .or("is_deleted.is.null,is_deleted.eq.false")
-        .order("created_at", { ascending: false });
+      // 2. Reparaciones desde la vista operativa del ERP.
+      const { data: repData, error: repairsError } = await supabase
+        .from("repair_orders_overview")
+        .select("id, order_code, customer_name, brand_snapshot, model_snapshot, status_name, status_is_terminal, opened_at")
+        .order("opened_at", { ascending: false });
 
-      const repairs = (repData || []) as RecentRepairItem[];
-      const activeRepairs = repairs.filter((r) => r.status !== "Finalizado");
+      if (repairsError) throw repairsError;
+
+      const repairs = (repData ?? []).reduce<RecentRepairItem[]>((items, repair) => {
+        if (!repair.id || !repair.order_code || !repair.opened_at) return items;
+        items.push({
+          id: repair.id,
+          tracking_code: repair.order_code,
+          client_name: repair.customer_name,
+          device_brand: repair.brand_snapshot,
+          device_model: repair.model_snapshot,
+          status: repair.status_name || "Sin estado",
+          is_terminal: Boolean(repair.status_is_terminal),
+          created_at: repair.opened_at,
+        });
+        return items;
+      }, []);
+      const activeRepairs = repairs.filter((repair) => !repair.is_terminal);
 
       // 3. Orders (fuente real: erp.web_orders + fulfillments + events; erp.orders no existe)
-      const { data: webOrdersData } = await supabase
+      const { data: webOrdersData, error: webOrdersError } = await supabase
         .from("web_orders")
         .select("id, total_amount, created_at")
         .order("created_at", { ascending: false });
 
-      const { data: fulfillData } = await supabase
+      const { data: fulfillData, error: fulfillmentsError } = await supabase
         .from("web_order_fulfillments")
         .select("web_order_id, fulfilled_at");
 
-      const { data: eventsData } = await supabase
+      const { data: eventsData, error: eventsError } = await supabase
         .from("web_order_events")
         .select("web_order_id, order_state, payment_state, event_sequence")
         .order("event_sequence", { ascending: false });
 
-      interface WebOrderRow {
-        id: string;
-        total_amount: string | number | null;
-        created_at: string;
-      }
-      interface FulfillmentRow {
-        web_order_id: string;
-        fulfilled_at: string | null;
-      }
-      interface WebOrderEventRow {
-        web_order_id: string;
-        order_state: string | null;
-        payment_state: string | null;
-        event_sequence: number;
-      }
+      if (webOrdersError) throw webOrdersError;
+      if (fulfillmentsError) throw fulfillmentsError;
+      if (eventsError) throw eventsError;
 
-      const webOrders = ((webOrdersData ?? []) as WebOrderRow[]);
-      const fulfillments = ((fulfillData ?? []) as FulfillmentRow[]);
-      const events = ((eventsData ?? []) as WebOrderEventRow[]);
+      const webOrders = webOrdersData ?? [];
+      const fulfillments = fulfillData ?? [];
+      const events = eventsData ?? [];
 
       const fulfilledIds = new Set(
         fulfillments.filter((f) => f.fulfilled_at != null).map((f) => f.web_order_id)
@@ -400,7 +436,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
       //   ingresos = ventas web efectivas (web_orders con fulfillment o
       //              último evento con payment_state === "paid", campo total_amount)
       //            + reparaciones cobradas.
-      // Reparaciones: public.repairs no tiene columna de monto cobrado (ver tipos
+      // La vista repair_orders_overview no expone montos cobrados (ver tipos
       // generados y migraciones) → repairRevenue = 0, "Sin datos fuente" en UI.
       const orderRevenue = orders
         .filter((o) => o.status === "fulfilled" || o.payment_state === "paid")
@@ -423,6 +459,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
       setLowStockProducts(lowStock);
     } catch (e) {
       console.error("Error al cargar dashboard:", e);
+      setLoadError(e instanceof Error ? e.message : "No se pudieron consultar los datos del ERP.");
     } finally {
       setLoading(false);
     }
@@ -443,39 +480,51 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
         <KpiCard
           icon={DollarSign}
           iconVariant="green"
-          label="Facturación Web & POS"
-          value={loading ? "…" : formatCurrencyCompact(stats.totalRevenueArs, "ARS")}
-          trend={{ text: "Live", positive: true, icon: TrendingUp }}
-          sublabel={`${stats.ordersCount} órdenes procesadas`}
+          label="Ventas web cobradas"
+          value={loading ? "…" : loadError ? "No disponible" : formatCurrencyCompact(stats.totalRevenueArs, "ARS")}
+          trend={loadError ? undefined : { text: "ARS", positive: true, icon: TrendingUp }}
+          sublabel={loadError ? "No se pudo consultar" : `${stats.ordersCount} pedidos web registrados`}
         />
 
         <KpiCard
           icon={ShoppingCart}
           iconVariant="navy"
-          label="Artículos en Catálogo"
-          value={loading ? "…" : stats.productsCount}
-          trend={{ text: "Activos", positive: true, icon: TrendingUp }}
-          sublabel="Sincronizados en tienda"
+          label="Productos ERP"
+          value={loading ? "…" : loadError ? "No disponible" : stats.productsCount}
+          sublabel={loadError ? "No se pudo consultar" : "Registros del catálogo interno"}
         />
 
         <KpiCard
           icon={Layers}
           iconVariant="steel"
-          label="Valorización de Stock"
-          value={loading ? "…" : formatCurrencyCompact(stats.inventoryValueArs, "ARS")}
-          trend={{ text: "ARS", positive: true, icon: TrendingUp }}
-          sublabel="Almacén Central & Pañol"
+          label="Stock a precio de venta"
+          value={loading ? "…" : loadError ? "No disponible" : formatCurrencyCompact(stats.inventoryValueArs, "ARS")}
+          trend={loadError ? undefined : { text: "ARS", positive: true, icon: TrendingUp }}
+          sublabel={loadError ? "No se pudo consultar" : "Estimación con precio base y stock físico"}
         />
 
         <KpiCard
           icon={Wrench}
           iconVariant="dark"
           label="Equipos en Taller"
-          value={loading ? "…" : stats.repairsCount}
-          trend={{ text: "En Proceso", positive: true, icon: TrendingUp }}
-          sublabel="Con código de seguimiento"
+          value={loading ? "…" : loadError ? "No disponible" : stats.repairsCount}
+          trend={loadError ? undefined : { text: "En proceso", positive: true, icon: TrendingUp }}
+          sublabel={loadError ? "No se pudo consultar" : "Órdenes no finalizadas"}
         />
       </section>
+
+      {loadError && (
+        <StatePanel
+          type="error"
+          title="No se pudo actualizar el resumen"
+          message={`Los valores del tablero no están disponibles. ${loadError}`}
+          action={(
+            <button type="button" className="btn-secondary" onClick={() => void fetchDashboardData()}>
+              Reintentar consulta
+            </button>
+          )}
+        />
+      )}
 
       {/* Main Grid */}
       <div className="flow-dashboard-grid">
@@ -486,7 +535,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
             <div className="flow-card__header">
               <div>
                 <h3 className="flow-card__title">Evolución Comercial NicTech</h3>
-                <p className="flow-card__subtitle">Facturación consolidada y órdenes de trabajo (ARS / USD)</p>
+                <p className="flow-card__subtitle">Ventas web cobradas y operaciones registradas (ARS)</p>
               </div>
               <div className="flow-period-selector-wrapper">
                 <select
@@ -510,6 +559,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                   <Loader2 size={20} className="animate-spin" style={{ color: "var(--brand-primary)" }} />
                   <span style={{ fontSize: "13px" }}>Cargando métricas comerciales…</span>
                 </div>
+              ) : loadError ? (
+                <StatePanel
+                  type="error"
+                  message="No hay datos comerciales disponibles para graficar. Reintentá desde el aviso superior."
+                />
               ) : (
                 <ResponsiveContainer width="100%" height={250}>
                   <ComposedChart
@@ -578,11 +632,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
             <div className="flow-chart-legend">
               <div className="legend-item">
                 <span className="legend-dot blue" />
-                <span>Volumen Facturado</span>
+                <span>Ventas web cobradas</span>
               </div>
               <div className="legend-item">
                 <span className="legend-dot green" />
-                <span>Órdenes Concretadas</span>
+                <span>Operaciones registradas</span>
               </div>
             </div>
           </section>
@@ -604,6 +658,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                 <Loader2 size={24} className="animate-spin" style={{ margin: "0 auto 8px", color: "var(--brand-primary)" }} />
                 <p style={{ margin: 0, fontSize: "13px" }}>Cargando actividad reciente…</p>
               </div>
+            ) : loadError ? (
+              <StatePanel
+                type="error"
+                message="No se pudo consultar la actividad reciente del taller."
+              />
             ) : recentRepairs.length === 0 ? (
               <p style={{ padding: "16px", color: "var(--text-muted)", fontSize: "13px" }}>No hay reparaciones recientes.</p>
             ) : (
@@ -620,7 +679,21 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                   </thead>
                   <tbody>
                     {recentRepairs.map((r) => (
-                      <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => onSelectModule("repairs")}>
+                      <tr
+                        key={r.id}
+                        className="interactive-row"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Abrir reparación ${r.tracking_code}`}
+                        onClick={() => onSelectModule("repairs")}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onSelectModule("repairs");
+                          }
+                        }}
+                      >
                         <td>
                           <div className="order-id-cell">
                             <span className="type-badge green" style={{ fontFamily: "monospace" }}>
@@ -628,10 +701,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                             </span>
                           </div>
                         </td>
-                        <td>{r.client_name || "Cliente"}</td>
-                        <td>{r.device_brand} {r.device_model}</td>
+                        <td>{r.client_name || "Sin cliente informado"}</td>
+                        <td>{[r.device_brand, r.device_model].filter(Boolean).join(" ") || "Sin equipo informado"}</td>
                         <td>
-                          <span className={`flow-status-pill ${r.status === "Finalizado" ? "completed" : "processing"}`}>
+                          <span className={`flow-status-pill ${r.is_terminal ? "completed" : "processing"}`}>
                             {r.status}
                           </span>
                         </td>
@@ -660,26 +733,30 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
               </div>
               <div className="operator-info">
                 <strong>{operatorName}</strong>
-                <span className="operator-role-tag">Administración & Taller</span>
+                <span className="operator-role-tag">
+                  {permissions.length > 0 ? `${permissions.length} permisos habilitados` : "Sin permisos habilitados"}
+                </span>
               </div>
             </div>
 
             <div className="operator-metrics-grid">
               <div className="operator-stat">
                 <span className="stat-label">Sucursal</span>
-                <strong className="stat-val">Central</strong>
+                <strong className="stat-val">{branchScopeLabel}</strong>
               </div>
               <div className="operator-stat">
-                <span className="stat-label">Rol</span>
-                <strong className="stat-val">Admin</strong>
+                <span className="stat-label">Acceso</span>
+                <strong className="stat-val">{permissions.length > 0 ? "Autorizado" : "Sin permisos"}</strong>
               </div>
               <div className="operator-stat">
                 <span className="stat-label">Caja</span>
-                <strong className="stat-val">01 Abierta</strong>
+                <strong className="stat-val">Ver módulo Caja</strong>
               </div>
               <div className="operator-stat">
-                <span className="stat-label">Base de Datos</span>
-                <strong className="stat-val" style={{ color: "var(--emerald-success)" }}>Conectada</strong>
+                <span className="stat-label">Datos del tablero</span>
+                <strong className="stat-val" style={{ color: loadError ? "var(--rose-accent)" : undefined }}>
+                  {loading ? "Consultando" : loadError ? "No disponibles" : "Actualizados"}
+                </strong>
               </div>
             </div>
           </section>
@@ -766,25 +843,39 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
             </div>
 
             <div className="low-stock-list">
-              {lowStockProducts.length === 0 ? (
+              {loading ? (
+                <p role="status" style={{ fontSize: "12px", color: "var(--text-muted)", margin: "8px 0" }}>
+                  Consultando existencias…
+                </p>
+              ) : loadError ? (
+                <p role="alert" style={{ fontSize: "12px", color: "var(--rose-accent)", margin: "8px 0" }}>
+                  No se pudo consultar el stock crítico.
+                </p>
+              ) : lowStockProducts.length === 0 ? (
                 <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "8px 0" }}>
                   No hay artículos con stock crítico en este momento.
                 </p>
               ) : (
                 lowStockProducts.map((p) => (
-                  <div key={p.id} className="low-stock-item" style={{ cursor: "pointer" }} onClick={() => onSelectModule("catalog")}>
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="low-stock-item low-stock-item--button"
+                    onClick={() => onSelectModule("stock")}
+                    aria-label={`Abrir stock para revisar ${p.name}`}
+                  >
                     <div className="item-thumbnail">
                       <Warehouse size={18} color="var(--text-muted)" />
                     </div>
                     <div className="item-details">
                       <strong>{p.name}</strong>
-                      <span>Almacén Central</span>
+                      <span>Total en todas las ubicaciones</span>
                     </div>
                     <div className="item-qty-badge">
                       <strong className="qty-val">{p.stock ?? 0}</strong>
                       <span className="qty-unit">Unidades</span>
                     </div>
-                  </div>
+                  </button>
                 ))
               )}
             </div>

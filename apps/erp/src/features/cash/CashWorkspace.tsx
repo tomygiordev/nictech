@@ -13,6 +13,8 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Lock,
+  ArrowLeftRight,
+  RotateCcw,
 } from "lucide-react";
 import {
   StatePanel,
@@ -21,15 +23,22 @@ import {
   FeedbackAlert,
   KpiCard,
 } from "../../components/erp/WorkspaceUi";
-import { formatCurrency, formatDateTime } from "../../lib/formatters";
+import { formatCurrency, formatDateTime, generateIdempotencyKey } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
+import { useErpAuth } from "../../auth/ErpAuthContext";
+import { manualCashMovementSchema, reverseManualCashMovementSchema } from "./schemas";
+import { postManualCashMovement, reverseManualCashMovement } from "./api";
 
 export interface CashMovementItem {
   id: string;
+  fullId: string;
   kind: string;
+  currencyCode: string;
   amount: number;
   reason: string;
   occurredAt: string;
+  reversalOfMovementId: string | null;
+  reversed: boolean;
 }
 
 export interface CashClosureItem {
@@ -53,6 +62,7 @@ export interface CashSessionItem {
   openedAt: string;
   status: "open" | "closed";
   notes: string;
+  currencies: string[];
   closure?: CashClosureItem;
   movements: CashMovementItem[];
 }
@@ -78,6 +88,7 @@ interface RawCashSessionRow {
     currency_code: string;
     reason: string;
     occurred_at: string;
+    reversal_of_movement_id: string | null;
   }>;
   cash_closures?: Array<{
     id: string;
@@ -93,6 +104,7 @@ interface RawCashSessionRow {
 }
 
 export const CashWorkspace: React.FC = () => {
+  const { hasPermission } = useErpAuth();
   const [sessions, setSessions] = useState<CashSessionItem[]>([]);
   const [registers, setRegisters] = useState<CashRegister[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,6 +132,19 @@ export const CashWorkspace: React.FC = () => {
   // Modal: Movements Ledger Detail
   const [movementModalSession, setMovementModalSession] = useState<CashSessionItem | null>(null);
 
+  // Modal: manual cash contribution / withdrawal / expense
+  const [manualMovementSession, setManualMovementSession] = useState<CashSessionItem | null>(null);
+  const [manualMovementKind, setManualMovementKind] = useState<"contribution" | "withdrawal" | "expense">("contribution");
+  const [manualMovementCurrency, setManualMovementCurrency] = useState("ARS");
+  const [manualMovementAmount, setManualMovementAmount] = useState("");
+  const [manualMovementReason, setManualMovementReason] = useState("");
+  const [submittingMovement, setSubmittingMovement] = useState(false);
+
+  // Modal: append-only reversal of a manual movement
+  const [movementToReverse, setMovementToReverse] = useState<CashMovementItem | null>(null);
+  const [reversalReason, setReversalReason] = useState("");
+  const [submittingReversal, setSubmittingReversal] = useState(false);
+
   const fetchRegistersAndSessions = useCallback(async () => {
     try {
       setLoading(true);
@@ -143,7 +168,7 @@ export const CashWorkspace: React.FC = () => {
         .select(`
           id, branch_id, cash_register_id, opened_at, reason,
           cash_session_opening_counts(amount, currency_code),
-          cash_movements(id, kind, amount, currency_code, reason, occurred_at),
+          cash_movements(id, kind, amount, currency_code, reason, occurred_at, reversal_of_movement_id),
           cash_closures(id, closed_at, reason, cash_close_counts(currency_code, expected_amount, counted_amount, difference_amount))
         `)
         .order("opened_at", { ascending: false });
@@ -151,14 +176,15 @@ export const CashWorkspace: React.FC = () => {
       if (sessErr) throw sessErr;
 
       const regMap = new Map(regs.map((r) => [r.id, r.name]));
-      const rawSessions = (sessData as unknown as RawCashSessionRow[]) || [];
+      const rawSessions: RawCashSessionRow[] = sessData || [];
 
       const mapped: CashSessionItem[] = rawSessions.map((s) => {
         const counts = s.cash_session_opening_counts || [];
         const arsOpening = counts.find((c) => c.currency_code === "ARS")?.amount || 0;
         const initialAmt = Number(arsOpening);
 
-        const movementsRaw = (s.cash_movements || []).filter((m) => m.currency_code === "ARS");
+        const allMovements = s.cash_movements || [];
+        const movementsRaw = allMovements.filter((m) => m.currency_code === "ARS");
         const movementsTotal = movementsRaw.reduce((acc, m) => acc + Number(m.amount || 0), 0);
         const expectedAmt = initialAmt + movementsTotal;
 
@@ -180,12 +206,19 @@ export const CashWorkspace: React.FC = () => {
         const isClosed = Boolean(closureRaw);
         const currentAmt = isClosed && closureItem ? closureItem.countedAmount : expectedAmt;
 
-        const movements: CashMovementItem[] = movementsRaw.map((m) => ({
+        const reversedMovementIds = new Set(
+          allMovements.map((movement) => movement.reversal_of_movement_id).filter(Boolean),
+        );
+        const movements: CashMovementItem[] = allMovements.map((m) => ({
           id: m.id,
+          fullId: m.id,
           kind: m.kind,
+          currencyCode: m.currency_code,
           amount: Number(m.amount),
           reason: m.reason || "Movimiento registrado",
           occurredAt: formatDateTime(m.occurred_at),
+          reversalOfMovementId: m.reversal_of_movement_id,
+          reversed: reversedMovementIds.has(m.id),
         }));
 
         return {
@@ -200,6 +233,7 @@ export const CashWorkspace: React.FC = () => {
           openedAt: formatDateTime(s.opened_at),
           status: isClosed ? "closed" : "open",
           notes: s.reason || "Turno operativo",
+          currencies: counts.map((count) => count.currency_code),
           closure: closureItem,
           movements,
         };
@@ -319,6 +353,77 @@ export const CashWorkspace: React.FC = () => {
     }
   };
 
+  const openManualMovementModal = (session: CashSessionItem) => {
+    setManualMovementSession(session);
+    setManualMovementKind("contribution");
+    setManualMovementCurrency(session.currencies[0] ?? "ARS");
+    setManualMovementAmount("");
+    setManualMovementReason("");
+  };
+
+  const handleManualMovement = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!manualMovementSession) return;
+    const parsed = manualCashMovementSchema.safeParse({
+      cashSessionId: manualMovementSession.fullId,
+      kind: manualMovementKind,
+      currencyCode: manualMovementCurrency,
+      amount: manualMovementAmount,
+      operationKey: generateIdempotencyKey("cash-movement"),
+      reason: manualMovementReason,
+    });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "Revisá los datos del movimiento de caja.");
+      return;
+    }
+
+    try {
+      setSubmittingMovement(true);
+      setError(null);
+      await postManualCashMovement(parsed.data);
+      setFeedback("Movimiento manual registrado en el libro de caja.");
+      setManualMovementSession(null);
+      await fetchRegistersAndSessions();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo registrar el movimiento de caja.");
+    } finally {
+      setSubmittingMovement(false);
+    }
+  };
+
+  const openReversalModal = (movement: CashMovementItem) => {
+    setMovementModalSession(null);
+    setMovementToReverse(movement);
+    setReversalReason("");
+  };
+
+  const handleReverseMovement = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!movementToReverse) return;
+    const parsed = reverseManualCashMovementSchema.safeParse({
+      cashMovementId: movementToReverse.fullId,
+      operationKey: generateIdempotencyKey("cash-reversal"),
+      reason: reversalReason,
+    });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "Indicá el motivo de la reversa.");
+      return;
+    }
+
+    try {
+      setSubmittingReversal(true);
+      setError(null);
+      await reverseManualCashMovement(parsed.data);
+      setFeedback("Movimiento revertido mediante un asiento compensatorio de caja.");
+      setMovementToReverse(null);
+      await fetchRegistersAndSessions();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "No se pudo revertir el movimiento de caja.");
+    } finally {
+      setSubmittingReversal(false);
+    }
+  };
+
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
@@ -412,13 +517,15 @@ export const CashWorkspace: React.FC = () => {
           </button>
         </div>
 
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => setIsOpenModalOpen(true)}
-        >
-          <Plus size={16} /> Abrir Nueva Caja
-        </button>
+        {hasPermission("cash.open") && (
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => setIsOpenModalOpen(true)}
+          >
+            <Plus size={16} /> Abrir Nueva Caja
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -512,22 +619,36 @@ export const CashWorkspace: React.FC = () => {
                     <Receipt size={13} /> Ver Movimientos ({session.movements.length})
                   </button>
 
-                  <button
-                    type="button"
-                    className="pag-btn"
-                    style={{
-                      color: "var(--rose-accent)",
-                      borderColor: "var(--rose-border)",
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                    onClick={() => openArqueoModal(session)}
-                  >
-                    <Lock size={12} /> Arqueo & Cierre
-                  </button>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {hasPermission("cash.adjust") && (
+                      <button
+                        type="button"
+                        className="pag-btn"
+                        style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}
+                        onClick={() => openManualMovementModal(session)}
+                      >
+                        <ArrowLeftRight size={12} /> Ingreso / Egreso
+                      </button>
+                    )}
+                    {hasPermission("cash.close") && (
+                      <button
+                        type="button"
+                        className="pag-btn"
+                        style={{
+                          color: "var(--rose-accent)",
+                          borderColor: "var(--rose-border)",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                        onClick={() => openArqueoModal(session)}
+                      >
+                        <Lock size={12} /> Arqueo & Cierre
+                      </button>
+                    )}
+                  </div>
                 </div>
               </article>
             ))}
@@ -728,7 +849,7 @@ export const CashWorkspace: React.FC = () => {
                 <strong>{formatCurrency(sessionToClose.initialAmountArs, "ARS")}</strong>
               </div>
               <div>
-                <span className="stat-label">Movimientos (Ventas):</span>
+                <span className="stat-label">Movimientos netos de caja:</span>
                 <strong>
                   {formatCurrency(sessionToClose.expectedAmountArs - sessionToClose.initialAmountArs, "ARS")}
                 </strong>
@@ -856,6 +977,111 @@ export const CashWorkspace: React.FC = () => {
         )}
       </Modal>
 
+      <Modal
+        isOpen={Boolean(manualMovementSession)}
+        onClose={() => setManualMovementSession(null)}
+        title="Registrar ingreso o egreso manual"
+        subtitle={`Sesión #${manualMovementSession?.id ?? ""} · sólo monedas abiertas en la caja`}
+        icon={ArrowLeftRight}
+        maxWidth="500px"
+      >
+        {manualMovementSession && (
+          <form onSubmit={handleManualMovement} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div className="erp-form-group">
+              <label className="erp-form-label">Tipo de movimiento *</label>
+              <select
+                className="erp-form-select"
+                value={manualMovementKind}
+                onChange={(event) => setManualMovementKind(event.target.value as typeof manualMovementKind)}
+              >
+                <option value="contribution">Ingreso / aporte</option>
+                <option value="withdrawal">Retiro</option>
+                <option value="expense">Gasto</option>
+              </select>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div className="erp-form-group">
+                <label className="erp-form-label">Moneda *</label>
+                <select
+                  className="erp-form-select"
+                  value={manualMovementCurrency}
+                  onChange={(event) => setManualMovementCurrency(event.target.value)}
+                >
+                  {manualMovementSession.currencies.map((currency) => (
+                    <option key={currency} value={currency}>{currency}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="erp-form-group">
+                <label className="erp-form-label">Importe *</label>
+                <input
+                  className="erp-form-input"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={manualMovementAmount}
+                  onChange={(event) => setManualMovementAmount(event.target.value)}
+                  placeholder="0,00"
+                />
+              </div>
+            </div>
+            <div className="erp-form-group">
+              <label className="erp-form-label">Motivo / comprobante *</label>
+              <input
+                className="erp-form-input"
+                value={manualMovementReason}
+                onChange={(event) => setManualMovementReason(event.target.value)}
+                placeholder="Detallá el origen o destino del efectivo"
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "10px", borderTop: "1px solid var(--border-line)" }}>
+              <button type="button" className="pag-btn" onClick={() => setManualMovementSession(null)} disabled={submittingMovement}>
+                Cancelar
+              </button>
+              <button type="submit" className="btn-primary" disabled={submittingMovement}>
+                {submittingMovement ? "Registrando…" : "Registrar movimiento"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(movementToReverse)}
+        onClose={() => setMovementToReverse(null)}
+        title="Revertir movimiento manual"
+        subtitle={movementToReverse
+          ? `${movementToReverse.kind} · ${formatCurrency(movementToReverse.amount, movementToReverse.currencyCode)}`
+          : ""}
+        icon={RotateCcw}
+        maxWidth="480px"
+      >
+        {movementToReverse && (
+          <form onSubmit={handleReverseMovement} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div className="form-error-alert" role="note" style={{ fontSize: "12px" }}>
+              La reversa no borra el movimiento original: agrega una compensación exacta y auditable.
+            </div>
+            <div className="erp-form-group">
+              <label className="erp-form-label">Motivo de la reversa *</label>
+              <input
+                className="erp-form-input"
+                value={reversalReason}
+                onChange={(event) => setReversalReason(event.target.value)}
+                placeholder="Explicá por qué se revierte este movimiento"
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "10px", borderTop: "1px solid var(--border-line)" }}>
+              <button type="button" className="pag-btn" onClick={() => setMovementToReverse(null)} disabled={submittingReversal}>
+                Cancelar
+              </button>
+              <button type="submit" className="btn-primary" disabled={submittingReversal}>
+                {submittingReversal ? "Revirtiendo…" : "Confirmar reversa"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       {/* Modal: Movements Ledger Detail */}
       <Modal
         isOpen={Boolean(movementModalSession)}
@@ -902,6 +1128,7 @@ export const CashWorkspace: React.FC = () => {
                       <th>Fecha/Hora</th>
                       <th>Concepto</th>
                       <th>Importe</th>
+                      <th>Acción</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -924,7 +1151,29 @@ export const CashWorkspace: React.FC = () => {
                             color: mov.amount >= 0 ? "var(--emerald-success)" : "var(--rose-accent)",
                           }}
                         >
-                          {formatCurrency(mov.amount, "ARS")}
+                          {formatCurrency(mov.amount, mov.currencyCode)}
+                        </td>
+                        <td>
+                          {movementModalSession.status === "open"
+                            && hasPermission("cash.adjust")
+                            && ["contribution", "withdrawal", "expense"].includes(mov.kind)
+                            && !mov.reversalOfMovementId
+                            && !mov.reversed ? (
+                              <button
+                                type="button"
+                                className="pag-btn"
+                                style={{ fontSize: "10px", display: "inline-flex", alignItems: "center", gap: "3px" }}
+                                onClick={() => openReversalModal(mov)}
+                              >
+                                <RotateCcw size={11} /> Revertir
+                              </button>
+                            ) : mov.reversed ? (
+                              <span className="type-badge">Revertido</span>
+                            ) : mov.reversalOfMovementId ? (
+                              <span className="type-badge green">Compensación</span>
+                            ) : (
+                              "—"
+                            )}
                         </td>
                       </tr>
                     ))}

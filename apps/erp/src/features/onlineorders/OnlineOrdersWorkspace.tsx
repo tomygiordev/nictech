@@ -9,6 +9,10 @@ import {
   RefreshCw,
   Eye,
   CheckCircle2,
+  ClipboardList,
+  PackageOpen,
+  XCircle,
+  RotateCcw,
 } from "lucide-react";
 import {
   WorkspaceHeader,
@@ -18,16 +22,85 @@ import {
   KpiCard,
 } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDateTime } from "../../lib/formatters";
+import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   listOnlineOrders,
   fulfillOnlineOrder,
+  newOpKey,
+  refundOnlineOrder,
+  transitionOnlineOrder,
   type DbOrder,
   type FulfillOnlineOrderResult,
 } from "./api";
+import {
+  onlineOrderDispatchSchema,
+  onlineOrderReasonSchema,
+  onlineOrderRefundSchema,
+} from "./schemas";
 
 type OrderFilter = "all" | "fulfilled" | "paid" | "pending";
+type LifecycleAction = "preparing" | "ready" | "delivered" | "cancelled" | "refund";
 
 const shortId = (id: string): string => id.slice(0, 8).toUpperCase();
+
+const deliveryLabel = (state: string | null): string => {
+  switch (state) {
+    case "pending": return "Pendiente";
+    case "preparing": return "Preparando";
+    case "ready": return "Listo";
+    case "dispatched": return "Despachado";
+    case "delivered": return "Entregado";
+    case "returned": return "Devuelto";
+    default: return "Sin estado";
+  }
+};
+
+const eventLabel = (event: DbOrder["events"][number]): string => {
+  if (event.order_state) return `Pedido: ${event.order_state}`;
+  if (event.payment_state) return `Pago: ${event.payment_state}`;
+  if (event.delivery_state) return `Entrega: ${deliveryLabel(event.delivery_state)}`;
+  return "Evento operativo";
+};
+
+const actionTitle: Record<LifecycleAction, string> = {
+  preparing: "Preparar pedido",
+  ready: "Marcar pedido listo",
+  delivered: "Confirmar entrega",
+  cancelled: "Cancelar pedido",
+  refund: "Devolver y reembolsar",
+};
+
+const actionIcon: Record<LifecycleAction, typeof ClipboardList> = {
+  preparing: ClipboardList,
+  ready: PackageOpen,
+  delivered: Truck,
+  cancelled: XCircle,
+  refund: RotateCcw,
+};
+
+const availableLifecycleActions = (
+  order: DbOrder,
+  canManageOrders: boolean,
+  canRefundOrders: boolean,
+): LifecycleAction[] => {
+  if (!canManageOrders) return [];
+
+  const actions: LifecycleAction[] = [];
+  const orderCanChange = order.order_state === "placed" || order.order_state === "confirmed";
+  if (orderCanChange && order.delivery_state === "pending") actions.push("preparing");
+  if (orderCanChange && order.delivery_state === "preparing") actions.push("ready");
+  if (orderCanChange && order.payment_state === "unpaid") actions.push("cancelled");
+  if (order.fulfilled && order.delivery_state === "dispatched") actions.push("delivered");
+  if (
+    canRefundOrders
+    && order.fulfilled
+    && order.delivery_state === "delivered"
+    && order.refundable_payment_event_id
+  ) {
+    actions.push("refund");
+  }
+  return actions;
+};
 
 /** Etiqueta de pago derivada del último evento (nunca inventada): paid/partial/... o "—" sin eventos. */
 const paymentLabel = (order: DbOrder): string => {
@@ -47,6 +120,7 @@ const paymentLabel = (order: DbOrder): string => {
 };
 
 export const OnlineOrdersWorkspace = () => {
+  const { hasPermission } = useErpAuth();
   const [orders, setOrders] = useState<DbOrder[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +135,12 @@ export const OnlineOrdersWorkspace = () => {
   const [fulfilling, setFulfilling] = useState<boolean>(false);
   const [fulfillError, setFulfillError] = useState<string | null>(null);
   const [fulfillResult, setFulfillResult] = useState<FulfillOnlineOrderResult | null>(null);
+  const [fulfillOperationKey, setFulfillOperationKey] = useState<string>("");
+  const [lifecycleAction, setLifecycleAction] = useState<{ order: DbOrder; kind: LifecycleAction; operationKey: string } | null>(null);
+  const [lifecycleReason, setLifecycleReason] = useState<string>("");
+  const [physicalReturnConfirmed, setPhysicalReturnConfirmed] = useState<boolean>(false);
+  const [lifecycleBusy, setLifecycleBusy] = useState<boolean>(false);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -68,6 +148,7 @@ export const OnlineOrdersWorkspace = () => {
       setError(null);
       const data = await listOnlineOrders();
       setOrders(data);
+      setSelectedOrder((current) => current ? data.find((order) => order.id === current.id) ?? null : null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error al cargar pedidos";
       setError(msg);
@@ -86,6 +167,7 @@ export const OnlineOrdersWorkspace = () => {
     setOperationReason("");
     setFulfillError(null);
     setFulfillResult(null);
+    setFulfillOperationKey(newOpKey("online-dispatch-"));
   };
 
   const closeFulfill = () => {
@@ -95,6 +177,7 @@ export const OnlineOrdersWorkspace = () => {
     setOperationReason("");
     setFulfillError(null);
     setFulfillResult(null);
+    setFulfillOperationKey("");
   };
 
   const handleFulfill = async () => {
@@ -103,7 +186,13 @@ export const OnlineOrdersWorkspace = () => {
       setFulfilling(true);
       setFulfillError(null);
       setFulfillResult(null);
-      const result = await fulfillOnlineOrder(fulfillOrder.id, paymentReference, operationReason);
+      const parsed = onlineOrderDispatchSchema.parse({ paymentReference, reason: operationReason });
+      const result = await fulfillOnlineOrder(
+        fulfillOrder.id,
+        parsed.paymentReference,
+        parsed.reason,
+        fulfillOperationKey,
+      );
       setFulfillResult(result);
       setFeedback({
         type: "success",
@@ -111,11 +200,79 @@ export const OnlineOrdersWorkspace = () => {
       });
       await fetchOrders();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al cumplir el pedido";
+      const msg = err instanceof Error ? err.message : "Error al despachar el pedido";
       setFulfillError(msg);
     } finally {
       setFulfilling(false);
     }
+  };
+
+  const openLifecycleAction = (order: DbOrder, kind: LifecycleAction) => {
+    setLifecycleAction({ order, kind, operationKey: newOpKey(`online-${kind}-`) });
+    setLifecycleReason("");
+    setPhysicalReturnConfirmed(false);
+    setLifecycleError(null);
+  };
+
+  const closeLifecycleAction = () => {
+    if (lifecycleBusy) return;
+    setLifecycleAction(null);
+    setLifecycleReason("");
+    setPhysicalReturnConfirmed(false);
+    setLifecycleError(null);
+  };
+
+  const handleLifecycleAction = async () => {
+    if (!lifecycleAction) return;
+    try {
+      setLifecycleBusy(true);
+      setLifecycleError(null);
+      const { order, kind, operationKey } = lifecycleAction;
+      if (kind === "refund") {
+        const parsed = onlineOrderRefundSchema.parse({
+          reason: lifecycleReason,
+          physicalReturnConfirmed,
+        });
+        if (!order.refundable_payment_event_id) {
+          throw new Error("Todavía no existe un evento de reembolso del proveedor pendiente de aplicar.");
+        }
+        await refundOnlineOrder(order.id, order.refundable_payment_event_id, parsed.reason, operationKey);
+      } else {
+        const parsed = onlineOrderReasonSchema.parse({ reason: lifecycleReason });
+        await transitionOnlineOrder(
+          order.id,
+          kind === "cancelled" ? { orderState: "cancelled" } : { deliveryState: kind },
+          parsed.reason,
+          operationKey,
+        );
+      }
+      setFeedback({ type: "success", message: `${actionTitle[kind]} registrado con trazabilidad.` });
+      closeLifecycleAction();
+      await fetchOrders();
+    } catch (err: unknown) {
+      setLifecycleError(err instanceof Error ? err.message : "No se pudo actualizar el pedido.");
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
+  const canManageOrders = hasPermission("orders.manage");
+  const canRefundOrders = canManageOrders
+    && hasPermission("sales.cancel")
+    && hasPermission("stock.adjust");
+
+  const canFulfillOrder = (order: DbOrder): boolean => (
+    canManageOrders
+    && !order.fulfilled
+    && order.payment_state === "paid"
+    && order.delivery_state === "ready"
+  );
+
+  const openLifecycleFromDetail = (kind: LifecycleAction) => {
+    if (!selectedOrder) return;
+    const order = selectedOrder;
+    setSelectedOrder(null);
+    openLifecycleAction(order, kind);
   };
 
   const matchesFilter = (o: DbOrder): boolean => {
@@ -286,7 +443,21 @@ export const OnlineOrdersWorkspace = () => {
               </thead>
               <tbody>
                 {filteredOrders.map((order) => (
-                  <tr key={order.id} style={{ cursor: "pointer" }} onClick={() => setSelectedOrder(order)}>
+                  <tr
+                    key={order.id}
+                    className="interactive-row"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Abrir pedido ${shortId(order.id)}`}
+                    onClick={() => setSelectedOrder(order)}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedOrder(order);
+                      }
+                    }}
+                  >
                     <td>
                       <span className="type-badge green" style={{ fontFamily: "monospace" }}>
                         {shortId(order.id)}
@@ -330,7 +501,7 @@ export const OnlineOrdersWorkspace = () => {
                         >
                           <Eye size={12} /> Ver
                         </button>
-                        {!order.fulfilled && (
+                        {canFulfillOrder(order) && (
                           <button
                             type="button"
                             className="pag-btn"
@@ -370,7 +541,7 @@ export const OnlineOrdersWorkspace = () => {
                 <span className={`flow-status-pill ${selectedOrder.fulfilled ? "completed" : "pending"}`}>
                   Stock: {selectedOrder.fulfilled ? "remitido" : "pendiente"}
                 </span>
-                {!selectedOrder.fulfilled && (
+                {canFulfillOrder(selectedOrder) && (
                   <button
                     type="button"
                     className="pag-btn"
@@ -391,6 +562,53 @@ export const OnlineOrdersWorkspace = () => {
                 {selectedOrder.fulfilled && selectedOrder.stock_document_id ? ` · stock ${shortId(selectedOrder.stock_document_id)}` : ""}. El cumplimiento se ejecuta
                 vía transacción (venta + stock + asiento). No hay cambios manuales de estado.
               </p>
+            </div>
+
+            {availableLifecycleActions(selectedOrder, canManageOrders, canRefundOrders).length > 0 && (
+              <div style={{ padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px" }}>
+                <span className="stat-label" style={{ display: "block", marginBottom: "8px" }}>Acciones disponibles</span>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {availableLifecycleActions(selectedOrder, canManageOrders, canRefundOrders).map((kind) => {
+                    const Icon = actionIcon[kind];
+                    return (
+                      <button
+                        key={kind}
+                        type="button"
+                        className="pag-btn"
+                        onClick={() => openLifecycleFromDetail(kind)}
+                        style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}
+                      >
+                        <Icon size={13} /> {actionTitle[kind]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div style={{ background: "var(--surface-white)", padding: "12px", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
+              <span className="stat-label" style={{ display: "block", marginBottom: "8px" }}>Timeline de eventos</span>
+              {selectedOrder.events.length === 0 ? (
+                <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Todavía no hay eventos operativos registrados.</span>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {selectedOrder.events.map((event) => (
+                    <div key={event.id} style={{ display: "grid", gridTemplateColumns: "44px 1fr auto", gap: "8px", alignItems: "start", borderBottom: "1px solid var(--border-light)", paddingBottom: "8px" }}>
+                      <span className="type-badge green" style={{ fontFamily: "monospace", fontSize: "10px" }}>#{event.event_sequence}</span>
+                      <div>
+                        <strong style={{ display: "block", fontSize: "12px" }}>
+                          {eventLabel(event)}
+                        </strong>
+                        <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>{event.reason}</span>
+                        <span style={{ display: "block", fontSize: "10px", color: "var(--text-muted)" }}>
+                          {event.actor_name ?? (event.actor_id ? `Usuario ${shortId(event.actor_id)}` : "Sistema")}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: "10px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{formatDateTime(event.occurred_at)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", background: "var(--canvas-bg)", padding: "12px", borderRadius: "10px" }}>
@@ -510,6 +728,63 @@ export const OnlineOrdersWorkspace = () => {
                   Confirmar fulfill
                 </button>
               )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {lifecycleAction && (
+        <Modal
+          isOpen={Boolean(lifecycleAction)}
+          onClose={closeLifecycleAction}
+          title={actionTitle[lifecycleAction.kind]}
+          subtitle={`Pedido ORD-${shortId(lifecycleAction.order.id)} • operación auditable`}
+          icon={actionIcon[lifecycleAction.kind]}
+          maxWidth="520px"
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+              La acción se valida de nuevo en el RPC según estado, permisos e idempotencia. El motivo queda registrado en el timeline.
+            </p>
+            {lifecycleAction.kind === "refund" && (
+              <label style={{ display: "flex", gap: "8px", alignItems: "flex-start", fontSize: "12px" }}>
+                <input
+                  type="checkbox"
+                  checked={physicalReturnConfirmed}
+                  onChange={(event) => setPhysicalReturnConfirmed(event.target.checked)}
+                  disabled={lifecycleBusy}
+                />
+                Confirmo que la devolución física fue recibida y revisada.
+              </label>
+            )}
+            <div>
+              <label htmlFor="lifecycle-reason" style={{ fontSize: "12px", fontWeight: 700, display: "block", marginBottom: "4px" }}>
+                Motivo de la operación *
+              </label>
+              <input
+                id="lifecycle-reason"
+                type="text"
+                className="flow-input"
+                placeholder="Describí el motivo operativo"
+                value={lifecycleReason}
+                onChange={(event) => setLifecycleReason(event.target.value)}
+                disabled={lifecycleBusy}
+                style={{ width: "100%" }}
+              />
+            </div>
+            {lifecycleError && <StatePanel type="error" title="No se pudo actualizar el pedido" message={lifecycleError} />}
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button type="button" className="pag-btn" onClick={closeLifecycleAction} disabled={lifecycleBusy}>Cancelar</button>
+              <button
+                type="button"
+                className="pag-btn"
+                onClick={handleLifecycleAction}
+                disabled={lifecycleBusy || lifecycleReason.trim().length < 3 || (lifecycleAction.kind === "refund" && !physicalReturnConfirmed)}
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                {lifecycleBusy && <Loader2 size={14} className="animate-spin" />}
+                Confirmar acción
+              </button>
             </div>
           </div>
         </Modal>

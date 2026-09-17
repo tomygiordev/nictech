@@ -14,6 +14,18 @@ export interface WebOrderLineInfo {
   unit_price: number;
 }
 
+export interface WebOrderEventInfo {
+  id: string;
+  event_sequence: number;
+  order_state: string | null;
+  payment_state: string | null;
+  delivery_state: string | null;
+  reason: string;
+  occurred_at: string;
+  actor_id: string | null;
+  actor_name: string | null;
+}
+
 /**
  * Pedido online leído de la fuente real `erp.web_orders`.
  *
@@ -43,7 +55,9 @@ export interface DbOrder {
   fulfilled_at: string | null;
   last_payment_status: string | null;
   last_payment_amount: number | null;
+  refundable_payment_event_id: string | null;
   lines: WebOrderLineInfo[];
+  events: WebOrderEventInfo[];
 }
 
 export interface FulfillOnlineOrderResult {
@@ -71,12 +85,15 @@ interface FulfillmentRow {
 }
 
 interface OrderEventRow {
+  id: string;
   web_order_id: string;
   order_state: string | null;
   payment_state: string | null;
   delivery_state: string | null;
   event_sequence: number;
   occurred_at: string;
+  reason: string;
+  actor_id: string | null;
 }
 
 interface OrderLineRow {
@@ -87,10 +104,17 @@ interface OrderLineRow {
 }
 
 interface PaymentEventRow {
+  id: string;
   web_order_id: string;
   status: string;
   amount: number | null;
   received_at: string;
+  applied: boolean;
+}
+
+interface ProfileRow {
+  id: string;
+  display_name: string;
 }
 
 /**
@@ -118,7 +142,7 @@ export const listOnlineOrders = async (): Promise<DbOrder[]> => {
 
   const { data: eventRows, error: eventsError } = await client()
     .from("web_order_events")
-    .select("web_order_id, order_state, payment_state, delivery_state, event_sequence, occurred_at")
+    .select("id, web_order_id, order_state, payment_state, delivery_state, event_sequence, occurred_at, reason, actor_id")
     .in("web_order_id", ids)
     .order("event_sequence", { ascending: false });
   if (eventsError) throw eventsError;
@@ -131,19 +155,58 @@ export const listOnlineOrders = async (): Promise<DbOrder[]> => {
 
   const { data: paymentRows, error: paymentsError } = await client()
     .from("web_payment_events")
-    .select("web_order_id, status, amount, received_at")
+    .select("id, web_order_id, status, amount, received_at, applied")
     .in("web_order_id", ids)
     .order("received_at", { ascending: false });
   if (paymentsError) throw paymentsError;
+
+  const actorIds = [...new Set(((eventRows ?? []) as OrderEventRow[])
+    .map((event) => event.actor_id)
+    .filter((actorId): actorId is string => actorId !== null))];
+  const actorNameById = new Map<string, string>();
+  if (actorIds.length > 0) {
+    const { data: profileRows, error: profilesError } = await client()
+      .from("profiles")
+      .select("id, display_name")
+      .in("id", actorIds);
+    if (profilesError) throw profilesError;
+    for (const profile of (profileRows ?? []) as ProfileRow[]) {
+      actorNameById.set(profile.id, profile.display_name);
+    }
+  }
 
   const fulfillByOrder = new Map<string, FulfillmentRow>();
   for (const f of ((fulfillmentRows ?? []) as FulfillmentRow[])) {
     if (!fulfillByOrder.has(f.web_order_id)) fulfillByOrder.set(f.web_order_id, f);
   }
 
-  const latestEventByOrder = new Map<string, OrderEventRow>();
+  const latestOrderStateByOrder = new Map<string, string | null>();
+  const latestPaymentStateByOrder = new Map<string, string | null>();
+  const latestDeliveryStateByOrder = new Map<string, string | null>();
+  const eventsByOrder = new Map<string, WebOrderEventInfo[]>();
   for (const e of ((eventRows ?? []) as OrderEventRow[])) {
-    if (!latestEventByOrder.has(e.web_order_id)) latestEventByOrder.set(e.web_order_id, e);
+    if (e.order_state !== null && !latestOrderStateByOrder.has(e.web_order_id)) {
+      latestOrderStateByOrder.set(e.web_order_id, e.order_state);
+    }
+    if (e.payment_state !== null && !latestPaymentStateByOrder.has(e.web_order_id)) {
+      latestPaymentStateByOrder.set(e.web_order_id, e.payment_state);
+    }
+    if (e.delivery_state !== null && !latestDeliveryStateByOrder.has(e.web_order_id)) {
+      latestDeliveryStateByOrder.set(e.web_order_id, e.delivery_state);
+    }
+    const list = eventsByOrder.get(e.web_order_id) ?? [];
+    list.push({
+      id: e.id,
+      event_sequence: Number(e.event_sequence),
+      order_state: e.order_state,
+      payment_state: e.payment_state,
+      delivery_state: e.delivery_state,
+      reason: e.reason,
+      occurred_at: e.occurred_at,
+      actor_id: e.actor_id,
+      actor_name: e.actor_id ? actorNameById.get(e.actor_id) ?? null : null,
+    });
+    eventsByOrder.set(e.web_order_id, list);
   }
 
   const linesByOrder = new Map<string, WebOrderLineInfo[]>();
@@ -154,14 +217,18 @@ export const listOnlineOrders = async (): Promise<DbOrder[]> => {
   }
 
   const latestPaymentByOrder = new Map<string, PaymentEventRow>();
+  const refundablePaymentByOrder = new Map<string, PaymentEventRow>();
   for (const p of ((paymentRows ?? []) as PaymentEventRow[])) {
     if (!latestPaymentByOrder.has(p.web_order_id)) latestPaymentByOrder.set(p.web_order_id, p);
+    if (p.status === "refunded" && !p.applied && !refundablePaymentByOrder.has(p.web_order_id)) {
+      refundablePaymentByOrder.set(p.web_order_id, p);
+    }
   }
 
   return orders.map((o) => {
     const fulfillment = fulfillByOrder.get(o.id) ?? null;
-    const latestEvent = latestEventByOrder.get(o.id) ?? null;
     const latestPayment = latestPaymentByOrder.get(o.id) ?? null;
+    const currentOrderState = latestOrderStateByOrder.get(o.id) ?? null;
     return {
       id: o.id,
       branch_id: o.branch_id,
@@ -171,16 +238,18 @@ export const listOnlineOrders = async (): Promise<DbOrder[]> => {
       created_at: o.created_at,
       expires_at: o.expires_at,
       reservation_batch_id: o.reservation_batch_id,
-      order_state: latestEvent?.order_state ?? null,
-      payment_state: latestEvent?.payment_state ?? null,
-      delivery_state: latestEvent?.delivery_state ?? null,
-      fulfilled: fulfillment !== null || latestEvent?.order_state === "fulfilled",
+      order_state: currentOrderState,
+      payment_state: latestPaymentStateByOrder.get(o.id) ?? null,
+      delivery_state: latestDeliveryStateByOrder.get(o.id) ?? null,
+      fulfilled: currentOrderState === "fulfilled",
       sale_id: fulfillment?.sale_id ?? null,
       stock_document_id: fulfillment?.stock_document_id ?? null,
       fulfilled_at: fulfillment?.fulfilled_at ?? null,
       last_payment_status: latestPayment?.status ?? null,
       last_payment_amount: latestPayment?.amount == null ? null : Number(latestPayment.amount),
+      refundable_payment_event_id: refundablePaymentByOrder.get(o.id)?.id ?? null,
       lines: linesByOrder.get(o.id) ?? [],
+      events: eventsByOrder.get(o.id) ?? [],
     };
   });
 };
@@ -206,6 +275,7 @@ export const fulfillOnlineOrder = async (
   orderId: string,
   paymentReference: string,
   operationReason: string,
+  operationKey: string,
 ): Promise<FulfillOnlineOrderResult> => {
   if (!orderId || orderId.trim() === "") {
     throw new Error("El ID del pedido es obligatorio para cumplir la orden.");
@@ -216,8 +286,8 @@ export const fulfillOnlineOrder = async (
   const { data, error } = await client().rpc("fulfill_online_order", {
     target_order_id: orderId,
     payment_reference: paymentReference.trim(),
-    operation_key: newOpKey("fulfill-"),
-    operation_reason: operationReason.trim() === "" ? "Cumplimiento de pedido online" : operationReason.trim(),
+    operation_key: operationKey,
+    operation_reason: operationReason.trim(),
   });
   if (error) throw error;
   const payload = data as { sale_id?: unknown; stock_document_id?: unknown; journal_entry_id?: unknown } | null;
@@ -228,5 +298,69 @@ export const fulfillOnlineOrder = async (
     sale_id: parseResultId(payload.sale_id, "sale_id"),
     stock_document_id: parseResultId(payload.stock_document_id, "stock_document_id"),
     journal_entry_id: parseResultId(payload.journal_entry_id, "journal_entry_id"),
+  };
+};
+
+export type OnlineOrderTransition =
+  | { orderState: "confirmed" | "cancelled"; deliveryState?: never }
+  | { orderState?: never; deliveryState: "preparing" | "ready" | "delivered" };
+
+export const transitionOnlineOrder = async (
+  orderId: string,
+  transition: OnlineOrderTransition,
+  operationReason: string,
+  operationKey: string,
+): Promise<string> => {
+  const { data, error } = await client().rpc("record_web_order_event", {
+    target_web_order_id: orderId,
+    target_order_state: (transition.orderState ?? null) as string,
+    target_delivery_state: (transition.deliveryState ?? null) as
+      | "pending"
+      | "preparing"
+      | "ready"
+      | "dispatched"
+      | "delivered"
+      | "returned",
+    operation_key: operationKey,
+    operation_reason: operationReason.trim(),
+  });
+  if (error) throw error;
+  return parseResultId(data, "event_id");
+};
+
+export interface RefundOnlineOrderResult {
+  refund_id: string;
+  sale_id: string;
+  stock_reversal_document_id: string;
+  journal_reversal_entry_id: string;
+  payment_reversal_ids: unknown;
+  idempotent: boolean;
+}
+
+export const refundOnlineOrder = async (
+  orderId: string,
+  refundPaymentEventId: string,
+  operationReason: string,
+  operationKey: string,
+): Promise<RefundOnlineOrderResult> => {
+  const { data, error } = await client().rpc("refund_fulfilled_online_order", {
+    target_web_order_id: orderId,
+    target_refund_payment_event_id: refundPaymentEventId,
+    physical_return_confirmed: true,
+    operation_key: operationKey,
+    operation_reason: operationReason.trim(),
+  });
+  if (error) throw error;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Respuesta inválida del reembolso online.");
+  }
+  const payload = data as Record<string, unknown>;
+  return {
+    refund_id: parseResultId(payload.refund_id, "refund_id"),
+    sale_id: parseResultId(payload.sale_id, "sale_id"),
+    stock_reversal_document_id: parseResultId(payload.stock_reversal_document_id, "stock_reversal_document_id"),
+    journal_reversal_entry_id: parseResultId(payload.journal_reversal_entry_id, "journal_reversal_entry_id"),
+    payment_reversal_ids: payload.payment_reversal_ids,
+    idempotent: payload.idempotent === true,
   };
 };
