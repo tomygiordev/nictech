@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   DollarSign,
   Percent,
-  Download,
   PieChart,
   BookOpen,
   Calendar,
@@ -23,6 +22,10 @@ import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   bootstrapChartOfAccounts,
   closeAccountingPeriod,
+  exportIvaComprasReport,
+  exportIvaVentasReport,
+  exportProfitabilityReport,
+  exportTrialBalanceReport,
   listAccountingPeriods,
   listBranches,
   listChartOfAccounts,
@@ -53,23 +56,9 @@ import {
   FeedbackAlert,
   KpiCard,
 } from "../../components/erp/WorkspaceUi";
+import { OfficialCsvExportButton } from "../../components/erp/OfficialCsvExportButton";
 import { type ErpModuleId } from "@nictech/domain";
 import { formatCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
-
-const downloadCsvFile = (filename: string, headers: string[], rows: Array<Array<string | number>>) => {
-  const escapeCell = (value: string | number): string => {
-    const text = String(value);
-    return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  const lines = [headers.map(escapeCell).join(","), ...rows.map((row) => row.map(escapeCell).join(","))];
-  const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-};
 
 // Los numeric de Postgres pueden llegar como string: normalizar con Number().
 // Devuelve null cuando no hay dato (la vista documenta NULL por falta de fuente).
@@ -81,7 +70,7 @@ const toNumber = (value: number | string | null | undefined): number | null => {
 
 const NO_SOURCE_LABEL = "Sin datos fuente";
 
-const ProfitabilitySection = () => {
+const ProfitabilitySection = ({ canExport }: { canExport: boolean }) => {
   const profitability = useQuery({
     queryKey: ["erp", "reports", "profitability"],
     queryFn: () => listProfitabilityByLine(),
@@ -152,22 +141,6 @@ const ProfitabilitySection = () => {
     );
   }
 
-  const exportCsv = () => {
-    downloadCsvFile(
-      "rentabilidad_por_producto.csv",
-      ["Producto", "Código", "Cantidad vendida", "Ingresos brutos", "Costo prom. unitario", "Costo estimado", "Margen"],
-      rows.map((row) => [
-        row.name ?? "",
-        row.code ?? "",
-        row.quantitySold === null ? NO_SOURCE_LABEL : row.quantitySold,
-        row.revenue === null ? NO_SOURCE_LABEL : row.revenue,
-        row.unitCost === null ? NO_SOURCE_LABEL : row.unitCost,
-        row.cost === null ? NO_SOURCE_LABEL : row.cost,
-        row.margin === null ? NO_SOURCE_LABEL : row.margin,
-      ]),
-    );
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       {/* KPI Cards calculados sobre v_profitability_by_line */}
@@ -210,15 +183,26 @@ const ProfitabilitySection = () => {
             <h2 className="flow-card__title">Rentabilidad por Producto</h2>
             <p className="flow-card__subtitle">Ingresos reales vs costo promedio ponderado de recepciones. Sin recepciones el costo y el margen son nulos por falta de fuente.</p>
           </div>
-          {rows.length > 0 && (
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-              onClick={exportCsv}
-            >
-              <Download size={14} /> Exportar CSV
-            </button>
+          {rows.length > 0 && canExport && (
+            <OfficialCsvExportButton
+              filename="rentabilidad_por_producto.csv"
+              loadDataset={async (reason) => {
+                const exported = await exportProfitabilityReport({ reason, rowLimit: 5000 });
+                return {
+                  headers: ["Producto", "Código", "Cantidad vendida", "Ingresos brutos", "Costo prom. unitario", "Costo estimado", "Margen"],
+                  rows: exported.rows.map((row) => [
+                    row.internal_name ?? "",
+                    row.internal_code ?? "",
+                    toNumber(row.quantity_sold) ?? NO_SOURCE_LABEL,
+                    toNumber(row.gross_revenue) ?? NO_SOURCE_LABEL,
+                    toNumber(row.avg_unit_landed_cost) ?? NO_SOURCE_LABEL,
+                    toNumber(row.estimated_cost) ?? NO_SOURCE_LABEL,
+                    toNumber(row.margin) ?? NO_SOURCE_LABEL,
+                  ]),
+                  truncated: exported.truncated,
+                };
+              }}
+            />
           )}
         </div>
 
@@ -287,7 +271,7 @@ const ProfitabilitySection = () => {
 };
 
 
-const ReportsSection = () => {
+const ReportsSection = ({ canExport }: { canExport: boolean }) => {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const range = useMemo(
@@ -372,48 +356,6 @@ const ReportsSection = () => {
     (ivaVentas.isError ? "IVA ventas" : null) ??
     (ivaCompras.isError ? "IVA compras" : null) ??
     (trial.isError ? "balance de sumas y saldos" : null);
-
-  const exportIvaVentas = () => {
-    downloadCsvFile(
-      "libro_iva_ventas.csv",
-      ["Fecha", "Venta ID", "Alícuota %", "Base imponible", "IVA"],
-      ventasRows.map((row) => [
-        row.saleDate ?? "",
-        row.saleId,
-        row.alicuota === null ? NO_SOURCE_LABEL : row.alicuota,
-        row.base === null ? NO_SOURCE_LABEL : row.base,
-        row.iva === null ? NO_SOURCE_LABEL : row.iva,
-      ]),
-    );
-  };
-
-  const exportIvaCompras = () => {
-    downloadCsvFile(
-      "libro_iva_compras.csv",
-      ["Fecha", "Orden de compra ID", "Alícuota %", "Base imponible", "IVA"],
-      comprasRows.map((row) => [
-        row.purchaseDate ?? "",
-        row.purchaseOrderId,
-        row.alicuota === null ? NO_SOURCE_LABEL : row.alicuota,
-        row.base === null ? NO_SOURCE_LABEL : row.base,
-        row.iva === null ? NO_SOURCE_LABEL : row.iva,
-      ]),
-    );
-  };
-
-  const exportTrial = () => {
-    downloadCsvFile(
-      "balance_sumas_saldos.csv",
-      ["Cuenta", "Nombre", "Debe", "Haber", "Saldo"],
-      trialRows.map((row) => [
-        row.code,
-        row.name,
-        row.debit ?? 0,
-        row.credit ?? 0,
-        row.balance ?? 0,
-      ]),
-    );
-  };
 
   if (loading) {
     return <StatePanel type="loading" message="Cargando informes sobre vistas reales…" />;
@@ -501,15 +443,24 @@ const ReportsSection = () => {
             <h2 className="flow-card__title">Libro IVA Ventas por Alícuota</h2>
             <p className="flow-card__subtitle">Base + IVA reales desde sale_lines, agrupados por alícuota</p>
           </div>
-          {ventasRows.length > 0 && (
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-              onClick={exportIvaVentas}
-            >
-              <Download size={14} /> Exportar CSV
-            </button>
+          {ventasRows.length > 0 && canExport && (
+            <OfficialCsvExportButton
+              filename="libro_iva_ventas.csv"
+              loadDataset={async (reason) => {
+                const exported = await exportIvaVentasReport({ reason, range, rowLimit: 5000 });
+                return {
+                  headers: ["Fecha", "Venta ID", "Alícuota %", "Base imponible", "IVA"],
+                  rows: exported.rows.map((row) => [
+                    row.sale_date ?? "",
+                    row.sale_id,
+                    toNumber(row.alicuota) ?? NO_SOURCE_LABEL,
+                    toNumber(row.base_imponible) ?? NO_SOURCE_LABEL,
+                    toNumber(row.iva) ?? NO_SOURCE_LABEL,
+                  ]),
+                  truncated: exported.truncated,
+                };
+              }}
+            />
           )}
         </div>
 
@@ -560,15 +511,24 @@ const ReportsSection = () => {
             <h2 className="flow-card__title">Libro IVA Compras</h2>
             <p className="flow-card__subtitle">Base + IVA reales desde purchase_order_lines. La alícuota no se registra en la fuente.</p>
           </div>
-          {comprasRows.length > 0 && (
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-              onClick={exportIvaCompras}
-            >
-              <Download size={14} /> Exportar CSV
-            </button>
+          {comprasRows.length > 0 && canExport && (
+            <OfficialCsvExportButton
+              filename="libro_iva_compras.csv"
+              loadDataset={async (reason) => {
+                const exported = await exportIvaComprasReport({ reason, range, rowLimit: 5000 });
+                return {
+                  headers: ["Fecha", "Orden de compra ID", "Alícuota %", "Base imponible", "IVA"],
+                  rows: exported.rows.map((row) => [
+                    row.purchase_date ?? "",
+                    row.purchase_order_id,
+                    toNumber(row.alicuota) ?? NO_SOURCE_LABEL,
+                    toNumber(row.base_imponible) ?? NO_SOURCE_LABEL,
+                    toNumber(row.iva) ?? NO_SOURCE_LABEL,
+                  ]),
+                  truncated: exported.truncated,
+                };
+              }}
+            />
           )}
         </div>
 
@@ -617,15 +577,24 @@ const ReportsSection = () => {
             <h2 className="flow-card__title">Balance de Sumas y Saldos</h2>
             <p className="flow-card__subtitle">Solo períodos cerrados y asientos posted/reversed (v_trial_balance)</p>
           </div>
-          {trialRows.length > 0 && (
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-              onClick={exportTrial}
-            >
-              <Download size={14} /> Exportar CSV
-            </button>
+          {trialRows.length > 0 && canExport && (
+            <OfficialCsvExportButton
+              filename="balance_sumas_saldos.csv"
+              loadDataset={async (reason) => {
+                const exported = await exportTrialBalanceReport({ reason, rowLimit: 5000 });
+                return {
+                  headers: ["Cuenta", "Nombre", "Debe", "Haber", "Saldo"],
+                  rows: exported.rows.map((row) => [
+                    row.account_code,
+                    row.account_name,
+                    toNumber(row.total_debit) ?? 0,
+                    toNumber(row.total_credit) ?? 0,
+                    toNumber(row.balance) ?? 0,
+                  ]),
+                  truncated: exported.truncated,
+                };
+              }}
+            />
           )}
         </div>
 
@@ -955,9 +924,9 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
       )}
 
       {activeModuleId === "profitability" ? (
-        <ProfitabilitySection />
+        <ProfitabilitySection canExport={hasPermission("reports.export")} />
       ) : activeModuleId === "reports" ? (
-        <ReportsSection />
+        <ReportsSection canExport={hasPermission("reports.export")} />
       ) : (
         <>
           {/* KPI Row */}

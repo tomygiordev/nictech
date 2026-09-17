@@ -1,5 +1,6 @@
 import { supabase } from "../../lib/supabase";
 import { generateIdempotencyKey } from "../../lib/formatters";
+import type { Database, Json } from "../../types/supabase";
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -15,9 +16,34 @@ const parseRpcId = (value: unknown, label: string): string => {
   return value;
 };
 
-export type CommunicationChannel = "whatsapp" | "email";
-export type CommunicationDirection = "inbound" | "outbound";
-export type CommunicationStatus = "queued" | "sent" | "delivered" | "read" | "failed";
+const parseStringArray = (value: Json, label: string): string[] => {
+  if (!Array.isArray(value)) throw new Error(`Respuesta inválida para ${label}.`);
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") throw new Error(`Respuesta inválida para ${label}.`);
+    result.push(item);
+  }
+  return result;
+};
+
+const parseStringRecord = (value: Json, label: string): Record<string, string> => {
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    throw new Error(`Respuesta inválida para ${label}.`);
+  }
+  const entries = Object.entries(value);
+  if (entries.some(([, item]) => typeof item !== "string")) {
+    throw new Error(`Respuesta inválida para ${label}.`);
+  }
+  return Object.fromEntries(entries) as Record<string, string>;
+};
+
+// PostgreSQL admite NULL para crear una conversación o desasignar un usuario;
+// los tipos generados de RPC sólo conservan el tipo base uuid/string.
+const nullableRpcString = (value: string | null): string => value as string;
+
+export type CommunicationChannel = Database["erp"]["Enums"]["communication_channel"];
+export type CommunicationDirection = Database["erp"]["Enums"]["communication_direction"];
+export type CommunicationStatus = Database["erp"]["Enums"]["communication_status"];
 
 export interface Conversation {
   id: string;
@@ -124,7 +150,7 @@ export const listConversations = async (): Promise<Conversation[]> => {
     .eq("channel", "whatsapp")
     .order("opened_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as Conversation[];
+  return data ?? [];
 };
 
 export const listConversationCustomers = async (customerIds: string[]): Promise<ConversationCustomer[]> => {
@@ -135,7 +161,7 @@ export const listConversationCustomers = async (customerIds: string[]): Promise<
     .select("id,display_name,code,phone")
     .in("id", uniqueIds);
   if (error) throw error;
-  return (data ?? []) as ConversationCustomer[];
+  return data ?? [];
 };
 
 export const listMessageTemplates = async (): Promise<MessageTemplate[]> => {
@@ -146,7 +172,7 @@ export const listMessageTemplates = async (): Promise<MessageTemplate[]> => {
     .eq("is_active", true)
     .order("name", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as MessageTemplate[];
+  return data ?? [];
 };
 
 export const listMessageTemplateVersions = async (templateId: string): Promise<MessageTemplateVersion[]> => {
@@ -156,7 +182,15 @@ export const listMessageTemplateVersions = async (templateId: string): Promise<M
     .eq("template_id", templateId)
     .order("version", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as MessageTemplateVersion[];
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    template_id: row.template_id,
+    version: row.version,
+    provider_template_name: row.provider_template_name,
+    language_code: row.language_code,
+    body: row.body,
+    variable_keys: parseStringArray(row.variable_keys, "las variables de la plantilla"),
+  }));
 };
 
 export const listConversationMessages = async (conversationId: string): Promise<ConversationMessage[]> => {
@@ -168,7 +202,10 @@ export const listConversationMessages = async (conversationId: string): Promise<
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as ConversationMessage[];
+  return (data ?? []).map((row) => ({
+    ...row,
+    variables_snapshot: parseStringRecord(row.variables_snapshot, "las variables del mensaje"),
+  }));
 };
 
 export const listMessageEvents = async (messageIds: string[]): Promise<MessageEvent[]> => {
@@ -179,7 +216,7 @@ export const listMessageEvents = async (messageIds: string[]): Promise<MessageEv
     .in("message_id", messageIds)
     .order("event_sequence", { ascending: true });
   if (error) throw error;
-  return (data ?? []) as MessageEvent[];
+  return data ?? [];
 };
 
 export const listCustomerConsents = async (
@@ -193,7 +230,7 @@ export const listCustomerConsents = async (
     .eq("channel", channel)
     .order("event_sequence", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as ConsentRecord[];
+  return data ?? [];
 };
 
 export const listConversationAssignments = async (conversationId: string): Promise<AssignmentRecord[]> => {
@@ -203,7 +240,7 @@ export const listConversationAssignments = async (conversationId: string): Promi
     .eq("conversation_id", conversationId)
     .order("event_sequence", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as AssignmentRecord[];
+  return data ?? [];
 };
 
 export const recordConsent = async (input: RecordConsentInput): Promise<string> => {
@@ -228,7 +265,7 @@ export const queueMessage = async (input: QueueMessageInput): Promise<string> =>
   const { data, error } = await client().rpc("queue_customer_message", {
     target_branch_id: input.branchId,
     target_customer_id: input.customerId,
-    target_conversation_id: input.conversationId,
+    target_conversation_id: nullableRpcString(input.conversationId),
     target_template_version_id: input.templateVersionId,
     recipient_address: input.recipientAddress.trim(),
     variables: input.variables,
@@ -243,7 +280,7 @@ export const assignConversation = async (input: AssignConversationInput): Promis
   if (input.reason.trim() === "") throw new Error("El motivo de la asignación es obligatorio.");
   const { data, error } = await client().rpc("assign_conversation", {
     target_conversation_id: input.conversationId,
-    target_user_id: input.userId,
+    target_user_id: nullableRpcString(input.userId),
     operation_key: newOpKey("waassign"),
     operation_reason: input.reason.trim(),
   });

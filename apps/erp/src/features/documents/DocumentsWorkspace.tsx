@@ -52,6 +52,11 @@ const OWNER_TYPE_LABELS: Record<DocumentOwnerType, string> = {
 
 const OWNER_TYPES = Object.keys(OWNER_TYPE_LABELS) as DocumentOwnerType[];
 
+// The outbox and its audit trail are available, but there is not yet an ARCA
+// provider/worker configured for this deployment. Keep that limitation explicit
+// in the operator UI: an enqueued request is not a CAE nor a fiscal invoice.
+const FISCAL_PROVIDER_CONNECTED = false;
+
 const snapshotText = (doc: DocumentRecord, key: string): string => {
   const value = doc.customer_snapshot[key];
   if (typeof value === "string") return value;
@@ -60,6 +65,7 @@ const snapshotText = (doc: DocumentRecord, key: string): string => {
 };
 
 const snapshotTotal = (doc: DocumentRecord): number => {
+  if (doc.amount_ars !== null) return doc.amount_ars;
   const value = doc.customer_snapshot["total_ars"];
   if (typeof value === "number") return value;
   if (typeof value === "string") return parseFloat(value) || 0;
@@ -307,9 +313,17 @@ export const DocumentsWorkspace = () => {
     <div className="flow-dashboard">
       <WorkspaceHeader
         title="Documentos Fiscales"
-        description="Emisión de documentos vinculados a su operación real (venta, pago, reparación, garantía, armado o canje) con timbrado fiscal por proveedor."
-        badge={`${docs.length} Documentos`}
+        description="Registro trazable de documentos vinculados a ventas, pagos, reparaciones, armados o canjes."
+        badge="En desarrollo"
       />
+
+      {!FISCAL_PROVIDER_CONNECTED && (
+        <FeedbackAlert
+          type="warning"
+          message="ARCA · En desarrollo"
+          submessage="Podés registrar y auditar documentos, pero no se obtiene CAE ni se envía un comprobante fiscal. Las solicitudes existentes quedan sólo en cola hasta configurar un proveedor fiscal."
+        />
+      )}
 
       {feedback && (
         <FeedbackAlert type="success" message={feedback} onClose={() => setFeedback(null)} />
@@ -341,7 +355,7 @@ export const DocumentsWorkspace = () => {
           label="Solicitudes Fiscales"
           value={fiscalRequests.length}
           trend={{ text: "Outbox", positive: true }}
-          sublabel="Timbrado real vía proveedor"
+          sublabel={FISCAL_PROVIDER_CONNECTED ? "Envío al proveedor fiscal" : "Sin proveedor fiscal conectado"}
         />
         <KpiCard
           icon={Calendar}
@@ -371,7 +385,7 @@ export const DocumentsWorkspace = () => {
             </div>
             <button type="button" className="btn-primary" onClick={() => setIsModalOpen(true)}>
               <Plus size={16} />
-              Emitir Documento
+              Registrar documento
             </button>
           </div>
         </div>
@@ -433,7 +447,21 @@ export const DocumentsWorkspace = () => {
                   filteredDocs.map((doc) => {
                     const request = fiscalRequests.find((r) => r.document_id === doc.id) ?? null;
                     return (
-                      <tr key={doc.id} style={{ cursor: "pointer" }} onClick={() => setSelectedDocId(doc.id)}>
+                      <tr
+                        key={doc.id}
+                        className="interactive-row"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Abrir documento ${doc.document_number}`}
+                        onClick={() => setSelectedDocId(doc.id)}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedDocId(doc.id);
+                          }
+                        }}
+                      >
                         <td>
                           <span className="type-badge purple nowrap" style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>
                             {doc.document_number}
@@ -512,8 +540,8 @@ export const DocumentsWorkspace = () => {
                 <div>
                   <span className="stat-label">Estado Fiscal Real</span>
                   <span style={{ display: "block", fontSize: "13px", marginTop: "2px", fontWeight: 700 }}>
-                    {!selectedFiscalRequest && "Sin timbrado solicitado"}
-                    {selectedFiscalRequest && selectedFiscalStatus === "queued" && "Encolado · pendiente del proveedor"}
+                    {!selectedFiscalRequest && "Sin solicitud fiscal"}
+                    {selectedFiscalRequest && selectedFiscalStatus === "queued" && "En cola · sin proveedor conectado"}
                     {selectedFiscalRequest && selectedFiscalStatus === "authorized" && `Autorizado · CAE ${selectedCae ?? ""}`}
                     {selectedFiscalRequest && selectedFiscalStatus === "rejected" && "Rechazado por el proveedor"}
                     {selectedFiscalRequest && selectedFiscalStatus === "failed" && "Fallido · reintentar vía outbox"}
@@ -601,8 +629,15 @@ export const DocumentsWorkspace = () => {
                         />
                       </div>
                       <div style={{ gridColumn: "1 / -1" }}>
-                        <button type="button" className="btn-primary" disabled={saving} onClick={() => void handleFiscalRequest()}>
-                          <ShieldCheck size={15} /> Solicitar timbrado
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={saving || !FISCAL_PROVIDER_CONNECTED}
+                          title={!FISCAL_PROVIDER_CONNECTED ? "Configurá un proveedor ARCA antes de solicitar timbrado." : undefined}
+                          onClick={() => void handleFiscalRequest()}
+                        >
+                          <ShieldCheck size={15} />
+                          {FISCAL_PROVIDER_CONNECTED ? "Solicitar timbrado" : "Proveedor ARCA no configurado"}
                         </button>
                       </div>
                     </div>
@@ -638,22 +673,25 @@ export const DocumentsWorkspace = () => {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Emitir Documento"
-        subtitle="Documento real vinculado a su operación con digest verificable"
+        title="Registrar documento"
+        subtitle="Registro interno trazable; no emite CAE ni comprobante fiscal mientras ARCA no esté conectado."
         icon={FileText}
         maxWidth="560px"
       >
         <form onSubmit={(e) => void handleCreateDocument(e)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div className="erp-form-group">
-            <label className="erp-form-label">Sucursal (branch_id UUID) *</label>
-            <input
-              type="text"
-              required
-              placeholder="UUID de la sucursal"
-              value={branchId}
-              onChange={(e) => setBranchId(e.target.value)}
-              className="erp-form-input"
-            />
+            <label className="erp-form-label">Sucursal *</label>
+            <select value={branchId} onChange={(e) => setBranchId(e.target.value)} className="erp-form-select" required>
+              <option value="">Seleccionar sucursal…</option>
+              {Array.from(new Map(fiscalPoints.map((point) => [point.branch_id, point])).values()).map((point) => (
+                <option key={point.branch_id} value={point.branch_id}>
+                  {point.name} · Punto de venta {point.code}
+                </option>
+              ))}
+            </select>
+            {fiscalPoints.length === 0 && (
+              <span className="erp-form-hint">No hay sucursales operativas disponibles. Configurá una antes de registrar documentos.</span>
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
@@ -691,15 +729,16 @@ export const DocumentsWorkspace = () => {
               </select>
             </div>
             <div className="erp-form-group">
-              <label className="erp-form-label">ID dueño (UUID) *</label>
+              <label className="erp-form-label">ID de la operación *</label>
               <input
                 type="text"
                 required
-                placeholder="UUID de la venta, pago, orden…"
+                placeholder="Identificador de la venta, pago, orden…"
                 value={ownerId}
                 onChange={(e) => setOwnerId(e.target.value)}
                 className="erp-form-input"
               />
+              <span className="erp-form-hint">Usá el identificador de la operación ya registrada. Este panel no crea ventas, reparaciones ni canjes.</span>
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -764,7 +803,7 @@ export const DocumentsWorkspace = () => {
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
             <button type="button" className="pag-btn" onClick={() => setIsModalOpen(false)}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? "Emitiendo…" : "Emitir Documento"}
+              {saving ? "Registrando…" : "Registrar documento"}
             </button>
           </div>
         </form>

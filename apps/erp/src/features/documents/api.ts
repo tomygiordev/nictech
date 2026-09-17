@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase";
+import type { Database, Json } from "../../types/supabase";
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -17,11 +18,41 @@ const parseRpcId = (value: unknown, label: string): string => {
   return value;
 };
 
-const asRows = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
-
 export type DocumentOwnerType = "sale" | "payment" | "repair" | "warranty" | "pc_build" | "trade_in";
-export type DocumentStatus = "issued" | "voided";
-export type FiscalRequestStatus = "queued" | "authorized" | "rejected" | "failed";
+export type DocumentStatus = Database["erp"]["Enums"]["document_status"];
+export type FiscalRequestStatus = Database["erp"]["Enums"]["fiscal_status"];
+type JsonObject = { [key: string]: Json | undefined };
+
+const DOCUMENT_OWNER_TYPES: ReadonlySet<string> = new Set<DocumentOwnerType>([
+  "sale",
+  "payment",
+  "repair",
+  "warranty",
+  "pc_build",
+  "trade_in",
+]);
+
+const parseDocumentOwnerType = (value: string): DocumentOwnerType => {
+  if (!DOCUMENT_OWNER_TYPES.has(value)) throw new Error("El documento tiene un tipo de dueño inválido.");
+  return value as DocumentOwnerType;
+};
+
+const parseJsonObject = (value: Json, label: string): JsonObject => {
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    throw new Error(`Respuesta inválida para ${label}: se esperaba un objeto JSON.`);
+  }
+  return value;
+};
+
+const snapshotTotal = (snapshot: JsonObject): number | null => {
+  const value = snapshot["total_ars"];
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+// PostgreSQL permite NULL en este parámetro aunque el generador sólo expone
+// su tipo base. El helper mantiene el NULL real acotado a la frontera RPC.
+const nullableRpcString = (value: string | null): string => value as string;
 
 export interface DocumentRecord {
   id: string;
@@ -31,11 +62,12 @@ export interface DocumentRecord {
   owner_type: DocumentOwnerType;
   owner_id: string;
   document_number: string;
-  customer_snapshot: Record<string, unknown>;
+  customer_snapshot: JsonObject;
   content_sha256: string;
   status: DocumentStatus;
   issued_at: string;
   issued_by: string | null;
+  amount_ars: number | null;
 }
 
 export interface DocumentEventRecord {
@@ -64,7 +96,7 @@ export interface DocumentTemplateVersion {
   organization_id: string;
   template_id: string;
   version: number;
-  definition: Record<string, unknown>;
+  definition: Json;
   created_at: string;
 }
 
@@ -110,7 +142,7 @@ export interface IssueDocumentInput {
   ownerType: DocumentOwnerType;
   ownerId: string;
   documentNumber: string;
-  customerSnapshot: Record<string, unknown>;
+  customerSnapshot: JsonObject;
   contentSha256: string;
   reason: string;
 }
@@ -139,7 +171,7 @@ export const listDocumentTemplates = async (): Promise<DocumentTemplate[]> => {
     .eq("is_active", true)
     .order("code");
   if (error) throw error;
-  return asRows<DocumentTemplate>(data);
+  return data ?? [];
 };
 
 export const listDocumentTemplateVersions = async (templateId: string): Promise<DocumentTemplateVersion[]> => {
@@ -150,7 +182,7 @@ export const listDocumentTemplateVersions = async (templateId: string): Promise<
     .eq("template_id", templateId)
     .order("version", { ascending: false });
   if (error) throw error;
-  return asRows<DocumentTemplateVersion>(data);
+  return data ?? [];
 };
 
 export const listDocuments = async (): Promise<DocumentRecord[]> => {
@@ -161,7 +193,34 @@ export const listDocuments = async (): Promise<DocumentRecord[]> => {
     )
     .order("issued_at", { ascending: false });
   if (error) throw error;
-  return asRows<DocumentRecord>(data);
+  const documents = (data ?? []).map((row) => {
+    const customerSnapshot = parseJsonObject(row.customer_snapshot, "la instantánea del cliente");
+    return {
+      ...row,
+      owner_type: parseDocumentOwnerType(row.owner_type),
+      customer_snapshot: customerSnapshot,
+      amount_ars: snapshotTotal(customerSnapshot),
+    };
+  });
+
+  const saleDocumentIds = documents.filter((document) => document.owner_type === "sale").map((document) => document.id);
+  if (saleDocumentIds.length === 0) return documents;
+
+  const { data: saleAmounts, error: saleAmountsError } = await client().rpc("list_document_sale_amounts", {
+    target_document_ids: saleDocumentIds,
+  });
+  if (saleAmountsError) throw saleAmountsError;
+
+  const amountByDocumentId = new Map<string, number>();
+  for (const saleAmount of saleAmounts ?? []) {
+    const amountArs = Number(saleAmount.amount_ars);
+    if (Number.isFinite(amountArs)) amountByDocumentId.set(saleAmount.document_id, amountArs);
+  }
+
+  return documents.map((document) => ({
+    ...document,
+    amount_ars: document.owner_type === "sale" ? amountByDocumentId.get(document.id) ?? document.amount_ars : document.amount_ars,
+  }));
 };
 
 export const listDocumentEvents = async (documentId: string): Promise<DocumentEventRecord[]> => {
@@ -172,7 +231,7 @@ export const listDocumentEvents = async (documentId: string): Promise<DocumentEv
     .eq("document_id", documentId)
     .order("occurred_at", { ascending: true });
   if (error) throw error;
-  return asRows<DocumentEventRecord>(data);
+  return data ?? [];
 };
 
 export const listFiscalPoints = async (): Promise<FiscalPoint[]> => {
@@ -182,7 +241,7 @@ export const listFiscalPoints = async (): Promise<FiscalPoint[]> => {
     .eq("is_active", true)
     .order("code");
   if (error) throw error;
-  return asRows<FiscalPoint>(data);
+  return data ?? [];
 };
 
 export const listFiscalRequests = async (): Promise<FiscalRequest[]> => {
@@ -193,7 +252,7 @@ export const listFiscalRequests = async (): Promise<FiscalRequest[]> => {
     )
     .order("requested_at", { ascending: false });
   if (error) throw error;
-  return asRows<FiscalRequest>(data);
+  return data ?? [];
 };
 
 export const listFiscalEventsByRequest = async (fiscalRequestId: string): Promise<FiscalEvent[]> => {
@@ -206,7 +265,7 @@ export const listFiscalEventsByRequest = async (fiscalRequestId: string): Promis
     .eq("fiscal_request_id", fiscalRequestId)
     .order("event_sequence", { ascending: true });
   if (error) throw error;
-  return asRows<FiscalEvent>(data);
+  return data ?? [];
 };
 
 export const issueDocument = async (input: IssueDocumentInput): Promise<string> => {
@@ -224,7 +283,7 @@ export const issueDocument = async (input: IssueDocumentInput): Promise<string> 
     document_number: input.documentNumber.trim(),
     customer_snapshot: input.customerSnapshot,
     content_sha256: input.contentSha256,
-    private_object_path: null,
+    private_object_path: nullableRpcString(null),
     operation_key: newOpKey("doc-issue"),
     operation_reason: input.reason.trim(),
   });
@@ -269,7 +328,7 @@ export const requestFiscalIssuance = async (
 
 export const createDocumentTemplateVersion = async (
   templateId: string,
-  definition: Record<string, unknown>,
+  definition: JsonObject,
   reason: string,
 ): Promise<string> => {
   if (!UUID_RE.test(templateId)) throw new Error("La plantilla es obligatoria.");

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Shield, User, Key, Terminal, Download } from "lucide-react";
+import { Search, Shield, User, Key, Terminal } from "lucide-react";
 import { WorkspaceHeader, StatePanel } from "../../components/erp/WorkspaceUi";
+import { OfficialCsvExportButton } from "../../components/erp/OfficialCsvExportButton";
 import { formatDateTime } from "../../lib/formatters";
+import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
+  exportAuditEvents,
   extractActorDetail,
   extractActorLabel,
   extractIp,
@@ -38,34 +41,10 @@ const toEntry = (row: AuditEventRow): AuditLogEntry => ({
   details: row.reason || `Operación ${row.action} sobre ${row.table_name || "entidad"}`,
 });
 
-const csvEscape = (value: string): string => {
-  if (/[",;\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-};
-
-const buildCsv = (logs: AuditLogEntry[]): string => {
-  const header = "timestamp,operador,rol,accion,schema,tabla,entidad_id,ip,detalle";
-  const lines = logs.map((l) =>
-    [
-      l.timestamp,
-      l.actorName,
-      l.actorRole,
-      l.action,
-      l.schema,
-      l.entity,
-      l.entityId,
-      l.ipAddress ?? "—",
-      l.details,
-    ]
-      .map(csvEscape)
-      .join(","),
-  );
-  return [header, ...lines].join("\n");
-};
-
 const PAGE_SIZE = 100;
 
 export const AuditWorkspace = () => {
+  const { hasPermission } = useErpAuth();
   const [rows, setRows] = useState<AuditEventRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,19 +102,6 @@ export const AuditWorkspace = () => {
       );
     });
   }, [logs, search, activeFilter, schemaFilter, tableFilter, actionFilter]);
-
-  const handleExportCsv = () => {
-    const csv = buildCsv(filteredLogs);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "auditoria-erp.csv";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  };
 
   return (
     <div className="flow-dashboard">
@@ -231,15 +197,42 @@ export const AuditWorkspace = () => {
               />
             </div>
 
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-              onClick={handleExportCsv}
-              disabled={filteredLogs.length === 0}
-            >
-              <Download size={14} /> Exportar CSV ({filteredLogs.length})
-            </button>
+            {hasPermission("reports.export") && (
+              <OfficialCsvExportButton
+                filename="auditoria-erp.csv"
+                label="Exportar CSV oficial"
+                loadDataset={async (reason) => {
+                  const exported = await exportAuditEvents({
+                    reason,
+                    search: search || undefined,
+                    schema: schemaFilter === "all" ? undefined : schemaFilter,
+                    table: tableFilter === "all" ? undefined : tableFilter,
+                    action: actionFilter === "all" ? undefined : actionFilter,
+                    status:
+                      activeFilter === "success" || activeFilter === "warning"
+                        ? activeFilter
+                        : undefined,
+                    rowLimit: 5000,
+                  });
+                  const exportLogs = exported.rows.map(toEntry);
+                  return {
+                    headers: ["timestamp", "operador", "rol", "accion", "schema", "tabla", "entidad_id", "ip", "detalle"],
+                    rows: exportLogs.map((log) => [
+                      log.timestamp,
+                      log.actorName,
+                      log.actorRole,
+                      log.action,
+                      log.schema,
+                      log.entity,
+                      log.entityId,
+                      log.ipAddress ?? "—",
+                      log.details,
+                    ]),
+                    truncated: exported.truncated,
+                  };
+                }}
+              />
+            )}
           </div>
         </div>
 

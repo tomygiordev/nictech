@@ -29,6 +29,7 @@ export interface IntegrationAttemptRow {
   error_message: string | null;
   attempted_at: string;
   attempted_by: string | null;
+  retry_request_id: string | null;
 }
 
 export interface DeadLetterRow {
@@ -42,9 +43,24 @@ export interface DeadLetterRow {
 
 export interface DeadLettersResult {
   rows: DeadLetterRow[];
-  /** false cuando authenticated no tiene GRANT sobre erp.integration_dead_letters. */
+  /** false cuando la lectura falla; el esquema vigente sí concede SELECT con RLS. */
   available: boolean;
   errorMessage: string | null;
+}
+
+export type IntegrationRetryAction = "retry" | "recover";
+
+export interface IntegrationRetryRequestRow {
+  id: string;
+  outbox_id: string;
+  action: IntegrationRetryAction;
+  request_origin: "operator" | "automatic";
+  reason: string;
+  attempt_count_snapshot: number;
+  retry_sequence: number;
+  available_at: string;
+  requested_at: string;
+  requested_by: string | null;
 }
 
 const asOutbox = (value: unknown): IntegrationOutboxRow[] =>
@@ -55,6 +71,9 @@ const asAttempts = (value: unknown): IntegrationAttemptRow[] =>
 
 const asDeadLetters = (value: unknown): DeadLetterRow[] =>
   Array.isArray(value) ? (value as DeadLetterRow[]) : [];
+
+const asRetryRequests = (value: unknown): IntegrationRetryRequestRow[] =>
+  Array.isArray(value) ? (value as IntegrationRetryRequestRow[]) : [];
 
 /** Lee erp.integration_outbox (SELECT con permiso integrations.view por RLS). */
 export const listIntegrationOutbox = async (limit = 100): Promise<IntegrationOutboxRow[]> => {
@@ -76,18 +95,14 @@ export const listIntegrationAttempts = async (outboxIds: string[]): Promise<Inte
   if (unique.length === 0) return [];
   const { data, error } = await client()
     .from("integration_attempts")
-    .select("id,outbox_id,attempt_number,status,error_message,attempted_at,attempted_by")
+    .select("id,outbox_id,attempt_number,status,error_message,attempted_at,attempted_by,retry_request_id")
     .in("outbox_id", unique)
     .order("attempted_at", { ascending: false });
   if (error) throw error;
   return asAttempts(data);
 };
 
-/**
- * Lee erp.integration_dead_letters. La migración 009 otorga SELECT solo a
- * service_role (authenticated no tiene grant aunque exista policy RLS), por lo
- * que un 42501/permiso denegado se informa como available=false sin lanzar.
- */
+/** Lee DLQ con RLS por organización, sucursal e integrations.view. */
 export const listDeadLetters = async (): Promise<DeadLettersResult> => {
   const { data, error } = await client()
     .from("integration_dead_letters")
@@ -96,6 +111,46 @@ export const listDeadLetters = async (): Promise<DeadLettersResult> => {
     .limit(100);
   if (!error) return { rows: asDeadLetters(data), available: true, errorMessage: null };
   return { rows: [], available: false, errorMessage: error.message };
+};
+
+/** Solicitudes de retry/recovery visibles para los mismos eventos del operador. */
+export const listIntegrationRetryRequests = async (
+  outboxIds: string[],
+): Promise<IntegrationRetryRequestRow[]> => {
+  const unique = Array.from(new Set(outboxIds)).filter((id) => UUID_RE.test(id));
+  if (unique.length === 0) return [];
+  const { data, error } = await client()
+    .from("integration_retry_requests")
+    .select(
+      "id,outbox_id,action,request_origin,reason,attempt_count_snapshot,retry_sequence,available_at,requested_at,requested_by",
+    )
+    .in("outbox_id", unique)
+    .order("requested_at", { ascending: false });
+  if (error) throw error;
+  return asRetryRequests(data);
+};
+
+export const requestIntegrationRetry = async (
+  outboxId: string,
+  action: IntegrationRetryAction,
+  reason: string,
+  operationKey: string,
+): Promise<string> => {
+  if (!UUID_RE.test(outboxId)) throw new Error("El evento de outbox debe ser un UUID válido.");
+  if (action !== "retry" && action !== "recover") throw new Error("La acción de recuperación no es válida.");
+  if (reason.trim() === "") throw new Error("El motivo del reintento es obligatorio.");
+  if (operationKey.trim() === "") throw new Error("La clave de operación es obligatoria.");
+  const { data, error } = await client().rpc("request_integration_retry", {
+    target_outbox_id: outboxId,
+    requested_action: action,
+    operation_key: operationKey.trim(),
+    operation_reason: reason.trim(),
+  });
+  if (error) throw error;
+  if (typeof data !== "string" || !UUID_RE.test(data)) {
+    throw new Error("Respuesta inválida al programar la integración.");
+  }
+  return data;
 };
 
 /**

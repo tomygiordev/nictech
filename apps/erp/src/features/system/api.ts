@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase";
+import type { Json } from "../../types/supabase";
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -25,7 +26,7 @@ export interface SystemUser {
 export interface SystemSetting {
   key: string;
   branch_id: string | null;
-  value: unknown;
+  value: Json;
   updated_at: string;
 }
 
@@ -35,19 +36,6 @@ export const SYSTEM_SETTING_KEYS = {
   autoEmailReceipts: "billing.auto_email_receipts",
 } as const;
 
-interface ProfileRow {
-  id: string;
-  display_name: string;
-  employee_code: string | null;
-  phone: string | null;
-  is_active: boolean;
-}
-
-interface ProfileRoleRow {
-  profile_id: string;
-  branch_id: string | null;
-}
-
 const mensajeError = (accion: string, detalle: string): string => `${accion}: ${detalle}`;
 
 export const listBranches = async (): Promise<SystemBranch[]> => {
@@ -56,7 +44,7 @@ export const listBranches = async (): Promise<SystemBranch[]> => {
     .select("id, code, name, phone, is_active")
     .order("name", { ascending: true });
   if (error) throw new Error(mensajeError("No se pudieron leer las sucursales", error.message));
-  return ((data ?? []) as SystemBranch[]).map((b) => ({
+  return (data ?? []).map((b) => ({
     id: b.id,
     code: b.code,
     name: b.name,
@@ -89,19 +77,19 @@ export const listSystemUsers = async (): Promise<SystemUser[]> => {
   }
 
   const nombrePorSucursal = new Map<string, string>();
-  for (const s of (sucursales ?? []) as Array<{ id: string; name: string }>) {
+  for (const s of sucursales ?? []) {
     nombrePorSucursal.set(s.id, s.name);
   }
 
   const sucursalPorPerfil = new Map<string, string>();
-  for (const r of (roles ?? []) as ProfileRoleRow[]) {
+  for (const r of roles ?? []) {
     if (r.branch_id && !sucursalPorPerfil.has(r.profile_id)) {
       const nombre = nombrePorSucursal.get(r.branch_id);
       if (nombre) sucursalPorPerfil.set(r.profile_id, nombre);
     }
   }
 
-  return ((perfiles ?? []) as ProfileRow[]).map((p) => ({
+  return (perfiles ?? []).map((p) => ({
     id: p.id,
     display_name: p.display_name,
     employee_code: p.employee_code ?? null,
@@ -118,7 +106,7 @@ export const listSystemSettings = async (): Promise<SystemSetting[]> => {
   if (error) {
     throw new Error(mensajeError("No se pudieron leer los ajustes del sistema", error.message));
   }
-  return ((data ?? []) as SystemSetting[]).map((s) => ({
+  return (data ?? []).map((s) => ({
     key: s.key,
     branch_id: s.branch_id ?? null,
     value: s.value,
@@ -141,14 +129,14 @@ const obtenerOrganizacionId = async (): Promise<string> => {
   if (error) {
     throw new Error(mensajeError("No se pudo leer el perfil del operador", error.message));
   }
-  const organizationId = (data as { organization_id: string | null } | null)?.organization_id;
+  const organizationId = data?.organization_id;
   if (!organizationId) throw new Error("El perfil del operador no tiene organización asignada.");
   return organizationId;
 };
 
 export const guardarAjuste = async (
   key: string,
-  value: unknown,
+  value: Json,
   branchId: string | null = null,
 ): Promise<void> => {
   const organizationId = await obtenerOrganizacionId();

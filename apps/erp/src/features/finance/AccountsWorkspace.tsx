@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,13 +9,30 @@ import {
   listBranches,
   listCustomers,
   listFinancingContracts,
+  listReceivableCashSessions,
+  listReceivablePaymentMethods,
   recordReceivablePayment,
 } from "./api";
 import { financingSchema, receivablePaymentSchema, type FinancingInput, type ReceivablePaymentInput } from "./schemas";
 import { StatePanel, WorkspaceHeader, FeedbackAlert, KpiCard } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
+import type { FinancingContract } from "./types";
 
 const TERMINAL_CONTRACT_STATUSES = ["paid", "cancelled", "uncollectible"];
+
+const summarizeByCurrency = (
+  contracts: FinancingContract[],
+  amount: (contract: FinancingContract) => number,
+): string => {
+  const totals = contracts.reduce<Record<string, number>>((result, contract) => {
+    const currency = contract.currency_code || "ARS";
+    result[currency] = (result[currency] ?? 0) + amount(contract);
+    return result;
+  }, {});
+  const entries = Object.entries(totals);
+  if (entries.length === 0) return "—";
+  return entries.map(([currency, total]) => formatCurrency(total, currency)).join(" · ");
+};
 
 export const AccountsWorkspace = () => {
   const { hasPermission } = useErpAuth();
@@ -48,11 +65,50 @@ export const AccountsWorkspace = () => {
     defaultValues: {
       branchId: "",
       contractId: "",
+      paymentMethodId: "",
+      cashSessionId: "",
       amount: "50000",
+      paymentReference: "",
       operationKey: generateIdempotencyKey("pay"),
       reason: "Cobro de cuota presencial en mostrador",
     },
   });
+
+  const paymentBranchId = paymentForm.watch("branchId");
+  const selectedPaymentMethodId = paymentForm.watch("paymentMethodId");
+  const paymentMethodsQuery = useQuery({
+    queryKey: ["erp", "finance", "receivable-payment-methods", paymentBranchId],
+    queryFn: () => listReceivablePaymentMethods(paymentBranchId),
+    enabled: Boolean(paymentBranchId),
+  });
+  const cashSessionsQuery = useQuery({
+    queryKey: ["erp", "finance", "receivable-cash-sessions", paymentBranchId],
+    queryFn: () => listReceivableCashSessions(paymentBranchId),
+    enabled: Boolean(paymentBranchId),
+  });
+  const selectedPaymentMethod = (paymentMethodsQuery.data ?? []).find(
+    (method) => method.id === selectedPaymentMethodId,
+  );
+  const selectedContract = (contractsQuery.data ?? []).find(
+    (contract) => contract.id === paymentForm.watch("contractId"),
+  );
+  const compatibleCashSessions = useMemo(
+    () => (cashSessionsQuery.data ?? []).filter(
+      (session) => !selectedContract || session.currencies.includes(selectedContract.currency_code),
+    ),
+    [cashSessionsQuery.data, selectedContract],
+  );
+
+  useEffect(() => {
+    paymentForm.setValue("paymentMethodId", "");
+    paymentForm.setValue("cashSessionId", "");
+  }, [paymentBranchId, paymentForm]);
+
+  useEffect(() => {
+    if (selectedPaymentMethod && !selectedPaymentMethod.requires_cash_session) {
+      paymentForm.setValue("cashSessionId", "");
+    }
+  }, [paymentForm, selectedPaymentMethod]);
 
   const submitFinancing = (values: FinancingInput) => {
     if (!values.branchId || !values.customerId) {
@@ -89,10 +145,31 @@ export const AccountsWorkspace = () => {
       setPaymentGuardError(`El contrato está en estado "${contract.status}" y ya no admite cobros.`);
       return;
     }
+    if (values.branchId !== contract.branch_id) {
+      setPaymentGuardError("La sucursal del cobro debe coincidir con la sucursal del contrato.");
+      return;
+    }
+    const method = (paymentMethodsQuery.data ?? []).find((item) => item.id === values.paymentMethodId);
+    if (!method) {
+      setPaymentGuardError("Seleccioná un medio de pago habilitado para esta sucursal.");
+      return;
+    }
+    if (method.requires_cash_session) {
+      const session = compatibleCashSessions.find((item) => item.id === values.cashSessionId);
+      if (!session) {
+        setPaymentGuardError(
+          `Seleccioná una caja abierta en ${contract.currency_code} para registrar este cobro.`,
+        );
+        return;
+      }
+    } else if (values.cashSessionId) {
+      setPaymentGuardError("El medio de pago seleccionado no admite una sesión de caja.");
+      return;
+    }
     const outstanding = outstandingForContract(values.contractId);
     if (!Number.isNaN(outstanding) && Number(values.amount) > outstanding + 0.001) {
       setPaymentGuardError(
-        `El importe supera el saldo pendiente (${formatCurrency(outstanding, "ARS")}).`,
+        `El importe supera el saldo pendiente (${formatCurrency(outstanding, contract.currency_code)}).`,
       );
       return;
     }
@@ -129,8 +206,14 @@ export const AccountsWorkspace = () => {
   }
 
   const contracts = contractsQuery.data ?? [];
-  const totalPrincipal = contracts.reduce((acc, c) => acc + Number(c.principal_amount || 0), 0);
-  const totalFinanced = contracts.reduce((acc, c) => acc + Number(c.financed_amount || 0), 0);
+  const totalPrincipalLabel = summarizeByCurrency(
+    contracts,
+    (contract) => Number(contract.principal_amount || 0),
+  );
+  const totalFinancedLabel = summarizeByCurrency(
+    contracts,
+    (contract) => Number(contract.financed_amount || 0),
+  );
   const todayIso = new Date().toISOString().slice(0, 10);
   const allInstallments = contracts.flatMap((c) => c.financing_installments ?? []);
   const pendingInstallments = allInstallments.filter((i) => i.status !== "paid" && i.status !== "cancelled").length;
@@ -145,7 +228,9 @@ export const AccountsWorkspace = () => {
     averageMonthlyRate === null ? "—" : `${(averageMonthlyRate * 100).toFixed(1)}% mensual`;
 
   const openPaymentForContract = (contractId: string) => {
+    const contract = contracts.find((item) => item.id === contractId);
     paymentForm.setValue("contractId", contractId);
+    if (contract) paymentForm.setValue("branchId", contract.branch_id);
     paymentForm.setValue("operationKey", generateIdempotencyKey("pay"));
   };
 
@@ -179,16 +264,16 @@ export const AccountsWorkspace = () => {
           icon={CircleDollarSign}
           iconVariant="navy"
           label="Total Financiado"
-          value={formatCurrency(totalFinanced, "ARS")}
-          sublabel="Monto pactado en cuotas"
+          value={totalFinancedLabel}
+          sublabel="Monto pactado, separado por moneda"
         />
 
         <KpiCard
           icon={CreditCard}
           iconVariant="steel"
           label="Capital Prestado"
-          value={formatCurrency(totalPrincipal, "ARS")}
-          sublabel="Principal inicial"
+          value={totalPrincipalLabel}
+          sublabel="Principal inicial, separado por moneda"
         />
 
         <KpiCard
@@ -227,12 +312,12 @@ export const AccountsWorkspace = () => {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", margin: "12px 0" }}>
                 <div>
                   <span className="stat-label">Principal</span>
-                  <strong style={{ fontSize: "13px", display: "block" }}>{formatCurrency(Number(contract.principal_amount), "ARS")}</strong>
+                  <strong style={{ fontSize: "13px", display: "block" }}>{formatCurrency(Number(contract.principal_amount), contract.currency_code)}</strong>
                 </div>
                 <div>
                   <span className="stat-label">Financiado</span>
                   <strong style={{ fontSize: "13px", display: "block", color: "var(--brand-primary)" }}>
-                    {formatCurrency(Number(contract.financed_amount), "ARS")}
+                    {formatCurrency(Number(contract.financed_amount), contract.currency_code)}
                   </strong>
                 </div>
                 <div>
@@ -389,7 +474,7 @@ export const AccountsWorkspace = () => {
                   <option value="">Seleccioná un contrato</option>
                   {contracts.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.contract_reference || c.id.slice(0, 8)} — Financiado: {formatCurrency(Number(c.financed_amount), "ARS")}
+                      {c.contract_reference || c.id.slice(0, 8)} — Financiado: {formatCurrency(Number(c.financed_amount), c.currency_code)}
                     </option>
                   ))}
                 </select>
@@ -410,6 +495,56 @@ export const AccountsWorkspace = () => {
                   </select>
                 </div>
               </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div className="erp-form-group">
+                  <label className="erp-form-label">Medio de pago *</label>
+                  <select
+                    className="erp-form-select"
+                    {...paymentForm.register("paymentMethodId")}
+                    disabled={!paymentBranchId || paymentMethodsQuery.isLoading}
+                  >
+                    <option value="">Seleccioná un medio de pago</option>
+                    {(paymentMethodsQuery.data ?? []).map((method) => (
+                      <option key={method.id} value={method.id}>
+                        {method.name} ({method.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {selectedPaymentMethod?.requires_cash_session ? (
+                  <div className="erp-form-group">
+                    <label className="erp-form-label">Caja abierta *</label>
+                    <select
+                      className="erp-form-select"
+                      {...paymentForm.register("cashSessionId")}
+                      disabled={cashSessionsQuery.isLoading}
+                    >
+                      <option value="">Seleccioná una caja</option>
+                      {compatibleCashSessions.map((session) => (
+                        <option key={session.id} value={session.id}>
+                          {session.cash_register_code} - {session.cash_register_name} · {session.currencies.join("/")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="erp-form-group">
+                    <label className="erp-form-label">Referencia del pago</label>
+                    <input
+                      className="erp-form-input"
+                      placeholder="Transferencia, cupón o comprobante"
+                      {...paymentForm.register("paymentReference")}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {paymentMethodsQuery.error || cashSessionsQuery.error ? (
+                <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> No se pudieron cargar los medios de cobro habilitados.
+                </div>
+              ) : null}
 
               <div className="erp-form-group">
                 <label className="erp-form-label">Concepto / Comprobante de Cobro</label>

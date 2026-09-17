@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountsWorkspace } from "./AccountsWorkspace";
 import { AccountingWorkspace } from "./AccountingWorkspace";
 import { parseRpcId, postErpSourceEvent } from "./api";
+import { receivablePaymentSchema } from "./schemas";
 import { parseErpContext } from "../../auth/ErpContextValidation";
 
 const authState = { session: {}, loading: false, error: null, hasPermission: () => true };
@@ -19,6 +20,10 @@ vi.mock("./api", async () => {
   return {
     ...actual,
     listFinancingContracts: vi.fn().mockResolvedValue([]),
+    listBranches: vi.fn().mockResolvedValue([]),
+    listCustomers: vi.fn().mockResolvedValue([]),
+    listReceivablePaymentMethods: vi.fn().mockResolvedValue([]),
+    listReceivableCashSessions: vi.fn().mockResolvedValue([]),
     createFinancingContract: vi.fn().mockResolvedValue("contract-id"),
     recordReceivablePayment: vi.fn().mockResolvedValue("payment-id"),
     listChartOfAccounts: vi.fn().mockResolvedValue([]),
@@ -66,6 +71,24 @@ describe("finance workspaces", () => {
       .toBeInTheDocument();
     expect(screen.getByPlaceholderText("Interés mensual"))
       .toBeInTheDocument();
+  });
+
+  it("requires an explicit payment method for receivable settlements", async () => {
+    renderWorkspace(<AccountsWorkspace />);
+
+    expect(await screen.findByText("Medio de pago *")).toBeInTheDocument();
+    expect(
+      receivablePaymentSchema.safeParse({
+        branchId: "550e8400-e29b-41d4-a716-446655440000",
+        contractId: "550e8400-e29b-41d4-a716-446655440001",
+        paymentMethodId: "",
+        cashSessionId: "",
+        amount: "1000",
+        paymentReference: "",
+        operationKey: "pay-test",
+        reason: "Cobro de prueba",
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects malformed RPC identifiers instead of coercing them", () => {

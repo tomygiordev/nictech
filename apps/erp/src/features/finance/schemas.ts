@@ -19,7 +19,10 @@ export const financingSchema = z.object({
 export const receivablePaymentSchema = z.object({
   branchId: z.string().uuid(),
   contractId: z.string().uuid(),
+  paymentMethodId: z.string().uuid(),
+  cashSessionId: z.union([z.string().uuid(), z.literal("")]),
   amount: positiveDecimal,
+  paymentReference: z.string().trim().max(120).optional(),
   operationKey: z.string().trim().min(1),
   reason: z.string().trim().min(1),
 });

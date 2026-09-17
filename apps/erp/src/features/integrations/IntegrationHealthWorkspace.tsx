@@ -2,32 +2,40 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, RotateCcw, Inbox, CheckCircle2, AlertTriangle, ArchiveX } from "lucide-react";
 import { WorkspaceHeader, StatePanel, Modal } from "../../components/erp/WorkspaceUi";
 import { formatDateTime } from "../../lib/formatters";
+import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   listDeadLetters,
   listIntegrationAttempts,
   listIntegrationOutbox,
+  listIntegrationRetryRequests,
   moveIntegrationToDeadLetter,
+  requestIntegrationRetry,
   type IntegrationAttemptRow,
   type IntegrationOutboxRow,
+  type IntegrationRetryAction,
+  type IntegrationRetryRequestRow,
 } from "./api";
 
-type DeliveryStatus = "delivered" | "retrying" | "pending" | "dead_letter";
+type DeliveryStatus = "delivered" | "failed" | "retry_scheduled" | "pending" | "dead_letter";
 
 const deriveStatus = (
   outboxId: string,
   attempts: IntegrationAttemptRow[],
   deadOutboxIds: Set<string>,
+  pendingRetryOutboxIds: Set<string>,
 ): DeliveryStatus => {
+  if (pendingRetryOutboxIds.has(outboxId)) return "retry_scheduled";
   if (deadOutboxIds.has(outboxId)) return "dead_letter";
   const mine = attempts.filter((a) => a.outbox_id === outboxId);
   if (mine.some((a) => a.status === "succeeded")) return "delivered";
-  if (mine.some((a) => a.status === "failed")) return "retrying";
+  if (mine.some((a) => a.status === "failed")) return "failed";
   return "pending";
 };
 
 const statusLabel: Record<DeliveryStatus, string> = {
   delivered: "Entregado",
-  retrying: "Reintentando",
+  failed: "Fallido",
+  retry_scheduled: "Reintento programado",
   pending: "Pendiente",
   dead_letter: "Dead letter",
 };
@@ -41,9 +49,11 @@ const payloadSummary = (row: IntegrationOutboxRow): string => {
 };
 
 export const IntegrationHealthWorkspace = () => {
+  const { hasPermission } = useErpAuth();
   const [outbox, setOutbox] = useState<IntegrationOutboxRow[]>([]);
   const [attempts, setAttempts] = useState<IntegrationAttemptRow[]>([]);
   const [deadOutboxIds, setDeadOutboxIds] = useState<Set<string>>(new Set());
+  const [retryRequests, setRetryRequests] = useState<IntegrationRetryRequestRow[]>([]);
   const [deadLettersAvailable, setDeadLettersAvailable] = useState<boolean>(true);
   const [deadLettersNote, setDeadLettersNote] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -53,6 +63,10 @@ export const IntegrationHealthWorkspace = () => {
   const [movingId, setMovingId] = useState<string | null>(null);
   const [deadLetterTarget, setDeadLetterTarget] = useState<IntegrationOutboxRow | null>(null);
   const [deadLetterReason, setDeadLetterReason] = useState<string>("");
+  const [retryTarget, setRetryTarget] = useState<IntegrationOutboxRow | null>(null);
+  const [retryAction, setRetryAction] = useState<IntegrationRetryAction>("retry");
+  const [retryReason, setRetryReason] = useState<string>("");
+  const [retryOperationKey, setRetryOperationKey] = useState<string>("");
 
   const load = useCallback(async () => {
     try {
@@ -61,11 +75,13 @@ export const IntegrationHealthWorkspace = () => {
       const rows = await listIntegrationOutbox(100);
       const found = await listIntegrationAttempts(rows.map((r) => r.id));
       const dead = await listDeadLetters();
+      const requests = await listIntegrationRetryRequests(rows.map((r) => r.id));
       setOutbox(rows);
       setAttempts(found);
       setDeadOutboxIds(new Set(dead.rows.map((d) => d.outbox_id)));
       setDeadLettersAvailable(dead.available);
       setDeadLettersNote(dead.available ? null : dead.errorMessage);
+      setRetryRequests(requests);
     } catch (e) {
       setOutbox([]);
       setAttempts([]);
@@ -89,20 +105,35 @@ export const IntegrationHealthWorkspace = () => {
     return map;
   }, [attempts]);
 
+  const pendingRetryRequests = useMemo(() => {
+    const completed = new Set(attempts.map((attempt) => attempt.retry_request_id).filter((id): id is string => id !== null));
+    return retryRequests.filter((request) => !completed.has(request.id));
+  }, [attempts, retryRequests]);
+
+  const pendingRetryByOutbox = useMemo(() => {
+    const map = new Map<string, IntegrationRetryRequestRow>();
+    for (const request of pendingRetryRequests) {
+      if (!map.has(request.outbox_id)) map.set(request.outbox_id, request);
+    }
+    return map;
+  }, [pendingRetryRequests]);
+
+  const pendingRetryOutboxIds = useMemo(() => new Set(pendingRetryByOutbox.keys()), [pendingRetryByOutbox]);
+
   const counters = useMemo(() => {
     let delivered = 0;
     let retrying = 0;
     let pending = 0;
     let dead = 0;
     for (const row of outbox) {
-      const status = deriveStatus(row.id, attempts, deadOutboxIds);
+      const status = deriveStatus(row.id, attempts, deadOutboxIds, pendingRetryOutboxIds);
       if (status === "delivered") delivered += 1;
-      else if (status === "retrying") retrying += 1;
+      else if (status === "failed" || status === "retry_scheduled") retrying += 1;
       else if (status === "pending") pending += 1;
       else dead += 1;
     }
     return { total: outbox.length, delivered, retrying, pending, dead };
-  }, [outbox, attempts, deadOutboxIds]);
+  }, [outbox, attempts, deadOutboxIds, pendingRetryOutboxIds]);
 
   const failedAttempts = useMemo(() => attempts.filter((a) => a.status === "failed").length, [attempts]);
 
@@ -119,6 +150,36 @@ export const IntegrationHealthWorkspace = () => {
       await load();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "No se pudo mover a dead letter.");
+    } finally {
+      setMovingId(null);
+    }
+  };
+
+  const openRetry = (row: IntegrationOutboxRow, action: IntegrationRetryAction) => {
+    setRetryTarget(row);
+    setRetryAction(action);
+    setRetryReason("");
+    setRetryOperationKey(`integration-${action}-${crypto.randomUUID()}`);
+    setActionError(null);
+  };
+
+  const handleConfirmRetry = async () => {
+    if (!retryTarget) return;
+    try {
+      setMovingId(retryTarget.id);
+      setActionError(null);
+      setActionOk(null);
+      await requestIntegrationRetry(retryTarget.id, retryAction, retryReason, retryOperationKey);
+      setActionOk(
+        retryAction === "recover"
+          ? `Recuperación de ${retryTarget.id.slice(0, 8)} programada.`
+          : `Reintento de ${retryTarget.id.slice(0, 8)} programado.`,
+      );
+      setRetryTarget(null);
+      setRetryReason("");
+      await load();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "No se pudo programar la integración.");
     } finally {
       setMovingId(null);
     }
@@ -150,7 +211,7 @@ export const IntegrationHealthWorkspace = () => {
         <StatePanel
           type="info"
           title="Dead letters sin acceso de lectura"
-          message={`authenticated no tiene GRANT SELECT sobre erp.integration_dead_letters (solo service_role según 202608190009); el contador de muertos puede estar incompleto. Detalle: ${deadLettersNote ?? "permiso denegado"}`}
+          message={`No se pudo leer la DLQ con el permiso integrations.view. Detalle: ${deadLettersNote ?? "permiso denegado"}`}
         />
       )}
 
@@ -237,9 +298,11 @@ export const IntegrationHealthWorkspace = () => {
               <tbody>
                 {outbox.map((row) => {
                   const mine = attemptsByOutbox.get(row.id) ?? [];
-                  const status = deriveStatus(row.id, attempts, deadOutboxIds);
+                  const status = deriveStatus(row.id, attempts, deadOutboxIds, pendingRetryOutboxIds);
                   const lastFailed = mine.find((a) => a.status === "failed");
-                  const canMove = status === "retrying";
+                  const pendingRequest = pendingRetryByOutbox.get(row.id);
+                  const canManage = hasPermission("integrations.retry");
+                  const canMove = canManage && status === "failed";
                   return (
                     <tr key={row.id}>
                       <td>
@@ -268,7 +331,8 @@ export const IntegrationHealthWorkspace = () => {
                       </td>
                       <td>
                         {status === "delivered" && <span className="flow-status-pill completed">{statusLabel[status]}</span>}
-                        {status === "retrying" && <span className="flow-status-pill processing">{statusLabel[status]}</span>}
+                        {status === "failed" && <span className="flow-status-pill cancelled">{statusLabel[status]}</span>}
+                        {status === "retry_scheduled" && <span className="flow-status-pill processing">{statusLabel[status]}</span>}
                         {status === "pending" && <span className="flow-status-pill processing">{statusLabel[status]}</span>}
                         {status === "dead_letter" && <span className="flow-status-pill cancelled">{statusLabel[status]}</span>}
                       </td>
@@ -276,7 +340,27 @@ export const IntegrationHealthWorkspace = () => {
                         <span style={{ fontSize: "11px", color: "#64748b" }}>{formatDateTime(row.created_at)}</span>
                       </td>
                       <td className="text-right">
-                        <button
+                        <div style={{ display: "inline-flex", justifyContent: "flex-end", flexWrap: "wrap", gap: "6px" }}>
+                        {status === "failed" && canManage && <button
+                          type="button"
+                          className="pag-btn"
+                          onClick={() => openRetry(row, "retry")}
+                        >
+                          <RotateCcw size={12} /> Reintentar
+                        </button>}
+                        {status === "dead_letter" && canManage && <button
+                          type="button"
+                          className="pag-btn"
+                          onClick={() => openRetry(row, "recover")}
+                        >
+                          <RotateCcw size={12} /> Recuperar
+                        </button>}
+                        {pendingRequest && (
+                          <span style={{ fontSize: "11px", color: "#475569" }}>
+                            {pendingRequest.retry_sequence}/5 · {formatDateTime(pendingRequest.available_at)}
+                          </span>
+                        )}
+                        {status === "failed" && canManage && <button
                           type="button"
                           className="pag-btn"
                           style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
@@ -293,7 +377,9 @@ export const IntegrationHealthWorkspace = () => {
                           }}
                         >
                           <RotateCcw size={12} /> A DLQ
-                        </button>
+                        </button>}
+                        {!canManage && <span style={{ fontSize: "11px", color: "#64748b" }}>Solo lectura</span>}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -348,6 +434,42 @@ export const IntegrationHealthWorkspace = () => {
             rows={3}
             style={{ width: "100%", marginTop: "6px" }}
             placeholder="Ej.: proveedor caído tras 5 reintentos, se deriva a revisión manual"
+          />
+        </label>
+      </Modal>
+
+      <Modal
+        isOpen={retryTarget !== null}
+        onClose={() => {
+          setRetryTarget(null);
+          setRetryReason("");
+        }}
+        title={retryAction === "recover" ? "Recuperar evento desde DLQ" : "Programar reintento"}
+        subtitle={retryTarget ? `Evento ${retryTarget.id.slice(0, 8)} · máximo 5 intentos con backoff.` : undefined}
+        footer={
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <button type="button" className="pag-btn" onClick={() => setRetryTarget(null)} disabled={movingId !== null}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void handleConfirmRetry()}
+              disabled={movingId !== null || retryReason.trim() === ""}
+            >
+              {movingId ? "Programando…" : retryAction === "recover" ? "Confirmar recuperación" : "Confirmar reintento"}
+            </button>
+          </div>
+        }
+      >
+        <label style={{ display: "block", fontSize: "13px", color: "var(--text-muted)" }}>
+          Motivo operativo (obligatorio)
+          <textarea
+            value={retryReason}
+            onChange={(event) => setRetryReason(event.target.value)}
+            rows={3}
+            style={{ width: "100%", marginTop: "6px" }}
+            placeholder="Ej.: proveedor restablecido; se verificó que no hubo entrega previa"
           />
         </label>
       </Modal>

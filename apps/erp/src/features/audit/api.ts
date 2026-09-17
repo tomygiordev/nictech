@@ -1,4 +1,6 @@
 import { supabase } from "../../lib/supabase";
+import { z } from "zod";
+import { requestReportExport } from "../../lib/reportExports";
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -22,6 +24,34 @@ export interface AuditEventsResult {
   rows: AuditEventRow[];
   /** false cuando la columna actor_user_id no es visible (RLS/grant) y se usó fallback. */
   actorColumnAvailable: boolean;
+}
+
+const exportedAuditEventSchema = z.object({
+  id: z.coerce.number().int().nonnegative(),
+  occurred_at: z.string(),
+  actor_user_id: z.string().uuid().nullable(),
+  schema_name: z.string(),
+  table_name: z.string(),
+  record_id: z.string().nullable(),
+  action: z.string(),
+  reason: z.string().nullable(),
+  correlation_id: z.string(),
+  metadata: z.record(z.string(), z.unknown()),
+});
+
+export interface AuditExportInput {
+  reason: string;
+  search?: string;
+  schema?: string;
+  table?: string;
+  action?: string;
+  status?: "success" | "warning";
+  rowLimit?: number;
+}
+
+export interface AuditExportResult {
+  rows: AuditEventRow[];
+  truncated: boolean;
 }
 
 const FULL_COLUMNS =
@@ -61,6 +91,28 @@ export const listAuditEvents = async (limit = 100): Promise<AuditEventsResult> =
   return {
     rows: asRows(retry.data).map((r) => ({ ...r, actor_user_id: null })),
     actorColumnAvailable: false,
+  };
+};
+
+export const exportAuditEvents = async (input: AuditExportInput): Promise<AuditExportResult> => {
+  const filters = Object.fromEntries(
+    Object.entries({
+      search: input.search,
+      schema: input.schema,
+      table: input.table,
+      action: input.action,
+      status: input.status,
+    }).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim() !== ""),
+  );
+  const response = await requestReportExport({
+    reportCode: "audit",
+    reason: input.reason,
+    filters,
+    rowLimit: input.rowLimit,
+  });
+  return {
+    rows: z.array(exportedAuditEventSchema).parse(response.rows),
+    truncated: response.truncated,
   };
 };
 

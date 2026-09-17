@@ -339,7 +339,7 @@ export const WhatsappWorkspace = () => {
         <WorkspaceHeader
           title="WhatsApp Business & Comunicaciones"
           description="Bandeja de mensajería con cola de salida persistida y consentimientos."
-          badge="Canal oficial"
+          badge="En desarrollo"
         />
         <StatePanel type="loading" title="Cargando bandeja" message="Consultando conversaciones en Supabase…" />
       </div>
@@ -352,7 +352,7 @@ export const WhatsappWorkspace = () => {
         <WorkspaceHeader
           title="WhatsApp Business & Comunicaciones"
           description="Bandeja de mensajería con cola de salida persistida y consentimientos."
-          badge="Canal oficial"
+          badge="En desarrollo"
         />
         <StatePanel
           type="error"
@@ -375,7 +375,7 @@ export const WhatsappWorkspace = () => {
       <WorkspaceHeader
         title="WhatsApp Business & Comunicaciones"
         description="Bandeja real: conversaciones, consentimientos, plantillas versionadas y cola de salida. El estado de cada mensaje refleja communication_message_events; la integración con Meta WhatsApp Cloud API aún no está conectada, por lo que los mensajes quedan encolados sin simular envíos."
-        badge="Canal oficial"
+        badge="En desarrollo"
       />
 
       {feedback && (
