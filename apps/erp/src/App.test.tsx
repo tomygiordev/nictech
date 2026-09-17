@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
@@ -25,6 +25,7 @@ const renderAppWithPermissions = (permissions: string[]) => {
             refresh_token: "test-refresh",
             user: {
               id: "test-user-id",
+              email: "operador@example.com",
               app_metadata: { permissions },
               user_metadata: { full_name: "Test User" },
               aud: "authenticated",
@@ -32,6 +33,8 @@ const renderAppWithPermissions = (permissions: string[]) => {
             },
           },
           organizationId: "test-org",
+          branchIds: ["test-branch"],
+          permissions,
           loading: false,
           error: null,
           hasPermission: (perm: string) => permissions.includes(perm),
@@ -91,10 +94,8 @@ describe("ERP App Navigation & Workspaces", () => {
 
   it("filters sidebar navigation and finds workspace by submodule search term", async () => {
     renderAppWithPermissions(ALL_PERMISSIONS);
-    const user = userEvent.setup();
-
     const searchInput = screen.getByPlaceholderText("Buscar módulo o workspace...");
-    await user.type(searchInput, "proveedores");
+    fireEvent.change(searchInput, { target: { value: "proveedores" } });
 
     expect(screen.getByRole("button", { name: "Compras y proveedores" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Punto de venta" })).not.toBeInTheDocument();
@@ -107,7 +108,7 @@ describe("ERP App Navigation & Workspaces", () => {
     const catalogBtn = screen.getByRole("button", { name: "Catálogo y precios" });
     await user.click(catalogBtn);
 
-    expect(screen.getByText("Catálogo Maestro de Productos")).toBeInTheDocument();
+    expect(await screen.findByText("Catálogo Maestro de Productos")).toBeInTheDocument();
   });
 
   it("only shows workspaces for which the user has authorized permissions", () => {
@@ -118,6 +119,46 @@ describe("ERP App Navigation & Workspaces", () => {
     expect(screen.queryByRole("button", { name: "Configuración y accesos" })).not.toBeInTheDocument();
   });
 
+  it("exposes a skip link and keeps keyboard focus inside open dialogs", async () => {
+    renderAppWithPermissions(ALL_PERMISSIONS);
+    const user = userEvent.setup();
+
+    expect(screen.getByRole("link", { name: "Saltar al contenido principal" })).toHaveAttribute(
+      "href",
+      "#erp-main-content",
+    );
+
+    const trigger = screen.getByRole("button", { name: "Notificaciones" });
+    trigger.focus();
+    await user.click(trigger);
+
+    const dialog = await screen.findByRole("dialog", { name: "Centro de Notificaciones" });
+    const closeButton = within(dialog).getByRole("button", { name: "Cerrar modal" });
+    await waitFor(() => expect(closeButton).toHaveFocus());
+
+    expect(within(dialog).getByRole("status")).toHaveTextContent("No hay notificaciones disponibles");
+    expect(screen.queryByText("Nuevo pedido web recibido")).not.toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Centro de Notificaciones" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("shows only authenticated session context in the operator profile", async () => {
+    renderAppWithPermissions(["dashboard.view", "stock.view"]);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Perfil de usuario" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Ficha del Operador" });
+    expect(within(dialog).getByText("operador@example.com")).toBeInTheDocument();
+    expect(within(dialog).getByText("1 sucursal asignada")).toBeInTheDocument();
+    expect(within(dialog).getByText("2 habilitados")).toBeInTheDocument();
+    expect(within(dialog).getByText("No incluida en la sesión")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Super Administrador")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Caja 01 Mostrador")).not.toBeInTheDocument();
+  });
+
   it("renders the new functional workspaces without empty states", async () => {
     renderAppWithPermissions(ALL_PERMISSIONS);
     const user = userEvent.setup();
@@ -125,27 +166,27 @@ describe("ERP App Navigation & Workspaces", () => {
     // 1. Online orders
     const ordersBtn = screen.getByRole("button", { name: "Pedidos online" });
     await user.click(ordersBtn);
-    expect(screen.getByText("Pedidos de la Tienda Online (E-commerce Fulfillment)")).toBeInTheDocument();
+    expect(await screen.findByText("Pedidos de la Tienda Online (E-commerce Fulfillment)")).toBeInTheDocument();
 
     // 2. Trade-ins (Equipos usados)
     const tradeInsBtn = screen.getByRole("button", { name: "Equipos usados" });
     await user.click(tradeInsBtn);
-    expect(screen.getByText("Equipos Usados & Canjes en Parte de Pago (Trade-in)")).toBeInTheDocument();
+    expect(await screen.findByText("Equipos Usados & Canjes en Parte de Pago (Trade-in)")).toBeInTheDocument();
 
     // 3. Documents (Documentos y ARCA)
     const docsBtn = screen.getByRole("button", { name: "Documentos y ARCA" });
     await user.click(docsBtn);
-    expect(screen.getByText("Documentos Oficiales & Facturación Electrónica ARCA")).toBeInTheDocument();
+    expect(await screen.findByText("Documentos Fiscales")).toBeInTheDocument();
 
     // 4. WhatsApp
     const whatsappBtn = screen.getByRole("button", { name: "WhatsApp" });
     await user.click(whatsappBtn);
-    expect(screen.getByText("WhatsApp Business & Comunicaciones Omnicanal")).toBeInTheDocument();
+    expect(await screen.findByText("WhatsApp Business & Comunicaciones")).toBeInTheDocument();
 
     // 5. Integration Health (Integraciones)
     const healthBtn = screen.getByRole("button", { name: "Integraciones" });
     await user.click(healthBtn);
-    expect(screen.getByText("Salud de Integraciones & Conectividad del Ecosistema")).toBeInTheDocument();
+    expect(await screen.findByText("Salud de Integraciones & Outbox Transaccional")).toBeInTheDocument();
   });
 
   it("renders login form when there is no active session", () => {
@@ -156,6 +197,8 @@ describe("ERP App Navigation & Workspaces", () => {
           value={{
             session: null,
             organizationId: null,
+            branchIds: [],
+            permissions: [],
             loading: false,
             error: null,
             hasPermission: () => false,

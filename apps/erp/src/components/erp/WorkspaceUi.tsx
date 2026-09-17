@@ -1,4 +1,4 @@
-import React, { useEffect, useId } from "react";
+import React, { useEffect, useId, useRef } from "react";
 import {
   AlertCircle,
   AlertTriangle,
@@ -258,31 +258,112 @@ export const Modal: React.FC<ModalProps> = ({
   icon: Icon,
 }) => {
   const titleId = useId();
+  const subtitleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const previousActiveElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousBodyOverflow = document.body.style.overflow;
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([type='hidden']):not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",");
+    const isTopmostDialog = () => {
+      const dialogs = document.querySelectorAll<HTMLElement>("[data-erp-modal='true']");
+      return dialogs.item(dialogs.length - 1) === dialog;
+    };
+
+    document.body.style.overflow = "hidden";
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      const preferredTarget = dialog.querySelector<HTMLElement>(
+        "[data-autofocus], input:not([type='hidden']):not([disabled]), select:not([disabled]), textarea:not([disabled])",
+      );
+      const firstFocusable = dialog.querySelector<HTMLElement>(focusableSelector);
+      (preferredTarget ?? firstFocusable ?? dialog).focus();
+    });
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isTopmostDialog()) return;
+
       if (e.key === "Escape") {
-        onClose();
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+
+      if (e.key !== "Tab") return;
+
+      const focusableElements = Array.from(
+        dialog.querySelectorAll<HTMLElement>(focusableSelector),
+      );
+      if (focusableElements.length === 0) {
+        e.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (!dialog.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? lastElement : firstElement).focus();
+      } else if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      } else if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
       }
     };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousBodyOverflow;
+      if (previousActiveElement?.isConnected) {
+        previousActiveElement.focus();
+      }
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   return (
     <div
       className="erp-modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="erp-modal-content flow-card" style={{ maxWidth }} tabIndex={-1}>
+      <div
+        ref={dialogRef}
+        className="erp-modal-content flow-card"
+        style={{ maxWidth }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={subtitle ? subtitleId : undefined}
+        data-erp-modal="true"
+        tabIndex={-1}
+      >
         <div className="erp-modal-header">
           <div className="erp-modal-header__title-group">
             {Icon && (
@@ -294,7 +375,11 @@ export const Modal: React.FC<ModalProps> = ({
               <h3 id={titleId} className="erp-modal-title">
                 {title}
               </h3>
-              {subtitle && <p className="erp-modal-subtitle">{subtitle}</p>}
+              {subtitle && (
+                <p id={subtitleId} className="erp-modal-subtitle">
+                  {subtitle}
+                </p>
+              )}
             </div>
           </div>
           <button
@@ -357,6 +442,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <button
           type="button"
           className="pag-btn"
+          data-autofocus
           onClick={onCancel}
           disabled={isPending}
         >

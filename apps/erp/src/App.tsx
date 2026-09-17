@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   type ErpArea,
   type ErpModuleDefinition,
@@ -35,29 +35,91 @@ import {
 } from "lucide-react";
 import { ErpAccessGate } from "./auth/ErpAccessGate";
 import { useErpAuth } from "./auth/ErpAuthContext";
-import { PosWorkspace } from "./features/pos/PosWorkspace";
-import { CashWorkspace } from "./features/cash/CashWorkspace";
-import { AccountsWorkspace } from "./features/finance/AccountsWorkspace";
-import { AccountingWorkspace } from "./features/finance/AccountingWorkspace";
-import { DashboardOverview } from "./features/dashboard/DashboardOverview";
-import { RepairsWorkspace } from "./features/repairs/RepairsWorkspace";
-import { CatalogWorkspace } from "./features/catalog/CatalogWorkspace";
-import { StockWorkspace } from "./features/stock/StockWorkspace";
-import { CustomersWorkspace } from "./features/customers/CustomersWorkspace";
-import { PurchasesWorkspace } from "./features/purchases/PurchasesWorkspace";
-import { QuotesWorkspace } from "./features/quotes/QuotesWorkspace";
-import { PcBuildsWorkspace } from "./features/pcbuilds/PcBuildsWorkspace";
-import { TradeInsWorkspace } from "./features/tradeins/TradeInsWorkspace";
-import { OnlineOrdersWorkspace } from "./features/onlineorders/OnlineOrdersWorkspace";
-import { DocumentsWorkspace } from "./features/documents/DocumentsWorkspace";
-import { WhatsappWorkspace } from "./features/whatsapp/WhatsappWorkspace";
-import { IntegrationHealthWorkspace } from "./features/integrations/IntegrationHealthWorkspace";
-import { AuditWorkspace } from "./features/audit/AuditWorkspace";
-import { SystemWorkspace } from "./features/system/SystemWorkspace";
 import { Modal, ConfirmDialog } from "./components/erp/WorkspaceUi";
 import { getInitials } from "./lib/formatters";
 import { supabase } from "./lib/supabase";
 import "./styles.css";
+
+const DashboardOverview = React.lazy(async () => {
+  const module = await import("./features/dashboard/DashboardOverview");
+  return { default: module.DashboardOverview };
+});
+const PosWorkspace = React.lazy(async () => {
+  const module = await import("./features/pos/PosWorkspace");
+  return { default: module.PosWorkspace };
+});
+const CashWorkspace = React.lazy(async () => {
+  const module = await import("./features/cash/CashWorkspace");
+  return { default: module.CashWorkspace };
+});
+const OnlineOrdersWorkspace = React.lazy(async () => {
+  const module = await import("./features/onlineorders/OnlineOrdersWorkspace");
+  return { default: module.OnlineOrdersWorkspace };
+});
+const CatalogWorkspace = React.lazy(async () => {
+  const module = await import("./features/catalog/CatalogWorkspace");
+  return { default: module.CatalogWorkspace };
+});
+const PricingWorkspace = React.lazy(async () => {
+  const module = await import("./features/catalog/PricingWorkspace");
+  return { default: module.PricingWorkspace };
+});
+const StockWorkspace = React.lazy(async () => {
+  const module = await import("./features/stock/StockWorkspace");
+  return { default: module.StockWorkspace };
+});
+const PurchasesWorkspace = React.lazy(async () => {
+  const module = await import("./features/purchases/PurchasesWorkspace");
+  return { default: module.PurchasesWorkspace };
+});
+const CustomersWorkspace = React.lazy(async () => {
+  const module = await import("./features/customers/CustomersWorkspace");
+  return { default: module.CustomersWorkspace };
+});
+const QuotesWorkspace = React.lazy(async () => {
+  const module = await import("./features/quotes/QuotesWorkspace");
+  return { default: module.QuotesWorkspace };
+});
+const RepairsWorkspace = React.lazy(async () => {
+  const module = await import("./features/repairs/RepairsWorkspace");
+  return { default: module.RepairsWorkspace };
+});
+const PcBuildsWorkspace = React.lazy(async () => {
+  const module = await import("./features/pcbuilds/PcBuildsWorkspace");
+  return { default: module.PcBuildsWorkspace };
+});
+const TradeInsWorkspace = React.lazy(async () => {
+  const module = await import("./features/tradeins/TradeInsWorkspace");
+  return { default: module.TradeInsWorkspace };
+});
+const AccountsWorkspace = React.lazy(async () => {
+  const module = await import("./features/finance/AccountsWorkspace");
+  return { default: module.AccountsWorkspace };
+});
+const AccountingWorkspace = React.lazy(async () => {
+  const module = await import("./features/finance/AccountingWorkspace");
+  return { default: module.AccountingWorkspace };
+});
+const DocumentsWorkspace = React.lazy(async () => {
+  const module = await import("./features/documents/DocumentsWorkspace");
+  return { default: module.DocumentsWorkspace };
+});
+const WhatsappWorkspace = React.lazy(async () => {
+  const module = await import("./features/whatsapp/WhatsappWorkspace");
+  return { default: module.WhatsappWorkspace };
+});
+const IntegrationHealthWorkspace = React.lazy(async () => {
+  const module = await import("./features/integrations/IntegrationHealthWorkspace");
+  return { default: module.IntegrationHealthWorkspace };
+});
+const SystemWorkspace = React.lazy(async () => {
+  const module = await import("./features/system/SystemWorkspace");
+  return { default: module.SystemWorkspace };
+});
+const AuditWorkspace = React.lazy(async () => {
+  const module = await import("./features/audit/AuditWorkspace");
+  return { default: module.AuditWorkspace };
+});
 
 const AREA_LABELS: Record<ErpArea, string> = {
   operaciones: "Operación & Gestión",
@@ -113,7 +175,7 @@ const groupedWorkspaces = ERP_WORKSPACES.reduce<Record<ErpArea, ErpWorkspaceDefi
 );
 
 export const App = () => {
-  const { session, hasPermission } = useErpAuth();
+  const { session, organizationId, branchIds, permissions, hasPermission } = useErpAuth();
   const [activeModuleId, setActiveModuleId] = useState<ErpModuleId>("dashboard");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [navOpen, setNavOpen] = useState<boolean>(false);
@@ -156,6 +218,11 @@ export const App = () => {
 
   const operatorName = session?.user.user_metadata?.full_name || "Operador NicTech";
   const userInitials = useMemo(() => getInitials(operatorName, "NT"), [operatorName]);
+  const branchScopeLabel = branchIds.length === 0
+    ? "Sin sucursal asignada"
+    : branchIds.length === 1
+      ? "1 sucursal asignada"
+      : `${branchIds.length} sucursales asignadas`;
 
   const filteredGroups = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -226,6 +293,9 @@ export const App = () => {
 
   return (
     <div className="erp-shell">
+      <a className="skip-link" href="#erp-main-content">
+        Saltar al contenido principal
+      </a>
       {/* Mobile Backdrop */}
       {navOpen && (
         <button
@@ -237,7 +307,11 @@ export const App = () => {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`side-nav ${navOpen ? "side-nav--open" : ""}`} aria-label="Navegación del ERP">
+      <aside
+        id="erp-navigation"
+        className={`side-nav ${navOpen ? "side-nav--open" : ""}`}
+        aria-label="Navegación del ERP"
+      >
         <div className="brand-lockup">
           <div className="brand-title-wrap">
             <div className="brand-logo-mark">N</div>
@@ -305,7 +379,7 @@ export const App = () => {
             <h1>{activeModuleId === "dashboard" ? "Centro Operativo" : activeModule.label}</h1>
             <p>
               {activeModuleId === "dashboard"
-                ? "Resumen de operaciones y estado del negocio en tiempo real"
+                ? "Resumen de operaciones basado en los datos disponibles del ERP"
                 : activeModule.description}
             </p>
           </div>
@@ -346,7 +420,6 @@ export const App = () => {
               title="Notificaciones y Alertas"
             >
               <Bell size={18} />
-              <span className="header-badge">3</span>
             </button>
 
             {/* WhatsApp / Messaging Button */}
@@ -376,6 +449,8 @@ export const App = () => {
               type="button"
               className="header-action-btn mobile-nav-toggle"
               aria-label="Abrir menú de navegación"
+              aria-controls="erp-navigation"
+              aria-expanded={navOpen}
               onClick={() => setNavOpen(true)}
             >
               <Menu size={18} />
@@ -392,42 +467,16 @@ export const App = () => {
           icon={Bell}
           maxWidth="480px"
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <div
-              style={{ padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)", cursor: "pointer" }}
-              onClick={() => { setIsNotificationsOpen(false); selectModule("online-orders"); }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                <span className="type-badge green">E-commerce</span>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Hace 5 min</span>
-              </div>
-              <strong style={{ fontSize: "13px", display: "block" }}>Nuevo pedido web recibido</strong>
-              <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>Pago aprobado vía Mercado Pago. Listo para preparar despacho.</p>
-            </div>
-
-            <div
-              style={{ padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)", cursor: "pointer" }}
-              onClick={() => { setIsNotificationsOpen(false); selectModule("stock"); }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                <span className="type-badge orange">Alerta de Stock</span>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Hace 20 min</span>
-              </div>
-              <strong style={{ fontSize: "13px", display: "block" }}>Stock bajo en iPhone 15 Pro</strong>
-              <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>Quedan 2 unidades en Depósito Central. Revisar reposición.</p>
-            </div>
-
-            <div
-              style={{ padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)", cursor: "pointer" }}
-              onClick={() => { setIsNotificationsOpen(false); selectModule("repairs"); }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                <span className="type-badge blue">Taller</span>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Hace 1 hora</span>
-              </div>
-              <strong style={{ fontSize: "13px", display: "block" }}>Equipo diagnosticado: NT-8492-X</strong>
-              <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>Cliente confirmó presupuesto de cambio de módulo OLED.</p>
-            </div>
+          <div
+            role="status"
+            style={{ padding: "18px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)" }}
+          >
+            <strong style={{ fontSize: "13px", display: "block", marginBottom: "4px" }}>
+              No hay notificaciones disponibles
+            </strong>
+            <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+              El ERP todavía no tiene una bandeja unificada de alertas. Revisá cada módulo para consultar su estado actual.
+            </p>
           </div>
         </Modal>
 
@@ -446,28 +495,36 @@ export const App = () => {
             </div>
             <div>
               <strong style={{ fontSize: "16px", display: "block" }}>{operatorName}</strong>
-              <span style={{ fontSize: "12px", color: "var(--emerald-success)", fontWeight: 700 }}>● Sesión Activa (Sucursal Central)</span>
+              <span style={{ fontSize: "12px", color: "var(--emerald-success)", fontWeight: 700 }}>● Sesión activa</span>
             </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", marginBottom: "16px" }}>
             <div>
-              <span className="stat-label">Rol</span>
-              <strong style={{ fontSize: "13px", display: "block" }}>Super Administrador</strong>
+              <span className="stat-label">Cuenta</span>
+              <strong style={{ fontSize: "13px", display: "block", overflowWrap: "anywhere" }}>
+                {session?.user.email || "Sin correo informado"}
+              </strong>
             </div>
             <div>
-              <span className="stat-label">Sucursal</span>
-              <strong style={{ fontSize: "13px", display: "block" }}>Central (Belgrano)</strong>
+              <span className="stat-label">Ámbito</span>
+              <strong style={{ fontSize: "13px", display: "block" }}>{branchScopeLabel}</strong>
             </div>
             <div>
               <span className="stat-label">Caja Asignada</span>
-              <strong style={{ fontSize: "13px", display: "block" }}>Caja 01 Mostrador</strong>
+              <strong style={{ fontSize: "13px", display: "block" }}>No incluida en la sesión</strong>
             </div>
             <div>
               <span className="stat-label">Permisos</span>
-              <strong style={{ fontSize: "13px", display: "block", color: "var(--brand-primary)" }}>32 / 32 Habilitados</strong>
+              <strong style={{ fontSize: "13px", display: "block", color: "var(--brand-primary)" }}>
+                {permissions.length} habilitados
+              </strong>
             </div>
           </div>
+
+          <p style={{ margin: "-6px 0 16px", fontSize: "11px", color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+            Organización: {organizationId || "sin organización asignada"}
+          </p>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-line)", paddingTop: "14px" }}>
             <button
@@ -540,7 +597,7 @@ export const App = () => {
         />
 
         {/* Module Content */}
-        <main className="workspace-content">
+        <main id="erp-main-content" className="workspace-content" tabIndex={-1}>
           <ModuleContent moduleId={activeModuleId} onSelectModule={selectModule} />
         </main>
       </div>
@@ -565,8 +622,9 @@ const ModuleContent: React.FC<{
       case "online-orders":
         return <OnlineOrdersWorkspace />;
       case "catalog":
-      case "pricing":
         return <CatalogWorkspace activeModuleId={moduleId} onSelectModule={onSelectModule} />;
+      case "pricing":
+        return <PricingWorkspace onSelectModule={onSelectModule} />;
       case "stock":
       case "stock-counts":
       case "labels":
@@ -613,7 +671,15 @@ const ModuleContent: React.FC<{
 
   return (
     <ErpAccessGate permission={activeModule.permission}>
-      {renderModuleBody()}
+      <Suspense
+        fallback={
+          <div className="workspace-loading" role="status" aria-live="polite">
+            Cargando módulo…
+          </div>
+        }
+      >
+        {renderModuleBody()}
+      </Suspense>
     </ErpAccessGate>
   );
 };

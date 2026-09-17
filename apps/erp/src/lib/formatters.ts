@@ -2,20 +2,23 @@
  * NicTech ERP - Common Data Formatters & Utilities
  */
 
-export function formatCurrency(amount: number | null | undefined, currency: "ARS" | "USD" = "ARS"): string {
-  if (amount === null || amount === undefined || isNaN(amount)) {
+export function formatCurrency(amount: number | null | undefined, currency: string = "ARS"): string {
+  if (amount === null || amount === undefined || !Number.isFinite(amount)) {
     return "—";
   }
 
-  if (currency === "USD") {
-    return `USD ${Math.round(amount).toLocaleString("es-AR")}`;
-  }
-
-  return `$${Math.round(amount).toLocaleString("es-AR")}`;
+  if (!/^[A-Z]{3}$/.test(currency)) return "—";
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency,
+    currencyDisplay: "code",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
 export function formatCurrencyCompact(amount: number | null | undefined, currency: "ARS" | "USD" = "ARS"): string {
-  if (amount === null || amount === undefined || isNaN(amount)) {
+  if (amount === null || amount === undefined || !Number.isFinite(amount)) {
     return "—";
   }
 

@@ -7,6 +7,8 @@ import { parseErpContext } from "./ErpContextValidation";
 export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [branchIds, setBranchIds] = useState<string[]>([]);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +31,9 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
 
       if (!nextSession) {
         setOrganizationId(null);
+        setBranchIds([]);
+        setPermissions([]);
+        setError(null);
         setLoading(false);
         return;
       }
@@ -38,6 +43,9 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
       if (!mounted) return;
 
       if (contextError) {
+        setOrganizationId(null);
+        setBranchIds([]);
+        setPermissions([]);
         setError(contextError.message);
         setLoading(false);
         return;
@@ -46,9 +54,14 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
       try {
         const context = parseErpContext(data);
         setOrganizationId(context.organization_id);
+        setBranchIds(context.branch_ids);
+        setPermissions(context.permissions);
         setError(null);
         setLoading(false);
       } catch (contextParseError) {
+        setOrganizationId(null);
+        setBranchIds([]);
+        setPermissions([]);
         setError(contextParseError instanceof Error ? contextParseError.message : "Contexto ERP inválido");
         setLoading(false);
       }
@@ -56,7 +69,14 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
 
     void client.auth.getSession().then(({ data, error: sessionError }) => {
       if (sessionError) {
-        if (mounted) setError(sessionError.message);
+        if (mounted) {
+          setSession(null);
+          setOrganizationId(null);
+          setBranchIds([]);
+          setPermissions([]);
+          setError(sessionError.message);
+          setLoading(false);
+        }
         return;
       }
       void loadErpContext(data.session);
@@ -76,22 +96,16 @@ export const ErpAuthProvider = ({ children }: { children: React.ReactNode }) => 
     () => ({
       session,
       organizationId,
+      branchIds,
+      permissions,
       loading,
       error,
       hasPermission: (permission: string) => {
         if (!session) return false;
-        const permissions = session.user.app_metadata?.permissions;
-        if (Array.isArray(permissions)) {
-          return permissions.includes(permission);
-        }
-        const role = session.user.app_metadata?.role ?? session.user.user_metadata?.role;
-        if (role === "owner" || role === "admin" || role === "super_admin") {
-          return true;
-        }
-        return false;
+        return permissions.includes(permission);
       },
     }),
-    [error, loading, organizationId, session],
+    [branchIds, error, loading, organizationId, permissions, session],
   );
 
   return <ErpAuthContext.Provider value={value}>{children}</ErpAuthContext.Provider>;

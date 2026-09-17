@@ -13,6 +13,8 @@ const renderWithPermissions = (
       value={{
         session: null,
         organizationId: "test-org",
+        branchIds: ["test-branch"],
+        permissions,
         loading: false,
         error: null,
         hasPermission: (perm: string) => permissions.includes(perm),
