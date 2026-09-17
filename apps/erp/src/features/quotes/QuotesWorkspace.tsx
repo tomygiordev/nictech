@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { z } from "zod";
 import {
   DollarSign,
   CheckCircle,
@@ -44,6 +45,23 @@ interface LineFormItem {
   taxRatePercent: number;
 }
 
+const quoteLineSchema = z.object({
+  kind: z.enum(["product", "service", "free_concept"]),
+  productId: z.string().uuid().optional(),
+  description: z.string().trim().min(1),
+  quantity: z.number().positive(),
+  unitPrice: z.number().nonnegative(),
+  unitCost: z.number().nonnegative(),
+  taxRatePercent: z.number().min(0).max(100),
+}).superRefine((line, context) => {
+  if ((line.kind === "product" || line.kind === "service") && !line.productId) {
+    context.addIssue({ code: "custom", path: ["productId"], message: line.kind === "service" ? "Seleccioná un servicio catalogado." : "Seleccioná un repuesto catalogado." });
+  }
+  if (line.kind === "free_concept" && line.productId) {
+    context.addIssue({ code: "custom", path: ["productId"], message: "Un concepto libre no puede vincularse a un artículo." });
+  }
+});
+
 interface RepairOrderOption {
   id: string;
   order_code: string;
@@ -71,7 +89,7 @@ export const QuotesWorkspace = () => {
   const [lines, setLines] = useState<LineFormItem[]>([
     {
       id: "l-1",
-      kind: "service",
+      kind: "free_concept",
       description: "Mano de obra diagnóstico y reparación",
       quantity: 1,
       unitPrice: 15000,
@@ -88,7 +106,7 @@ export const QuotesWorkspace = () => {
   const [submittingDecision, setSubmittingDecision] = useState<boolean>(false);
 
   // Products for line selector
-  const [availableProducts, setAvailableProducts] = useState<Array<{ id: string; internal_name: string; internal_code: string }>>([]);
+  const [availableProducts, setAvailableProducts] = useState<Array<{ id: string; internal_name: string; internal_code: string; item_kind: "product" | "service" }>>([]);
 
   const fetchQuotesData = useCallback(async () => {
     try {
@@ -116,31 +134,37 @@ export const QuotesWorkspace = () => {
       const [ordersRes, prodsRes] = await Promise.all([
         supabase
           .from("repair_orders_overview")
-          .select("id, order_code, customer_name, brand, model, status, status_is_terminal")
-          .order("created_at", { ascending: false }),
+          .select("id, order_code, customer_name, brand:brand_snapshot, model:model_snapshot, status:status_name, status_is_terminal")
+          .eq("status_is_terminal", false)
+          .order("opened_at", { ascending: false }),
         supabase
           .from("products")
-          .select("id, internal_name, internal_code")
+          .select("id, internal_name, internal_code, item_kind")
           .eq("is_active", true)
           .order("internal_name", { ascending: true }),
       ]);
 
-      const ordersList: RepairOrderOption[] = (ordersRes.data || []).map((o: { id: string; order_code: string; customer_name: string | null; brand: string | null; model: string | null; status: string | null }) => ({
-        id: o.id,
-        order_code: o.order_code,
-        customer_name: o.customer_name || "Cliente taller",
-        brand: o.brand || "",
-        model: o.model || "",
-        status: o.status || "En taller",
-      }));
+      if (ordersRes.error) throw ordersRes.error;
+      if (prodsRes.error) throw prodsRes.error;
+      const ordersList: RepairOrderOption[] = (ordersRes.data ?? []).flatMap((order) => {
+        if (!order.id || !order.order_code) return [];
+        return [{
+          id: order.id,
+          order_code: order.order_code,
+          customer_name: order.customer_name ?? "Cliente taller",
+          brand: order.brand ?? "",
+          model: order.model ?? "",
+          status: order.status ?? "En taller",
+        }];
+      });
       setRepairOrders(ordersList);
       if (ordersList.length > 0 && !selectedOrderId) {
         setSelectedOrderId(ordersList[0].id);
       }
 
-      setAvailableProducts(prodsRes.data || []);
+      setAvailableProducts((prodsRes.data || []).filter((product) => product.item_kind === "product" || product.item_kind === "service"));
     } catch (e) {
-      console.warn("Aviso al cargar órdenes de reparación:", e);
+      setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudieron cargar las órdenes y los productos. Cerrá y volvé a abrir el presupuesto para reintentar." });
     }
   }, [selectedOrderId]);
 
@@ -156,7 +180,7 @@ export const QuotesWorkspace = () => {
       ...prev,
       {
         id: `l-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        kind: "service",
+        kind: "free_concept",
         description: "",
         quantity: 1,
         unitPrice: 0,
@@ -175,6 +199,7 @@ export const QuotesWorkspace = () => {
       prev.map((item, i) => {
         if (i !== index) return item;
         const updated = { ...item, ...patch };
+        if (patch.kind) updated.productId = undefined;
         if (patch.productId && availableProducts.length > 0) {
           const found = availableProducts.find((p) => p.id === patch.productId);
           if (found && !updated.description) {
@@ -223,6 +248,11 @@ export const QuotesWorkspace = () => {
         setFeedback({ type: "error", message: `La línea ${i + 1} debe tener cantidad y precio mayores a 0.` });
         return;
       }
+      const parsedLine = quoteLineSchema.safeParse(l);
+      if (!parsedLine.success) {
+        setFeedback({ type: "error", message: `Línea ${i + 1}: ${parsedLine.error.issues[0]?.message ?? "revisá el tipo de ítem."}` });
+        return;
+      }
     }
 
     try {
@@ -252,7 +282,7 @@ export const QuotesWorkspace = () => {
       setLines([
         {
           id: "l-1",
-          kind: "service",
+          kind: "free_concept",
           description: "Mano de obra diagnóstico y reparación",
           quantity: 1,
           unitPrice: 15000,
@@ -867,7 +897,7 @@ export const QuotesWorkspace = () => {
           {/* Lines Editor */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-              <label className="erp-form-label" style={{ margin: 0 }}>Líneas de Repuestos y Mano de Obra</label>
+            <label className="erp-form-label" style={{ margin: 0 }}>Líneas de Repuestos, Servicios y Conceptos</label>
               <button
                 type="button"
                 className="pag-btn"
@@ -884,7 +914,7 @@ export const QuotesWorkspace = () => {
                   key={item.id}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "110px 2fr 80px 110px 70px 32px",
+                    gridTemplateColumns: "110px 2fr 70px 100px 90px 70px 32px",
                     gap: "8px",
                     alignItems: "center",
                     background: "var(--surface-subtle)",
@@ -903,15 +933,16 @@ export const QuotesWorkspace = () => {
                     <option value="free_concept">Concepto</option>
                   </select>
 
-                  {item.kind === "product" && availableProducts.length > 0 ? (
+                  {(item.kind === "product" || item.kind === "service") ? (
                     <select
                       value={item.productId || ""}
                       onChange={(e) => handleUpdateLine(idx, { productId: e.target.value })}
                       className="erp-form-select"
                       style={{ fontSize: "11px", padding: "4px 6px" }}
+                      required
                     >
-                      <option value="">-- Seleccionar repuesto --</option>
-                      {availableProducts.map((p) => (
+                      <option value="">{item.kind === "service" ? "-- Seleccionar servicio --" : "-- Seleccionar repuesto --"}</option>
+                      {availableProducts.filter((p) => p.item_kind === item.kind).map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.internal_name} ({p.internal_code})
                         </option>
@@ -939,6 +970,21 @@ export const QuotesWorkspace = () => {
                     style={{ fontSize: "12px", padding: "4px 6px", textAlign: "center" }}
                     required
                   />
+
+                  {item.kind === "product" ? (
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "right" }}>Costo ERP</span>
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Costo"
+                      value={item.unitCost}
+                      onChange={(e) => handleUpdateLine(idx, { unitCost: Number(e.target.value) })}
+                      className="erp-form-input"
+                      style={{ fontSize: "12px", padding: "4px 6px", textAlign: "right" }}
+                      required
+                    />
+                  )}
 
                   <input
                     type="number"

@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase";
+import type { Json } from "../../types/supabase";
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -52,36 +53,6 @@ export interface CreateQuoteInput {
   reason?: string;
 }
 
-interface QuoteApiLine {
-  id: string;
-  line_number: number;
-  kind: "product" | "service" | "free_concept";
-  description: string;
-  quantity: number | string;
-  unit_price: number | string;
-  tax_rate_percent: number | string;
-  tax_amount: number | string;
-  line_total: number | string;
-}
-
-interface QuoteApiRow {
-  id: string;
-  repair_order_id: string;
-  version: number;
-  currency_code: string;
-  subtotal_amount: number | string;
-  tax_amount: number | string;
-  total_amount: number | string;
-  issued_at: string | null;
-  expires_at: string | null;
-  created_at: string;
-  repair_orders?: {
-    order_code?: string | null;
-    customers?: { display_name?: string | null; phone?: string | null } | null;
-  } | null;
-  repair_quote_lines?: QuoteApiLine[] | null;
-}
-
 export const listQuotes = async (): Promise<QuoteOverview[]> => {
   const { data, error } = await client()
     .from("repair_quotes")
@@ -122,11 +93,11 @@ export const listQuotes = async (): Promise<QuoteOverview[]> => {
     .select("quote_id, decision, occurred_at");
 
   const decisionMap = new Map<string, { decision: "approved" | "rejected"; at: string }>();
-  (responses || []).forEach((r: { quote_id: string; decision: "approved" | "rejected"; occurred_at: string }) => {
+  (responses ?? []).forEach((r) => {
     decisionMap.set(r.quote_id, { decision: r.decision, at: r.occurred_at });
   });
 
-  return ((data || []) as unknown as QuoteApiRow[]).map((q) => {
+  return (data ?? []).map((q) => {
     const dec = decisionMap.get(q.id);
     return {
       id: q.id,
@@ -144,7 +115,7 @@ export const listQuotes = async (): Promise<QuoteOverview[]> => {
       created_at: q.created_at,
       decision: dec?.decision ?? null,
       decision_at: dec?.at ?? null,
-      lines: (q.repair_quote_lines || []).map((l: QuoteApiLine) => ({
+      lines: (q.repair_quote_lines ?? []).map((l) => ({
         id: l.id,
         line_number: l.line_number,
         kind: l.kind,
@@ -163,36 +134,18 @@ export const createRepairQuote = async (input: CreateQuoteInput): Promise<string
   const currency = input.currencyCode || "ARS";
 
   // Find active exchange rate snapshot for currency
-  let { data: snapshots } = await client()
+  const { data: snapshots, error: snapshotError } = await client()
     .from("exchange_rate_snapshots")
     .select("id")
     .eq("quote_currency", currency)
     .order("quoted_at", { ascending: false })
     .limit(1);
+  if (snapshotError) throw snapshotError;
 
   if (!snapshots || snapshots.length === 0) {
-    const rate = currency === "ARS" ? 1 : 1250;
-    const opKey = `fx-auto-${currency.toLowerCase()}-${Date.now()}`;
-    await client().rpc("capture_exchange_rate", {
-      target_quote_currency: currency,
-      captured_rate_to_base: rate,
-      rate_source: "manual-system",
-      quote_time: new Date().toISOString(),
-      operation_key: opKey,
-      operation_reason: "Auto-captura de tipo de cambio para presupuestos",
-    });
-
-    const { data: retrySnapshots } = await client()
-      .from("exchange_rate_snapshots")
-      .select("id")
-      .eq("quote_currency", currency)
-      .order("quoted_at", { ascending: false })
-      .limit(1);
-    snapshots = retrySnapshots;
-  }
-
-  if (!snapshots || snapshots.length === 0) {
-    throw new Error(`No hay una cotización FX registrada para la moneda ${currency}.`);
+    throw new Error(
+      `No hay una cotización FX aprobada para ${currency}. Registrala en Precios antes de emitir el presupuesto.`,
+    );
   }
 
   const snapshotId = snapshots[0].id;
@@ -207,7 +160,7 @@ export const createRepairQuote = async (input: CreateQuoteInput): Promise<string
     unit_price: l.unit_price,
     unit_cost: l.unit_cost !== undefined ? l.unit_cost : 0,
     tax_rate_percent: l.tax_rate_percent !== undefined ? l.tax_rate_percent : 21,
-  }));
+  })) satisfies Json;
 
   const { data, error } = await client().rpc("create_repair_quote_version", {
     target_repair_order_id: input.repairOrderId,
@@ -219,7 +172,8 @@ export const createRepairQuote = async (input: CreateQuoteInput): Promise<string
   });
 
   if (error) throw error;
-  return data as string;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al crear el presupuesto.");
+  return data;
 };
 
 export const issueRepairQuote = async (quoteId: string): Promise<{ quote_id: string; response_token: string }> => {
@@ -234,7 +188,9 @@ export const issueRepairQuote = async (quoteId: string): Promise<{ quote_id: str
   });
 
   if (error) throw error;
-  return data as { quote_id: string; response_token: string };
+  const result = data?.[0];
+  if (!result) throw new Error("La emisión del presupuesto no devolvió un token de respuesta.");
+  return result;
 };
 
 export const respondQuoteDecision = async (
@@ -245,9 +201,10 @@ export const respondQuoteDecision = async (
   const { data, error } = await client().rpc("respond_quote_direct", {
     target_quote_id: quoteId,
     decision,
-    customer_message: notes || null,
+    customer_message: notes?.trim() || undefined,
   });
 
   if (error) throw error;
-  return data as string;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al registrar la decisión.");
+  return data;
 };

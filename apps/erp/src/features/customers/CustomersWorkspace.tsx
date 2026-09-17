@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { z } from "zod";
 import {
   Users,
   Search,
   Eye,
   Plus,
   Phone,
-  CreditCard,
   Trash2,
   DollarSign,
   TrendingUp,
@@ -24,16 +24,13 @@ import { useErpAuth } from "../../auth/ErpAuthContext";
 export interface CustomerRecord {
   id: string;
   name: string;
-  docType: "DNI" | "CUIT";
-  docNumber: string;
+  kind: "person" | "business";
+  internalCode: string;
   email: string;
   phone: string;
-  city: string;
   totalSpentArs: number;
   ordersCount: number;
   activeRepairs: number;
-  creditBalanceArs: number;
-  notes?: string;
   repairsList?: Array<{
     id: string;
     order_code: string;
@@ -44,8 +41,66 @@ export interface CustomerRecord {
   }>;
 }
 
+type CustomerPrivateDetails = {
+  identity_document: string | null;
+  tax_id: string | null;
+  internal_notes: string | null;
+};
+
+type CustomerFeedback = {
+  type: "success" | "error" | "info";
+  message: string;
+};
+
+const customerFormSchema = z
+  .object({
+    name: z.string().trim().min(2, "Ingresá el nombre o razón social.").max(200),
+    docType: z.enum(["DNI", "CUIT"]),
+    docNumber: z.string().trim().max(30),
+    email: z.union([z.literal(""), z.string().trim().email("Ingresá un email válido.")]),
+    phone: z.string().trim().max(50),
+    notes: z.string().trim().max(2000),
+  })
+  .superRefine((value, context) => {
+    if (!value.docNumber) return;
+    const digits = value.docNumber.replace(/\D/g, "");
+    const valid = value.docType === "CUIT" ? digits.length === 11 : digits.length >= 7 && digits.length <= 8;
+    if (!valid) {
+      context.addIssue({
+        code: "custom",
+        path: ["docNumber"],
+        message: value.docType === "CUIT" ? "El CUIT debe tener 11 dígitos." : "El DNI debe tener 7 u 8 dígitos.",
+      });
+    }
+  });
+
+const createCustomerWithPrivateDetails = async (input: {
+  kind: "person" | "business";
+  displayName: string;
+  email: string | null;
+  phone: string | null;
+  taxId: string | null;
+  identityDocument: string | null;
+  internalNotes: string | null;
+}): Promise<string> => {
+  const { data, error } = await supabase.rpc("create_customer_with_private_details", {
+    new_kind: input.kind,
+    new_display_name: input.displayName,
+    new_legal_name: input.kind === "business" ? input.displayName : undefined,
+    new_email: input.email ?? undefined,
+    new_phone: input.phone ?? undefined,
+    new_tax_id: input.taxId ?? undefined,
+    new_identity_document: input.identityDocument ?? undefined,
+    new_address: {},
+    new_internal_notes: input.internalNotes ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("La base no devolvió el identificador del cliente creado.");
+  return data;
+};
+
 export const CustomersWorkspace = () => {
-  const { organizationId } = useErpAuth();
+  const { organizationId, hasPermission } = useErpAuth();
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +109,10 @@ export const CustomersWorkspace = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
   const [customerToDelete, setCustomerToDelete] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<CustomerFeedback | null>(null);
+  const [privateDetails, setPrivateDetails] = useState<CustomerPrivateDetails | null>(null);
+  const [loadingPrivateDetails, setLoadingPrivateDetails] = useState(false);
+  const [privateDetailsError, setPrivateDetailsError] = useState<string | null>(null);
 
   // Form states for new customer
   const [name, setName] = useState("");
@@ -62,8 +120,6 @@ export const CustomersWorkspace = () => {
   const [docNumber, setDocNumber] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [city, setCity] = useState("CABA");
-  const [creditBalance, setCreditBalance] = useState("0");
   const [notes, setNotes] = useState("");
 
   const fetchCustomers = useCallback(async () => {
@@ -73,37 +129,38 @@ export const CustomersWorkspace = () => {
       const [customersRes, repairsRes, salesRes] = await Promise.all([
         supabase
           .from("customers")
-          .select("id, code, kind, display_name, legal_name, email, phone, whatsapp_phone, is_active, created_at")
+          .select("id, code, kind, display_name, email, phone, whatsapp_phone, is_active, created_at")
           .eq("is_active", true)
           .order("created_at", { ascending: false }),
         supabase
           .from("repair_orders_overview")
-          .select("id, customer_id, order_code, brand, model, status, status_is_terminal, created_at"),
+          .select("id, customer_id, order_code, brand_snapshot, model_snapshot, status_name, status_is_terminal, opened_at"),
         supabase
           .from("sales")
-          .select("id, customer_id, total_amount, status")
-          .eq("status", "completed"),
+          .select("id, customer_id, total_amount"),
       ]);
 
       if (customersRes.error) throw customersRes.error;
+      if (repairsRes.error) throw repairsRes.error;
+      if (salesRes.error) throw salesRes.error;
 
       const repairsByCustomer = new Map<string, Array<{ id: string; order_code: string; brand: string; model: string; status: string; status_is_terminal: boolean }>>();
-      (repairsRes.data || []).forEach((r: { customer_id: string | null; id: string; order_code: string; brand: string | null; model: string | null; status: string | null; status_is_terminal: boolean | null }) => {
-        if (!r.customer_id) return;
+      (repairsRes.data || []).forEach((r) => {
+        if (!r.customer_id || !r.id) return;
         const list = repairsByCustomer.get(r.customer_id) || [];
         list.push({
           id: r.id,
-          order_code: r.order_code,
-          brand: r.brand || "",
-          model: r.model || "",
-          status: r.status || "En taller",
+          order_code: r.order_code || "—",
+          brand: r.brand_snapshot || "",
+          model: r.model_snapshot || "",
+          status: r.status_name || "En taller",
           status_is_terminal: Boolean(r.status_is_terminal),
         });
         repairsByCustomer.set(r.customer_id, list);
       });
 
       const salesByCustomer = new Map<string, { count: number; totalArs: number }>();
-      (salesRes.data || []).forEach((s: { customer_id: string | null; total_amount: number | string | null }) => {
+      (salesRes.data || []).forEach((s) => {
         if (!s.customer_id) return;
         const cur = salesByCustomer.get(s.customer_id) || { count: 0, totalArs: 0 };
         cur.count += 1;
@@ -119,16 +176,13 @@ export const CustomersWorkspace = () => {
         return {
           id: c.id,
           name: c.display_name,
-          docType: c.kind === "company" ? "CUIT" : "DNI",
-          docNumber: c.code || "—",
+          kind: c.kind,
+          internalCode: c.code,
           email: c.email || "—",
           phone: c.phone || c.whatsapp_phone || "—",
-          city: "CABA",
           totalSpentArs: cSales.totalArs,
           ordersCount: cSales.count,
           activeRepairs: activeRepairsCount,
-          creditBalanceArs: 0,
-          notes: c.legal_name || undefined,
           repairsList: cRepairs,
         };
       });
@@ -146,42 +200,71 @@ export const CustomersWorkspace = () => {
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!organizationId) {
+      setFeedback({ type: "error", message: "La sesión no tiene una organización activa. Volvé a iniciar sesión." });
+      return;
+    }
+
+    const parsed = customerFormSchema.safeParse({ name, docType, docNumber, email, phone, notes });
+    if (!parsed.success) {
+      setFeedback({ type: "error", message: parsed.error.issues[0]?.message ?? "Revisá los datos del cliente." });
+      return;
+    }
+
+    if ((parsed.data.docNumber || parsed.data.notes) && !hasPermission("customers.view_sensitive")) {
+      setFeedback({ type: "error", message: "Tu rol no permite guardar documentos ni notas privadas." });
+      return;
+    }
 
     try {
-      const orgId = organizationId || "10000000-0000-0000-0000-000000000001";
-      const code = docNumber.trim() && docNumber.trim() !== "—"
-        ? docNumber.trim()
-        : `CLI-${Date.now().toString().slice(-6)}`;
+      const normalizedDocument = parsed.data.docNumber.replace(/\D/g, "") || null;
+      await createCustomerWithPrivateDetails({
+        kind: parsed.data.docType === "CUIT" ? "business" : "person",
+        displayName: parsed.data.name,
+        email: parsed.data.email || null,
+        phone: parsed.data.phone || null,
+        taxId: parsed.data.docType === "CUIT" ? normalizedDocument : null,
+        identityDocument: parsed.data.docType === "DNI" ? normalizedDocument : null,
+        internalNotes: parsed.data.notes || null,
+      });
 
-      const { error: insErr } = await supabase.from("customers").insert([
-        {
-          organization_id: orgId,
-          code,
-          kind: docType === "CUIT" ? "company" : "person",
-          display_name: name.trim(),
-          legal_name: notes.trim() || null,
-          email: email.trim() || null,
-          phone: phone.trim() || null,
-          is_active: true,
-        },
-      ]);
-
-      if (insErr) throw insErr;
-
-      setFeedback(`¡Cliente "${name.trim()}" registrado correctamente!`);
+      setFeedback({ type: "success", message: `¡Cliente "${parsed.data.name}" registrado correctamente!` });
       setIsNewModalOpen(false);
       setName("");
       setDocNumber("");
       setEmail("");
       setPhone("");
-      setCreditBalance("0");
       setNotes("");
       await fetchCustomers();
     } catch (err) {
-      setFeedback(err instanceof Error ? err.message : "Error al registrar cliente");
+      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al registrar cliente" });
     }
   };
+
+  const openCustomerDetails = useCallback(async (customer: CustomerRecord) => {
+    setSelectedCustomer(customer);
+    setPrivateDetails(null);
+    setPrivateDetailsError(null);
+    if (!hasPermission("customers.view_sensitive")) return;
+
+    try {
+      setLoadingPrivateDetails(true);
+      const { data, error: detailsError } = await supabase.rpc("get_customer_private_details", {
+        target_customer_id: customer.id,
+      });
+      if (detailsError) throw detailsError;
+      const details = data?.[0];
+      setPrivateDetails(details ? {
+        identity_document: details.identity_document,
+        tax_id: details.tax_id,
+        internal_notes: details.internal_notes,
+      } : null);
+    } catch (detailsError) {
+      setPrivateDetailsError(detailsError instanceof Error ? detailsError.message : "No se pudieron cargar los datos privados.");
+    } finally {
+      setLoadingPrivateDetails(false);
+    }
+  }, [hasPermission]);
 
   const confirmDeleteCustomer = async () => {
     if (!customerToDelete) return;
@@ -193,10 +276,10 @@ export const CustomersWorkspace = () => {
       if (delErr) throw delErr;
       if (selectedCustomer?.id === customerToDelete) setSelectedCustomer(null);
       setCustomerToDelete(null);
-      setFeedback("Cliente dado de baja del padrón.");
+      setFeedback({ type: "success", message: "Cliente dado de baja del padrón." });
       await fetchCustomers();
     } catch (err) {
-      setFeedback(err instanceof Error ? err.message : "Error al dar de baja cliente");
+      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al dar de baja cliente" });
     }
   };
 
@@ -206,10 +289,9 @@ export const CustomersWorkspace = () => {
       const q = search.toLowerCase();
       return (
         c.name.toLowerCase().includes(q) ||
-        c.docNumber.includes(q) ||
+        c.internalCode.toLowerCase().includes(q) ||
         c.email.toLowerCase().includes(q) ||
-        c.phone.includes(q) ||
-        c.city.toLowerCase().includes(q)
+        c.phone.includes(q)
       );
     });
   }, [customers, search]);
@@ -218,22 +300,18 @@ export const CustomersWorkspace = () => {
     return customers.reduce((acc, c) => acc + c.totalSpentArs, 0);
   }, [customers]);
 
-  const totalCredit = useMemo(() => {
-    return customers.reduce((acc, c) => acc + c.creditBalanceArs, 0);
-  }, [customers]);
-
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
         title="Gestión de Clientes & CRM"
-        description="Ficha unificada de clientes, historial de compras, reparaciones activas en taller y cuenta corriente de crédito."
+        description="Ficha unificada de clientes, historial de compras y reparaciones activas en taller."
         badge={`${customers.length} Clientes Registrados`}
       />
 
       {feedback && (
         <FeedbackAlert
-          type="success"
-          message={feedback}
+          type={feedback.type}
+          message={feedback.message}
           onClose={() => setFeedback(null)}
         />
       )}
@@ -259,15 +337,6 @@ export const CustomersWorkspace = () => {
         />
 
         <KpiCard
-          icon={CreditCard}
-          iconVariant="steel"
-          label="Crédito Otorgado"
-          value={formatCurrency(totalCredit, "ARS")}
-          trend={{ text: "Saldos", positive: true }}
-          sublabel="Cuentas corrientes activas"
-        />
-
-        <KpiCard
           icon={TrendingUp}
           iconVariant="dark"
           label="Ticket Promedio"
@@ -282,7 +351,7 @@ export const CustomersWorkspace = () => {
         <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h2 className="flow-card__title">Directorio de Clientes</h2>
-            <p className="flow-card__subtitle">Búsqueda rápida por nombre, DNI/CUIT, teléfono o ciudad</p>
+            <p className="flow-card__subtitle">Búsqueda por nombre, código interno, email o teléfono</p>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -300,6 +369,7 @@ export const CustomersWorkspace = () => {
               type="button"
               className="btn-primary"
               onClick={() => setIsNewModalOpen(true)}
+              disabled={!hasPermission("customers.manage")}
             >
               <Plus size={16} />
               Nuevo Cliente
@@ -311,29 +381,41 @@ export const CustomersWorkspace = () => {
           <table className="flow-table">
             <thead>
               <tr>
-                <th>Documento</th>
+                <th>Código interno</th>
                 <th>Nombre / Razón Social</th>
                 <th>Contacto</th>
-                <th>Ciudad</th>
                 <th>Compras</th>
                 <th>Taller</th>
-                <th>Saldo Crédito</th>
                 <th className="text-right">Acción</th>
               </tr>
             </thead>
             <tbody>
               {filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: "36px", color: "var(--text-muted)" }}>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "36px", color: "var(--text-muted)" }}>
                     {loading ? "Cargando clientes desde la base de datos…" : error ? `Error: ${error}` : "No hay clientes registrados en el sistema."}
                   </td>
                 </tr>
               ) : (
                 filteredCustomers.map((c) => (
-                <tr key={c.id} style={{ cursor: "pointer" }} onClick={() => setSelectedCustomer(c)}>
+                <tr
+                  key={c.id}
+                  className="interactive-row"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Abrir ficha de ${c.name}`}
+                  onClick={() => void openCustomerDetails(c)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      void openCustomerDetails(c);
+                    }
+                  }}
+                >
                   <td>
                     <span className="type-badge blue" style={{ fontFamily: "monospace" }}>
-                      {c.docType}: {c.docNumber}
+                      {c.internalCode}
                     </span>
                   </td>
                   <td>
@@ -346,9 +428,6 @@ export const CustomersWorkspace = () => {
                     </div>
                   </td>
                   <td>
-                    <span style={{ fontSize: "12px" }}>{c.city}</span>
-                  </td>
-                  <td>
                     <span className="type-badge green">{c.ordersCount} pedidos</span>
                   </td>
                   <td>
@@ -358,11 +437,6 @@ export const CustomersWorkspace = () => {
                       <span style={{ fontSize: "12px", color: "var(--text-light)" }}>—</span>
                     )}
                   </td>
-                  <td>
-                    <strong style={{ color: c.creditBalanceArs > 0 ? "var(--emerald-success)" : "var(--text-muted)" }}>
-                      {formatCurrency(c.creditBalanceArs, "ARS")}
-                    </strong>
-                  </td>
                   <td className="text-right">
     <div style={{ display: "inline-flex", gap: "6px" }}>
       <button
@@ -371,24 +445,26 @@ export const CustomersWorkspace = () => {
         style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--brand-primary)", borderColor: "var(--brand-border)" }}
         onClick={(e) => {
           e.stopPropagation();
-          setSelectedCustomer(c);
+          void openCustomerDetails(c);
         }}
         title="Ver Ficha / Historial"
       >
         <Eye size={12} /> Ficha
       </button>
-      <button
-        type="button"
-        className="pag-btn"
-        style={{ color: "var(--rose-accent)", padding: "4px 8px" }}
-        onClick={(e) => {
-          e.stopPropagation();
-          setCustomerToDelete(c.id);
-        }}
-        aria-label={`Eliminar cliente ${c.name}`}
-      >
-        <Trash2 size={13} />
-      </button>
+      {hasPermission("customers.manage") && (
+        <button
+          type="button"
+          className="pag-btn"
+          style={{ color: "var(--rose-accent)", padding: "4px 8px" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setCustomerToDelete(c.id);
+          }}
+          aria-label={`Eliminar cliente ${c.name}`}
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
     </div>
   </td>
 </tr>
@@ -404,7 +480,7 @@ export const CustomersWorkspace = () => {
           isOpen={Boolean(selectedCustomer)}
           onClose={() => setSelectedCustomer(null)}
           title={`Ficha de Cliente: ${selectedCustomer.name}`}
-          subtitle={`${selectedCustomer.docType}: ${selectedCustomer.docNumber} • ${selectedCustomer.city}`}
+          subtitle={`Código interno: ${selectedCustomer.internalCode}`}
           icon={Users}
           maxWidth="560px"
         >
@@ -423,18 +499,34 @@ export const CustomersWorkspace = () => {
                 </strong>
               </div>
               <div>
-                <span className="stat-label">Saldo a Favor / Crédito</span>
-                <strong style={{ display: "block", fontSize: "14px", marginTop: "2px", color: selectedCustomer.creditBalanceArs > 0 ? "var(--emerald-success)" : "var(--text-main)" }}>
-                  {formatCurrency(selectedCustomer.creditBalanceArs, "ARS")}
-                </strong>
-              </div>
-              <div>
                 <span className="stat-label">Facturado Histórico</span>
                 <strong style={{ display: "block", fontSize: "14px", marginTop: "2px", color: "var(--brand-primary)" }}>
                   {formatCurrency(selectedCustomer.totalSpentArs, "ARS")}
                 </strong>
               </div>
             </div>
+
+            {hasPermission("customers.view_sensitive") ? (
+              <div style={{ padding: "12px", background: "var(--surface-subtle)", borderRadius: "10px" }}>
+                <span className="stat-label">Datos privados (acceso auditado)</span>
+                {loadingPrivateDetails ? (
+                  <p style={{ margin: "6px 0 0", fontSize: "13px" }}>Cargando datos privados…</p>
+                ) : privateDetailsError ? (
+                  <p style={{ margin: "6px 0 0", fontSize: "13px", color: "var(--rose-accent)" }}>{privateDetailsError}</p>
+                ) : (
+                  <div style={{ display: "grid", gap: "6px", marginTop: "8px", fontSize: "13px" }}>
+                    <span>
+                      {selectedCustomer.kind === "business" ? "CUIT" : "DNI"}: {selectedCustomer.kind === "business"
+                        ? privateDetails?.tax_id || "No registrado"
+                        : privateDetails?.identity_document || "No registrado"}
+                    </span>
+                    {privateDetails?.internal_notes && <span>Notas: {privateDetails.internal_notes}</span>}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <FeedbackAlert type="info" message="Los documentos y notas privadas requieren el permiso customers.view_sensitive." />
+            )}
 
             {selectedCustomer.repairsList && selectedCustomer.repairsList.length > 0 && (
               <div style={{ padding: "12px", background: "var(--surface-subtle)", borderRadius: "10px" }}>
@@ -468,15 +560,6 @@ export const CustomersWorkspace = () => {
               </div>
             )}
 
-            {selectedCustomer.notes && (
-              <div style={{ padding: "12px", background: "var(--surface-subtle)", borderRadius: "10px" }}>
-                <span className="stat-label">Notas del Cliente:</span>
-                <p style={{ margin: "4px 0 0", fontSize: "13px", color: "var(--text-main)", fontWeight: 500 }}>
-                  {selectedCustomer.notes}
-                </p>
-              </div>
-            )}
-
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
               {selectedCustomer.phone && selectedCustomer.phone !== "—" && (
                 <a
@@ -489,14 +572,16 @@ export const CustomersWorkspace = () => {
                   <Phone size={14} /> WhatsApp
                 </a>
               )}
-              <button
-                type="button"
-                className="pag-btn"
-                style={{ color: "var(--rose-accent)", marginLeft: "auto" }}
-                onClick={() => setCustomerToDelete(selectedCustomer.id)}
-              >
-                <Trash2 size={14} /> Eliminar Cliente
-              </button>
+              {hasPermission("customers.manage") && (
+                <button
+                  type="button"
+                  className="pag-btn"
+                  style={{ color: "var(--rose-accent)", marginLeft: "auto" }}
+                  onClick={() => setCustomerToDelete(selectedCustomer.id)}
+                >
+                  <Trash2 size={14} /> Eliminar Cliente
+                </button>
+              )}
             </div>
           </div>
         </Modal>
@@ -524,7 +609,7 @@ export const CustomersWorkspace = () => {
             />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
+          {hasPermission("customers.view_sensitive") && <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
             <div className="erp-form-group">
               <label className="erp-form-label">Tipo Doc.</label>
               <select
@@ -546,7 +631,7 @@ export const CustomersWorkspace = () => {
                 className="erp-form-input"
               />
             </div>
-          </div>
+          </div>}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
@@ -571,29 +656,7 @@ export const CustomersWorkspace = () => {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Localidad / Ciudad</label>
-              <input
-                type="text"
-                placeholder="Ej: Belgrano, CABA"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="erp-form-input"
-              />
-            </div>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Crédito Inicial ($ ARS)</label>
-              <input
-                type="number"
-                value={creditBalance}
-                onChange={(e) => setCreditBalance(e.target.value)}
-                className="erp-form-input"
-              />
-            </div>
-          </div>
-
-          <div className="erp-form-group">
+          {hasPermission("customers.view_sensitive") && <div className="erp-form-group">
             <label className="erp-form-label">Observaciones / Notas</label>
             <textarea
               rows={2}
@@ -602,7 +665,7 @@ export const CustomersWorkspace = () => {
               onChange={(e) => setNotes(e.target.value)}
               className="erp-form-textarea"
             />
-          </div>
+          </div>}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
             <button type="button" className="pag-btn" onClick={() => setIsNewModalOpen(false)}>Cancelar</button>
