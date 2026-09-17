@@ -123,9 +123,9 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           `
           id, internal_code, internal_name, public_name, base_sale_price,
           tax_rate_percent, is_active, item_kind, inventory_tracking, created_at,
-          product_categories(name),
-          brands(name),
-          product_models(name),
+          product_categories:product_categories!products_category_id_fkey(name),
+          brands:brands!products_brand_id_fkey(name),
+          product_models:product_models!products_model_id_fkey(name),
           product_variants(id, code, name, price_delta, is_active, product_identifiers(kind, value)),
           stock_balances(quantity_on_hand, quantity_reserved, variant_id)
         `,
@@ -142,7 +142,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
       const { data, error: dbErr, count } = await query;
 
       if (dbErr) throw dbErr;
-      setProducts((data as unknown as DbCatalogProduct[]) || []);
+      setProducts(data ?? []);
       setTotalCount(count ?? 0);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error al cargar catálogo ERP";
@@ -233,10 +233,6 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           p_internal_name: newName.trim(),
           p_item_kind: "product",
           p_inventory_tracking: "quantity",
-          p_category_id: null,
-          p_brand_id: null,
-          p_model_id: null,
-          p_unit_id: null,
           p_base_cost: 0,
           p_base_sale_price: price,
           p_tax_rate_percent: 21,

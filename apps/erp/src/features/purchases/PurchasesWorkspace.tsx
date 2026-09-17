@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 import {
   ShoppingCart,
   Search,
@@ -11,6 +14,7 @@ import {
   CheckCircle2,
   PackageCheck,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import {
   WorkspaceHeader,
@@ -22,6 +26,7 @@ import {
 import { type ErpModuleId } from "@nictech/domain";
 import { formatCurrency, formatDate } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
+import { useErpAuth } from "../../auth/ErpAuthContext";
 
 export interface DbPoLine {
   id: string;
@@ -91,15 +96,120 @@ interface NewOrderLine {
   unitPrice: number;
 }
 
+const poHeaderSchema = z.object({
+  branchId: z.string().uuid("Seleccioná una sucursal válida."),
+  supplierId: z.string().uuid("Seleccioná un proveedor válido."),
+  reason: z.string().trim().min(3, "Indicá un motivo de al menos 3 caracteres.").max(240),
+});
+
+const poLinesSchema = z.array(z.object({
+  productId: z.string().uuid(),
+  variantId: z.union([z.string().uuid(), z.literal("")]),
+  quantity: z.number().int().positive(),
+  unitPrice: z.number().finite().nonnegative(),
+})).min(1, "Agregá al menos una línea de compra.");
+
+const receiptSchema = z.object({
+  locationId: z.string().uuid("Seleccioná una ubicación válida."),
+  invoiceNumber: z.string().trim().max(80, "La referencia no puede superar 80 caracteres."),
+});
+
+const supplierSchema = z.object({
+  name: z.string().trim().min(2, "Ingresá al menos 2 caracteres.").max(160),
+  taxId: z.string().trim().max(32),
+  category: z.string().trim().max(120),
+  termsDays: z.coerce.number().int().min(0).max(3650),
+  contact: z.string().trim().max(160),
+});
+
+const supplierPaymentSchema = z.object({
+  payableId: z.string().uuid("Seleccioná una deuda válida."),
+  paymentMethodId: z.string().uuid("Seleccioná un medio de pago válido."),
+  cashSessionId: z.union([z.string().uuid("Seleccioná una caja válida."), z.literal("")]),
+  amount: z.coerce.number().finite().positive("El monto debe ser mayor que cero."),
+  reference: z.string().trim().max(120, "La referencia no puede superar 120 caracteres."),
+  reason: z.string().trim().min(3, "Indicá un motivo de al menos 3 caracteres.").max(240),
+  requiresCashSession: z.boolean(),
+}).superRefine((values, context) => {
+  if (values.requiresCashSession && !values.cashSessionId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["cashSessionId"],
+      message: "El medio seleccionado requiere una caja abierta compatible.",
+    });
+  }
+  if (!values.requiresCashSession && values.cashSessionId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["cashSessionId"],
+      message: "Este medio de pago no debe vincularse a una caja.",
+    });
+  }
+});
+
+const supplierPaymentReversalSchema = z.object({
+  reason: z.string().trim().min(5, "Indicá un motivo de al menos 5 caracteres.").max(240),
+});
+
+const nullableRpcString = (value: string | null): string => value as string;
+
+type PoHeaderValues = z.infer<typeof poHeaderSchema>;
+type ReceiptValues = z.infer<typeof receiptSchema>;
+type SupplierValues = z.infer<typeof supplierSchema>;
+type SupplierPaymentValues = z.infer<typeof supplierPaymentSchema>;
+type SupplierPaymentReversalValues = z.infer<typeof supplierPaymentReversalSchema>;
+
+interface SupplierPayableOption {
+  id: string;
+  branch_id: string;
+  supplier_id: string;
+  currency_code: string;
+  due_at: string;
+  amount_currency: number;
+  outstanding_currency: number;
+  outstanding_base: number;
+}
+
+interface SupplierPaymentMethodOption {
+  id: string;
+  code: string;
+  name: string;
+  settlement_kind: string;
+  requires_cash_session: boolean;
+}
+
+interface SupplierCashSessionOption {
+  id: string;
+  branch_id: string;
+  cash_register_code: string;
+  cash_register_name: string;
+  opened_at: string;
+  currencies: string[];
+}
+
+interface SupplierPaymentHistoryItem {
+  id: string;
+  branch_id: string;
+  amount_currency: number;
+  currency_code: string;
+  occurred_at: string;
+  reference: string | null;
+  reason: string;
+  payment_methods: { name: string } | null;
+  supplier_payment_reversals: Array<{ id: string }>;
+}
+
 export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
   activeModuleId = "purchases",
   onSelectModule,
 }) => {
+  const { organizationId, hasPermission } = useErpAuth();
   const [search, setSearch] = useState("");
   const [purchases, setPurchases] = useState<DbPurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierItem[]>([]);
   const [productsCatalog, setProductsCatalog] = useState<ProductOption[]>([]);
-  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [locations, setLocations] = useState<Array<{ id: string; branch_id: string; code: string; name: string; kind: string }>>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -110,45 +220,96 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [receiptTargetPo, setReceiptTargetPo] = useState<DbPurchaseOrder | null>(null);
   const [receiptQuantities, setReceiptQuantities] = useState<Record<string, number>>({});
-  const [receiptLocationId, setReceiptLocationId] = useState<string>("");
-  const [receiptInvoiceNumber, setReceiptInvoiceNumber] = useState<string>("");
   const [selectedSupplierInfo, setSelectedSupplierInfo] = useState<SupplierItem | null>(null);
+  const [supplierPaymentTarget, setSupplierPaymentTarget] = useState<SupplierItem | null>(null);
+  const [supplierPayables, setSupplierPayables] = useState<SupplierPayableOption[]>([]);
+  const [supplierPaymentMethods, setSupplierPaymentMethods] = useState<SupplierPaymentMethodOption[]>([]);
+  const [supplierCashSessions, setSupplierCashSessions] = useState<SupplierCashSessionOption[]>([]);
+  const [supplierPaymentHistory, setSupplierPaymentHistory] = useState<SupplierPaymentHistoryItem[]>([]);
+  const [loadingSupplierPaymentHistory, setLoadingSupplierPaymentHistory] = useState(false);
+  const [supplierPaymentReversalTarget, setSupplierPaymentReversalTarget] = useState<SupplierPaymentHistoryItem | null>(null);
+  const [loadingSupplierPayment, setLoadingSupplierPayment] = useState(false);
+  const [submittingSupplierPayment, setSubmittingSupplierPayment] = useState(false);
+  const [submittingSupplierPaymentReversal, setSubmittingSupplierPaymentReversal] = useState(false);
 
   // Form state for PO
-  const [poSupplierId, setPoSupplierId] = useState("");
-  const [poReason, setPoReason] = useState("Compra de mercadería");
   const [poLines, setPoLines] = useState<NewOrderLine[]>([
     { productId: "", variantId: "", quantity: 10, unitPrice: 2500 },
   ]);
   const [submittingPo, setSubmittingPo] = useState(false);
   const [submittingReceipt, setSubmittingReceipt] = useState(false);
 
-  // Form state for Supplier
-  const [supName, setSupName] = useState("");
-  const [supCuit, setSupCuit] = useState("");
-  const [supCategory, setSupCategory] = useState("Accesorios & Fundas");
-  const [supTerms, setSupTerms] = useState("30");
-  const [supContact, setSupContact] = useState("");
   const [savingSupplier, setSavingSupplier] = useState(false);
+  const poOperationRef = useRef<{ signature: string; key: string } | null>(null);
+  const supplierPaymentOperationRef = useRef<{ signature: string; key: string } | null>(null);
+  const supplierPaymentReversalOperationRef = useRef<{ signature: string; key: string } | null>(null);
+  const poForm = useForm<PoHeaderValues>({
+    resolver: zodResolver(poHeaderSchema),
+    defaultValues: { branchId: "", supplierId: "", reason: "Compra de mercadería" },
+  });
+  const receiptForm = useForm<ReceiptValues>({
+    resolver: zodResolver(receiptSchema),
+    defaultValues: { locationId: "", invoiceNumber: "" },
+  });
+  const supplierForm = useForm<SupplierValues>({
+    resolver: zodResolver(supplierSchema),
+    defaultValues: {
+      name: "",
+      taxId: "",
+      category: "Accesorios & Fundas",
+      termsDays: 30,
+      contact: "",
+    },
+  });
+  const supplierPaymentForm = useForm<SupplierPaymentValues>({
+    resolver: zodResolver(supplierPaymentSchema),
+    defaultValues: {
+      payableId: "",
+      paymentMethodId: "",
+      cashSessionId: "",
+      amount: 0,
+      reference: "",
+      reason: "Pago de cuenta corriente a proveedor",
+      requiresCashSession: false,
+    },
+  });
+  const supplierPaymentReversalForm = useForm<SupplierPaymentReversalValues>({
+    resolver: zodResolver(supplierPaymentReversalSchema),
+    defaultValues: { reason: "" },
+  });
+  const poSupplierId = poForm.watch("supplierId");
+  const receiptLocationId = receiptForm.watch("locationId");
+  const selectedSupplierPayableId = supplierPaymentForm.watch("payableId");
+  const selectedSupplierPaymentMethodId = supplierPaymentForm.watch("paymentMethodId");
 
   const fetchSuppliers = useCallback(async () => {
+    if (!organizationId) {
+      setError("No hay una organización ERP activa para consultar proveedores.");
+      return;
+    }
+
     try {
       const { data, error: dbErr } = await supabase
         .from("suppliers")
         .select("id, code, display_name, legal_name, tax_id, email, phone, notes, payment_terms_days, is_active, created_at")
+        .eq("organization_id", organizationId)
         .eq("is_active", true)
         .order("created_at", { ascending: false });
 
       if (dbErr) throw dbErr;
 
-      // Fetch payables to calculate real supplier debt (Finding 3)
-      const { data: payablesData } = await supabase
-        .from("supplier_payables")
-        .select("supplier_id, pending_amount_base");
+      const { data: accountEntriesData, error: accountEntriesError } = await supabase
+        .from("supplier_account_entries")
+        .select("supplier_id, amount_base_delta")
+        .eq("organization_id", organizationId);
+
+      if (accountEntriesError) {
+        throw new Error(`No se pudo calcular la deuda con proveedores: ${accountEntriesError.message}`);
+      }
 
       const debtMap: Record<string, number> = {};
-      (payablesData || []).forEach((p) => {
-        debtMap[p.supplier_id] = (debtMap[p.supplier_id] || 0) + Number(p.pending_amount_base || 0);
+      (accountEntriesData || []).forEach((entry) => {
+        debtMap[entry.supplier_id] = (debtMap[entry.supplier_id] || 0) + Number(entry.amount_base_delta || 0);
       });
 
       const mapped: SupplierItem[] = (data || []).map((s) => ({
@@ -162,14 +323,20 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
       }));
       setSuppliers(mapped);
       if (mapped.length > 0 && !poSupplierId) {
-        setPoSupplierId(mapped[0].id);
+        poForm.setValue("supplierId", mapped[0].id, { shouldValidate: false });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar proveedores");
     }
-  }, [poSupplierId]);
+  }, [organizationId, poForm, poSupplierId]);
 
   const fetchPurchases = useCallback(async () => {
+    if (!organizationId) {
+      setLoading(false);
+      setError("No hay una organización ERP activa para consultar compras.");
+      return;
+    }
+
     try {
       setLoading(true);
       const { data, error: dbErr } = await supabase
@@ -188,27 +355,50 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
             purchase_receipt_lines(id, purchase_order_line_id, quantity)
           )
         `)
+        .eq("organization_id", organizationId)
         .order("ordered_at", { ascending: false });
 
       if (dbErr) throw dbErr;
-      setPurchases((data as unknown as DbPurchaseOrder[]) || []);
+      setPurchases(data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar órdenes de compra");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [organizationId]);
 
   const fetchCatalogAndLocations = useCallback(async () => {
+    if (!organizationId) return;
+
     try {
-      const { data: prodData } = await supabase
-        .from("products")
-        .select(`
-          id, internal_name, internal_code, base_sale_price,
-          product_variants(id, name, code)
-        `)
-        .eq("is_active", true)
-        .order("internal_name");
+      const [productResult, branchResult, locationResult] = await Promise.all([
+        supabase
+          .from("products")
+          .select(`
+            id, internal_name, internal_code, base_sale_price,
+            product_variants(id, name, code)
+          `)
+          .eq("organization_id", organizationId)
+          .eq("is_active", true)
+          .order("internal_name"),
+        supabase
+          .from("branches")
+          .select("id, name")
+          .eq("organization_id", organizationId)
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("locations")
+          .select("id, branch_id, code, name, kind")
+          .eq("organization_id", organizationId)
+          .eq("is_active", true)
+          .order("name"),
+      ]);
+
+      const firstError = [productResult.error, branchResult.error, locationResult.error].find(Boolean);
+      if (firstError) throw firstError;
+
+      const prodData = productResult.data;
 
       if (prodData) {
         const mapped: ProductOption[] = prodData.map((p) => ({
@@ -219,35 +409,29 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
           variants: (p.product_variants as Array<{ id: string; name: string; code: string }>) || [],
         }));
         setProductsCatalog(mapped);
-        if (mapped.length > 0 && !poLines[0].productId) {
+        setPoLines((previous) => {
+          if (previous[0]?.productId || mapped.length === 0) return previous;
           const first = mapped[0];
-          setPoLines([
-            {
-              productId: first.id,
-              variantId: first.variants.length > 0 ? first.variants[0].id : "",
-              quantity: 10,
-              unitPrice: 2500,
-            },
-          ]);
-        }
+          return [{
+            productId: first.id,
+            variantId: first.variants.length > 0 ? first.variants[0].id : "",
+            quantity: 10,
+            unitPrice: 2500,
+          }];
+        });
       }
 
-      const { data: locData } = await supabase
-        .from("locations")
-        .select("id, name")
-        .eq("is_active", true)
-        .order("name");
-
-      if (locData) {
-        setLocations(locData);
-        if (locData.length > 0 && !receiptLocationId) {
-          setReceiptLocationId(locData[0].id);
-        }
+      const branchData = branchResult.data || [];
+      const locationData = locationResult.data || [];
+      setBranches(branchData);
+      setLocations(locationData);
+      if (branchData.length > 0 && !poForm.getValues("branchId")) {
+        poForm.setValue("branchId", branchData[0].id, { shouldValidate: false });
       }
     } catch (e) {
-      console.error(e);
+      setError(e instanceof Error ? e.message : "Error al cargar el contexto operativo de compras");
     }
-  }, [poLines, receiptLocationId]);
+  }, [organizationId, poForm]);
 
   useEffect(() => {
     void fetchSuppliers();
@@ -292,9 +476,12 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
   };
 
   // Create real purchase order in ERP (Finding 3 & 4)
-  const handleCreatePo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!poSupplierId || poLines.length === 0) return;
+  const handleCreatePo = async (values: PoHeaderValues) => {
+    const parsedLines = poLinesSchema.safeParse(poLines);
+    if (!parsedLines.success) {
+      setError(parsedLines.error.issues[0]?.message || "Revisá las líneas de compra.");
+      return;
+    }
 
     try {
       setSubmittingPo(true);
@@ -306,23 +493,24 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
       });
       if (snapErr) throw snapErr;
 
-      const opKey = `po-client-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      const branchId = "20000000-0000-0000-0000-000000000001";
-
-      const linesPayload = poLines.map((l) => ({
+      const linesPayload = parsedLines.data.map((l) => ({
         product_id: l.productId,
         variant_id: l.variantId || null,
-        quantity: Math.round(Number(l.quantity)), // Enforces integer quantities (Finding 9)
+        quantity: l.quantity,
         unit_price: Number(l.unitPrice),
       }));
+      const signature = JSON.stringify({ ...values, lines: linesPayload });
+      if (poOperationRef.current?.signature !== signature) {
+        poOperationRef.current = { signature, key: `po-client-${crypto.randomUUID()}` };
+      }
 
       const { data: orderId, error: poErr } = await supabase.rpc("create_purchase_order", {
-        target_branch_id: branchId,
-        target_supplier_id: poSupplierId,
+        target_branch_id: values.branchId,
+        target_supplier_id: values.supplierId,
         order_currency: "ARS",
         target_exchange_snapshot_id: snapId,
-        operation_key: opKey,
-        operation_reason: poReason.trim() || "Compra de mercadería y accesorios",
+        operation_key: poOperationRef.current.key,
+        operation_reason: values.reason,
         lines: linesPayload,
       });
 
@@ -333,6 +521,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
         message: `¡Orden de compra emitida correctamente en el ERP! (ID: ${String(orderId).slice(0, 8).toUpperCase()})`,
       });
       setIsPoModalOpen(false);
+      poOperationRef.current = null;
       await fetchPurchases();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al emitir orden de compra");
@@ -383,14 +572,14 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
     });
 
     setReceiptQuantities(initialQtys);
-    setReceiptInvoiceNumber("");
+    const destination = locations.find((location) => location.branch_id === po.branch_id && location.code === "DEPOSITO" && location.kind !== "quarantine");
+    receiptForm.reset({ locationId: destination?.id || "", invoiceNumber: "" });
     setIsReceiptModalOpen(true);
   };
 
   // Submit Partial Receipt calling post_purchase_receipt (Finding 4, 15)
-  const handlePostReceipt = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!receiptTargetPo || !receiptLocationId) return;
+  const handlePostReceipt = async (values: ReceiptValues) => {
+    if (!receiptTargetPo) return;
 
     try {
       setSubmittingReceipt(true);
@@ -410,7 +599,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
           receiptLinesPayload.push({
             line_number: lineNum++,
             purchase_order_line_id: line.id,
-            to_location_id: receiptLocationId,
+            to_location_id: values.locationId,
             quantity: qtyToReceive,
           });
         }
@@ -421,12 +610,12 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
       }
 
       const opKey = `rcpt-client-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      const docRef = receiptInvoiceNumber.trim() ? ` [Doc: ${receiptInvoiceNumber.trim()}]` : "";
+      const docRef = values.invoiceNumber ? ` [Doc: ${values.invoiceNumber}]` : "";
 
       const { data: receiptId, error: rcptErr } = await supabase.rpc("post_purchase_receipt", {
         target_purchase_order_id: receiptTargetPo.id,
         operation_key: opKey,
-        operation_reason: `Recepción física de mercadería en depósito${docRef}`,
+        operation_reason: `Recepción física de mercadería${docRef}`,
         lines: receiptLinesPayload,
         expenses: [],
         create_payable: true,
@@ -449,25 +638,28 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
     }
   };
 
-  const handleCreateSupplier = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supName.trim()) return;
+  const handleCreateSupplier = async (values: SupplierValues) => {
+    if (!organizationId) {
+      setError("No hay una organización ERP activa para registrar el proveedor.");
+      return;
+    }
 
     try {
       setSavingSupplier(true);
       setError(null);
 
       const code = `SUP-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      const termsDays = parseInt(supTerms, 10) || 0;
+      const normalizedContact = values.contact.trim();
 
       const { error: insertErr } = await supabase.from("suppliers").insert({
+        organization_id: organizationId,
         code,
-        display_name: supName.trim(),
-        tax_id: supCuit.trim() || null,
-        notes: supCategory.trim() || null,
-        payment_terms_days: termsDays,
-        email: supContact.includes("@") ? supContact.trim() : null,
-        phone: !supContact.includes("@") && supContact.trim() ? supContact.trim() : null,
+        display_name: values.name,
+        tax_id: values.taxId || null,
+        notes: values.category || null,
+        payment_terms_days: values.termsDays,
+        email: normalizedContact.includes("@") ? normalizedContact : null,
+        phone: !normalizedContact.includes("@") && normalizedContact ? normalizedContact : null,
         is_active: true,
       });
 
@@ -475,12 +667,10 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
 
       setFeedback({
         type: "success",
-        message: `¡Proveedor "${supName.trim()}" registrado en el padrón oficial ERP!`,
+        message: `¡Proveedor "${values.name}" registrado en el padrón oficial ERP!`,
       });
       setIsSupModalOpen(false);
-      setSupName("");
-      setSupCuit("");
-      setSupContact("");
+      supplierForm.reset();
       await fetchSuppliers();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al registrar el proveedor");
@@ -489,7 +679,238 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
     }
   };
 
+  const loadSupplierPaymentContext = async (payable: SupplierPayableOption) => {
+    const [methodsResult, sessionsResult] = await Promise.all([
+      supabase.rpc("list_supplier_payment_methods", { target_branch_id: payable.branch_id }),
+      supabase.rpc("list_supplier_cash_sessions", { target_branch_id: payable.branch_id }),
+    ]);
+    if (methodsResult.error) throw methodsResult.error;
+    if (sessionsResult.error) throw sessionsResult.error;
+
+    const methods = (methodsResult.data || []) as SupplierPaymentMethodOption[];
+    const sessions = (sessionsResult.data || []) as SupplierCashSessionOption[];
+    const preferredMethod = methods.find((method) => !method.requires_cash_session) || methods[0];
+    const compatibleSession = preferredMethod?.requires_cash_session
+      ? sessions.find((session) => session.currencies.includes(payable.currency_code))
+      : undefined;
+
+    setSupplierPaymentMethods(methods);
+    setSupplierCashSessions(sessions);
+    supplierPaymentForm.setValue("paymentMethodId", preferredMethod?.id || "", { shouldValidate: true });
+    supplierPaymentForm.setValue("requiresCashSession", preferredMethod?.requires_cash_session || false);
+    supplierPaymentForm.setValue("cashSessionId", compatibleSession?.id || "", { shouldValidate: true });
+  };
+
+  const openSupplierPaymentModal = async (supplier: SupplierItem) => {
+    try {
+      setLoadingSupplierPayment(true);
+      setError(null);
+      setSupplierPaymentTarget(supplier);
+      setSelectedSupplierInfo(null);
+      setSupplierPayables([]);
+      setSupplierPaymentMethods([]);
+      setSupplierCashSessions([]);
+      supplierPaymentOperationRef.current = null;
+
+      const { data, error: payablesError } = await supabase.rpc("list_supplier_open_payables", {
+        target_supplier_id: supplier.id,
+      });
+      if (payablesError) throw payablesError;
+
+      const payables = (data || []) as SupplierPayableOption[];
+      if (payables.length === 0) {
+        throw new Error("El proveedor no tiene comprobantes con saldo pendiente.");
+      }
+      const firstPayable = payables[0];
+      setSupplierPayables(payables);
+      supplierPaymentForm.reset({
+        payableId: firstPayable.id,
+        paymentMethodId: "",
+        cashSessionId: "",
+        amount: Number(firstPayable.outstanding_currency),
+        reference: "",
+        reason: `Pago a proveedor ${supplier.name}`,
+        requiresCashSession: false,
+      });
+      await loadSupplierPaymentContext(firstPayable);
+    } catch (err) {
+      setSupplierPaymentTarget(null);
+      setError(err instanceof Error ? err.message : "No se pudo preparar el pago al proveedor.");
+    } finally {
+      setLoadingSupplierPayment(false);
+    }
+  };
+
+  const handleSupplierPayableChange = async (payableId: string) => {
+    supplierPaymentForm.setValue("payableId", payableId, { shouldValidate: true });
+    const payable = supplierPayables.find((item) => item.id === payableId);
+    if (!payable) return;
+
+    try {
+      setLoadingSupplierPayment(true);
+      setError(null);
+      supplierPaymentOperationRef.current = null;
+      supplierPaymentForm.setValue("amount", Number(payable.outstanding_currency), { shouldValidate: true });
+      supplierPaymentForm.setValue("paymentMethodId", "");
+      supplierPaymentForm.setValue("cashSessionId", "");
+      supplierPaymentForm.setValue("requiresCashSession", false);
+      await loadSupplierPaymentContext(payable);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudieron cargar los medios de pago.");
+    } finally {
+      setLoadingSupplierPayment(false);
+    }
+  };
+
+  const handleSupplierPaymentMethodChange = (paymentMethodId: string) => {
+    const method = supplierPaymentMethods.find((item) => item.id === paymentMethodId);
+    const payable = supplierPayables.find((item) => item.id === supplierPaymentForm.getValues("payableId"));
+    const compatibleSession = method?.requires_cash_session && payable
+      ? supplierCashSessions.find((session) => session.currencies.includes(payable.currency_code))
+      : undefined;
+
+    supplierPaymentOperationRef.current = null;
+    supplierPaymentForm.setValue("paymentMethodId", paymentMethodId, { shouldValidate: true });
+    supplierPaymentForm.setValue("requiresCashSession", method?.requires_cash_session || false);
+    supplierPaymentForm.setValue("cashSessionId", compatibleSession?.id || "", { shouldValidate: true });
+  };
+
+  const handleSupplierPayment = async (values: SupplierPaymentValues) => {
+    const payable = supplierPayables.find((item) => item.id === values.payableId);
+    if (!payable || !supplierPaymentTarget) return;
+    if (values.amount > Number(payable.outstanding_currency)) {
+      supplierPaymentForm.setError("amount", {
+        type: "validate",
+        message: `El monto no puede superar ${formatCurrency(Number(payable.outstanding_currency), payable.currency_code)}.`,
+      });
+      return;
+    }
+
+    try {
+      setSubmittingSupplierPayment(true);
+      setError(null);
+      const signature = JSON.stringify({
+        payableId: values.payableId,
+        paymentMethodId: values.paymentMethodId,
+        cashSessionId: values.cashSessionId || null,
+        amount: values.amount,
+        reference: values.reference.trim(),
+        reason: values.reason.trim(),
+      });
+      if (supplierPaymentOperationRef.current?.signature !== signature) {
+        supplierPaymentOperationRef.current = {
+          signature,
+          key: `supplier-payment-client-${crypto.randomUUID()}`,
+        };
+      }
+
+      const { error: paymentError } = await supabase.rpc("record_supplier_payment", {
+        target_payable_id: values.payableId,
+        target_payment_method_id: values.paymentMethodId,
+        target_cash_session_id: nullableRpcString(values.cashSessionId || null),
+        payment_amount: values.amount,
+        payment_reference: nullableRpcString(values.reference.trim() || null),
+        operation_key: supplierPaymentOperationRef.current.key,
+        operation_reason: values.reason.trim(),
+      });
+      if (paymentError) throw paymentError;
+
+      setFeedback({
+        type: "success",
+        message: `Pago a ${supplierPaymentTarget.name} registrado con impacto en cuenta corriente, tesorería y contabilidad.`,
+      });
+      setSupplierPaymentTarget(null);
+      supplierPaymentOperationRef.current = null;
+      supplierPaymentForm.reset();
+      await fetchSuppliers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo registrar el pago al proveedor.");
+    } finally {
+      setSubmittingSupplierPayment(false);
+    }
+  };
+
+  const loadSupplierPaymentHistory = async (supplierId: string) => {
+    try {
+      setLoadingSupplierPaymentHistory(true);
+      const { data, error: historyError } = await supabase
+        .from("supplier_payments")
+        .select(`
+          id, branch_id, amount_currency, currency_code, occurred_at, reference, reason,
+          payment_methods(name),
+          supplier_payment_reversals(id)
+        `)
+        .eq("supplier_id", supplierId)
+        .order("occurred_at", { ascending: false });
+      if (historyError) throw historyError;
+      setSupplierPaymentHistory((data || []) as SupplierPaymentHistoryItem[]);
+    } catch (historyError) {
+      setSupplierPaymentHistory([]);
+      setError(historyError instanceof Error ? historyError.message : "No se pudo cargar el historial de pagos.");
+    } finally {
+      setLoadingSupplierPaymentHistory(false);
+    }
+  };
+
+  const openSupplierDetails = async (supplier: SupplierItem) => {
+    setSelectedSupplierInfo(supplier);
+    setSupplierPaymentHistory([]);
+    await loadSupplierPaymentHistory(supplier.id);
+  };
+
+  const openSupplierPaymentReversal = (payment: SupplierPaymentHistoryItem) => {
+    supplierPaymentReversalOperationRef.current = null;
+    supplierPaymentReversalForm.reset({ reason: "" });
+    setSupplierPaymentReversalTarget(payment);
+  };
+
+  const handleSupplierPaymentReversal = async (values: SupplierPaymentReversalValues) => {
+    if (!supplierPaymentReversalTarget) return;
+    try {
+      setSubmittingSupplierPaymentReversal(true);
+      setError(null);
+      const signature = JSON.stringify({
+        supplierPaymentId: supplierPaymentReversalTarget.id,
+        reason: values.reason.trim(),
+      });
+      if (supplierPaymentReversalOperationRef.current?.signature !== signature) {
+        supplierPaymentReversalOperationRef.current = {
+          signature,
+          key: `supplier-payment-reversal-client-${crypto.randomUUID()}`,
+        };
+      }
+      const { error: reversalError } = await supabase.rpc("reverse_supplier_payment", {
+        target_supplier_payment_id: supplierPaymentReversalTarget.id,
+        operation_key: supplierPaymentReversalOperationRef.current.key,
+        operation_reason: values.reason.trim(),
+      });
+      if (reversalError) throw reversalError;
+
+      setFeedback({
+        type: "success",
+        message: "Pago a proveedor revertido con restitución de deuda, tesorería y asiento contable.",
+      });
+      setSupplierPaymentReversalTarget(null);
+      setSelectedSupplierInfo(null);
+      supplierPaymentReversalOperationRef.current = null;
+      supplierPaymentReversalForm.reset();
+      await fetchSuppliers();
+    } catch (reversalError) {
+      setError(reversalError instanceof Error ? reversalError.message : "No se pudo revertir el pago al proveedor.");
+    } finally {
+      setSubmittingSupplierPaymentReversal(false);
+    }
+  };
+
   const isSuppliersMode = activeModuleId === "suppliers";
+  const selectedSupplierPayable = supplierPayables.find((item) => item.id === selectedSupplierPayableId);
+  const selectedSupplierPaymentMethod = supplierPaymentMethods.find((item) => item.id === selectedSupplierPaymentMethodId);
+  const compatibleSupplierCashSessions = selectedSupplierPayable
+    ? supplierCashSessions.filter((session) => (
+      session.branch_id === selectedSupplierPayable.branch_id
+      && session.currencies.includes(selectedSupplierPayable.currency_code)
+    ))
+    : [];
 
   const totalSpentArs = purchases.reduce((acc, po) => {
     const lines = po.purchase_order_lines || [];
@@ -841,7 +1262,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                             type="button"
                             className="pag-btn"
                             style={{ color: "var(--brand-primary)", borderColor: "var(--brand-border)", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                            onClick={() => setSelectedSupplierInfo(sup)}
+                            onClick={() => void openSupplierDetails(sup)}
                           >
                             <Eye size={12} /> Ficha
                           </button>
@@ -864,33 +1285,45 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
         icon={ShoppingCart}
         maxWidth="680px"
       >
-        <form onSubmit={handleCreatePo} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        <form onSubmit={poForm.handleSubmit(handleCreatePo)} noValidate style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">Proveedor *</label>
+              <label className="erp-form-label" htmlFor="po-branch">Sucursal *</label>
+              <select id="po-branch" className="erp-form-input" {...poForm.register("branchId")}>
+                <option value="">Seleccionar</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
+                ))}
+              </select>
+              {poForm.formState.errors.branchId && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{poForm.formState.errors.branchId.message}</span>}
+            </div>
+            <div className="erp-form-group">
+              <label className="erp-form-label" htmlFor="po-supplier">Proveedor *</label>
               <select
-                required
-                value={poSupplierId}
-                onChange={(e) => setPoSupplierId(e.target.value)}
+                id="po-supplier"
                 className="erp-form-input"
+                {...poForm.register("supplierId")}
               >
+                <option value="">Seleccionar</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} ({s.terms})
                   </option>
                 ))}
               </select>
+              {poForm.formState.errors.supplierId && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{poForm.formState.errors.supplierId.message}</span>}
             </div>
 
             <div className="erp-form-group">
-              <label className="erp-form-label">Motivo / Descripción de Compra</label>
+              <label className="erp-form-label" htmlFor="po-reason">Motivo / Descripción de Compra</label>
               <input
+                id="po-reason"
                 type="text"
-                value={poReason}
-                onChange={(e) => setPoReason(e.target.value)}
                 placeholder="Ej: Stock de fundas para reposición"
                 className="erp-form-input"
+                {...poForm.register("reason")}
               />
+              {poForm.formState.errors.reason && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{poForm.formState.errors.reason.message}</span>}
             </div>
           </div>
 
@@ -1008,32 +1441,34 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
           icon={PackageCheck}
           maxWidth="640px"
         >
-          <form onSubmit={handlePostReceipt} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <form onSubmit={receiptForm.handleSubmit(handlePostReceipt)} noValidate style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">Ubicación / Depósito de Destino *</label>
+              <label className="erp-form-label" htmlFor="receipt-location">Ubicación / Depósito de Destino *</label>
               <select
-                required
-                value={receiptLocationId}
-                onChange={(e) => setReceiptLocationId(e.target.value)}
+                id="receipt-location"
                 className="erp-form-input"
+                {...receiptForm.register("locationId")}
               >
-                {locations.map((loc) => (
+                <option value="">Seleccionar</option>
+                {locations.filter((location) => location.branch_id === receiptTargetPo.branch_id && location.kind !== "quarantine").map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.name}
                   </option>
                 ))}
               </select>
+              {receiptForm.formState.errors.locationId && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{receiptForm.formState.errors.locationId.message}</span>}
             </div>
 
             <div className="erp-form-group">
-              <label className="erp-form-label">Nº de Remito o Factura del Proveedor (Opcional)</label>
+              <label className="erp-form-label" htmlFor="receipt-invoice">Nº de Remito o Factura del Proveedor (Opcional)</label>
               <input
+                id="receipt-invoice"
                 type="text"
                 placeholder="Ej: REM-0001-00012345 o FC-A-0002-00004567"
-                value={receiptInvoiceNumber}
-                onChange={(e) => setReceiptInvoiceNumber(e.target.value)}
                 className="erp-form-input"
+                {...receiptForm.register("invoiceNumber")}
               />
+              {receiptForm.formState.errors.invoiceNumber && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{receiptForm.formState.errors.invoiceNumber.message}</span>}
             </div>
 
             <div style={{ background: "var(--bg-card-subtle)", padding: "12px", borderRadius: "8px", border: "1px solid var(--border-line)" }}>
@@ -1124,52 +1559,58 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
         icon={Building}
         maxWidth="520px"
       >
-        <form onSubmit={handleCreateSupplier} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <form onSubmit={supplierForm.handleSubmit(handleCreateSupplier)} noValidate style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div className="erp-form-group">
-            <label className="erp-form-label">Razón Social / Nombre *</label>
+            <label className="erp-form-label" htmlFor="supplier-name">Razón Social / Nombre *</label>
             <input
+              id="supplier-name"
               type="text"
-              required
               placeholder="Ej: Distribuidora Mayorista SA"
-              value={supName}
-              onChange={(e) => setSupName(e.target.value)}
               className="erp-form-input"
+              {...supplierForm.register("name")}
             />
+            {supplierForm.formState.errors.name && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{supplierForm.formState.errors.name.message}</span>}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">CUIT / Identificación Fiscal</label>
+              <label className="erp-form-label" htmlFor="supplier-tax-id">CUIT / Identificación Fiscal</label>
               <input
+                id="supplier-tax-id"
                 type="text"
                 placeholder="Ej: 30-71234567-8"
-                value={supCuit}
-                onChange={(e) => setSupCuit(e.target.value)}
                 className="erp-form-input"
+                {...supplierForm.register("taxId")}
               />
             </div>
             <div className="erp-form-group">
-              <label className="erp-form-label">Condición Comercial (Días de crédito)</label>
+              <label className="erp-form-label" htmlFor="supplier-terms">Condición Comercial (Días de crédito)</label>
               <input
+                id="supplier-terms"
                 type="number"
                 min="0"
                 placeholder="30"
-                value={supTerms}
-                onChange={(e) => setSupTerms(e.target.value)}
                 className="erp-form-input"
+                {...supplierForm.register("termsDays", { valueAsNumber: true })}
               />
+              {supplierForm.formState.errors.termsDays && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>Ingresá una cantidad de días válida.</span>}
             </div>
           </div>
 
           <div className="erp-form-group">
-            <label className="erp-form-label">Email / Teléfono de Contacto</label>
+            <label className="erp-form-label" htmlFor="supplier-contact">Email / Teléfono de Contacto</label>
             <input
+              id="supplier-contact"
               type="text"
               placeholder="Ej: ventas@proveedortech.com"
-              value={supContact}
-              onChange={(e) => setSupContact(e.target.value)}
               className="erp-form-input"
+              {...supplierForm.register("contact")}
             />
+          </div>
+
+          <div className="erp-form-group">
+            <label className="erp-form-label" htmlFor="supplier-category">Rubro / Categoría</label>
+            <input id="supplier-category" type="text" className="erp-form-input" {...supplierForm.register("category")} />
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
@@ -1229,12 +1670,316 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
               </strong>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <span className="stat-label">Historial de pagos:</span>
+              {loadingSupplierPaymentHistory ? (
+                <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Cargando pagos…</span>
+              ) : supplierPaymentHistory.length === 0 ? (
+                <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Sin pagos registrados.</span>
+              ) : supplierPaymentHistory.map((payment) => {
+                const reversed = payment.supplier_payment_reversals.length > 0;
+                return (
+                  <div
+                    key={payment.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                      alignItems: "center",
+                      padding: "10px",
+                      borderRadius: "8px",
+                      border: "1px solid var(--border-line)",
+                      background: "var(--bg-card-subtle)",
+                    }}
+                  >
+                    <div>
+                      <strong style={{ display: "block", fontSize: "13px" }}>
+                        {formatCurrency(Number(payment.amount_currency), payment.currency_code)}
+                      </strong>
+                      <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>
+                        {payment.payment_methods?.name || "Medio de pago"} · {formatDate(payment.occurred_at)}
+                        {payment.reference ? ` · ${payment.reference}` : ""}
+                      </span>
+                      {reversed && <span className="flow-status-pill canceled">Revertido</span>}
+                    </div>
+                    {!reversed
+                      && hasPermission("purchases.manage")
+                      && hasPermission("costs.manage") && (
+                      <button
+                        type="button"
+                        className="pag-btn"
+                        onClick={() => openSupplierPaymentReversal(payment)}
+                      >
+                        <RotateCcw size={12} /> Revertir
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
               <button type="button" className="pag-btn" onClick={() => setSelectedSupplierInfo(null)}>
                 Cerrar
               </button>
+              {selectedSupplierInfo.balanceArs > 0
+                && hasPermission("purchases.manage")
+                && hasPermission("costs.manage") && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void openSupplierPaymentModal(selectedSupplierInfo)}
+                >
+                  <DollarSign size={15} /> Registrar pago
+                </button>
+              )}
             </div>
           </div>
+        )}
+      </Modal>
+
+      {/* Modal: Supplier payment */}
+      <Modal
+        isOpen={!!supplierPaymentTarget}
+        onClose={() => {
+          if (submittingSupplierPayment) return;
+          setSupplierPaymentTarget(null);
+          supplierPaymentOperationRef.current = null;
+          supplierPaymentForm.reset();
+        }}
+        title={supplierPaymentTarget ? `Registrar pago a ${supplierPaymentTarget.name}` : "Registrar pago a proveedor"}
+        subtitle="Aplicación trazable a un comprobante pendiente, con impacto en tesorería y contabilidad"
+        icon={DollarSign}
+        maxWidth="620px"
+      >
+        {supplierPaymentTarget && (
+          <form
+            onSubmit={supplierPaymentForm.handleSubmit(handleSupplierPayment)}
+            noValidate
+            style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+          >
+            {loadingSupplierPayment ? (
+              <div style={{ padding: "24px", textAlign: "center", color: "var(--text-muted)" }}>
+                Cargando deudas y medios habilitados…
+              </div>
+            ) : (
+              <>
+                <div className="erp-form-group">
+                  <label className="erp-form-label" htmlFor="supplier-payment-payable">Comprobante pendiente *</label>
+                  <select
+                    id="supplier-payment-payable"
+                    className="erp-form-input"
+                    value={selectedSupplierPayableId}
+                    onChange={(event) => void handleSupplierPayableChange(event.target.value)}
+                  >
+                    <option value="">Seleccionar</option>
+                    {supplierPayables.map((payable) => (
+                      <option key={payable.id} value={payable.id}>
+                        {`#${payable.id.slice(0, 8).toUpperCase()} · vence ${formatDate(payable.due_at)} · ${formatCurrency(Number(payable.outstanding_currency), payable.currency_code)}`}
+                      </option>
+                    ))}
+                  </select>
+                  {supplierPaymentForm.formState.errors.payableId && (
+                    <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>
+                      {supplierPaymentForm.formState.errors.payableId.message}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                  <div className="erp-form-group">
+                    <label className="erp-form-label" htmlFor="supplier-payment-method">Medio de pago *</label>
+                    <select
+                      id="supplier-payment-method"
+                      className="erp-form-input"
+                      value={selectedSupplierPaymentMethodId}
+                      onChange={(event) => handleSupplierPaymentMethodChange(event.target.value)}
+                    >
+                      <option value="">Seleccionar</option>
+                      {supplierPaymentMethods.map((method) => (
+                        <option key={method.id} value={method.id}>{method.name}</option>
+                      ))}
+                    </select>
+                    {supplierPaymentForm.formState.errors.paymentMethodId && (
+                      <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>
+                        {supplierPaymentForm.formState.errors.paymentMethodId.message}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="erp-form-group">
+                    <label className="erp-form-label" htmlFor="supplier-payment-amount">
+                      Monto ({selectedSupplierPayable?.currency_code || "ARS"}) *
+                    </label>
+                    <input
+                      id="supplier-payment-amount"
+                      type="number"
+                      min="0.01"
+                      max={selectedSupplierPayable ? Number(selectedSupplierPayable.outstanding_currency) : undefined}
+                      step="0.01"
+                      className="erp-form-input"
+                      {...supplierPaymentForm.register("amount", { valueAsNumber: true })}
+                    />
+                    {supplierPaymentForm.formState.errors.amount && (
+                      <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>
+                        {supplierPaymentForm.formState.errors.amount.message}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {selectedSupplierPaymentMethod?.requires_cash_session && (
+                  <div className="erp-form-group">
+                    <label className="erp-form-label" htmlFor="supplier-payment-cash-session">Caja abierta *</label>
+                    <select
+                      id="supplier-payment-cash-session"
+                      className="erp-form-input"
+                      {...supplierPaymentForm.register("cashSessionId")}
+                    >
+                      <option value="">Seleccionar</option>
+                      {compatibleSupplierCashSessions.map((session) => (
+                        <option key={session.id} value={session.id}>
+                          {`${session.cash_register_name} (${session.cash_register_code}) · abierta ${formatDate(session.opened_at)}`}
+                        </option>
+                      ))}
+                    </select>
+                    {compatibleSupplierCashSessions.length === 0 && (
+                      <span style={{ color: "var(--amber-accent)", fontSize: "11px" }}>
+                        No hay una caja abierta de la misma sucursal que opere en {selectedSupplierPayable?.currency_code}.
+                      </span>
+                    )}
+                    {supplierPaymentForm.formState.errors.cashSessionId && (
+                      <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>
+                        {supplierPaymentForm.formState.errors.cashSessionId.message}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div className="erp-form-group">
+                  <label className="erp-form-label" htmlFor="supplier-payment-reference">Referencia bancaria / comprobante</label>
+                  <input
+                    id="supplier-payment-reference"
+                    type="text"
+                    className="erp-form-input"
+                    placeholder="Ej: transferencia 45821"
+                    {...supplierPaymentForm.register("reference")}
+                  />
+                  {supplierPaymentForm.formState.errors.reference && (
+                    <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>
+                      {supplierPaymentForm.formState.errors.reference.message}
+                    </span>
+                  )}
+                </div>
+
+                <div className="erp-form-group">
+                  <label className="erp-form-label" htmlFor="supplier-payment-reason">Motivo *</label>
+                  <input
+                    id="supplier-payment-reason"
+                    type="text"
+                    className="erp-form-input"
+                    {...supplierPaymentForm.register("reason")}
+                  />
+                  {supplierPaymentForm.formState.errors.reason && (
+                    <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>
+                      {supplierPaymentForm.formState.errors.reason.message}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ padding: "12px", background: "var(--bg-card-subtle)", border: "1px solid var(--border-line)", borderRadius: "8px" }}>
+                  <span className="stat-label">Saldo del comprobante:</span>
+                  <strong style={{ display: "block", fontSize: "15px" }}>
+                    {selectedSupplierPayable
+                      ? formatCurrency(Number(selectedSupplierPayable.outstanding_currency), selectedSupplierPayable.currency_code)
+                      : "—"}
+                  </strong>
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
+              <button
+                type="button"
+                className="pag-btn"
+                disabled={submittingSupplierPayment}
+                onClick={() => {
+                  setSupplierPaymentTarget(null);
+                  supplierPaymentOperationRef.current = null;
+                  supplierPaymentForm.reset();
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={loadingSupplierPayment || submittingSupplierPayment || !selectedSupplierPayable}
+              >
+                {submittingSupplierPayment ? "Registrando…" : "Confirmar pago"}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={!!supplierPaymentReversalTarget}
+        onClose={() => {
+          if (submittingSupplierPaymentReversal) return;
+          setSupplierPaymentReversalTarget(null);
+          supplierPaymentReversalOperationRef.current = null;
+          supplierPaymentReversalForm.reset();
+        }}
+        title="Revertir pago a proveedor"
+        subtitle="La reversa es append-only y compensará deuda, tesorería y contabilidad"
+        icon={RotateCcw}
+        maxWidth="520px"
+      >
+        {supplierPaymentReversalTarget && (
+          <form
+            onSubmit={supplierPaymentReversalForm.handleSubmit(handleSupplierPaymentReversal)}
+            noValidate
+            style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+          >
+            <div style={{ padding: "12px", background: "var(--bg-card-subtle)", border: "1px solid var(--border-line)", borderRadius: "8px" }}>
+              <span className="stat-label">Pago original:</span>
+              <strong style={{ display: "block", fontSize: "16px" }}>
+                {formatCurrency(Number(supplierPaymentReversalTarget.amount_currency), supplierPaymentReversalTarget.currency_code)}
+              </strong>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                {supplierPaymentReversalTarget.payment_methods?.name || "Medio de pago"} · {formatDate(supplierPaymentReversalTarget.occurred_at)}
+              </span>
+            </div>
+            <div className="erp-form-group">
+              <label className="erp-form-label" htmlFor="supplier-payment-reversal-reason">Motivo de reversa *</label>
+              <textarea
+                id="supplier-payment-reversal-reason"
+                className="erp-form-input"
+                rows={3}
+                placeholder="Explicá por qué se revierte este pago"
+                {...supplierPaymentReversalForm.register("reason")}
+              />
+              {supplierPaymentReversalForm.formState.errors.reason && (
+                <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>
+                  {supplierPaymentReversalForm.formState.errors.reason.message}
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
+              <button
+                type="button"
+                className="pag-btn"
+                disabled={submittingSupplierPaymentReversal}
+                onClick={() => setSupplierPaymentReversalTarget(null)}
+              >
+                Cancelar
+              </button>
+              <button type="submit" className="btn-primary" disabled={submittingSupplierPaymentReversal}>
+                {submittingSupplierPaymentReversal ? "Revirtiendo…" : "Confirmar reversa"}
+              </button>
+            </div>
+          </form>
         )}
       </Modal>
     </div>

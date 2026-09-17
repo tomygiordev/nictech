@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { z } from "zod";
 import {
   Building2,
   ArrowRightLeft,
@@ -32,7 +33,7 @@ export interface DbStockRow {
   updated_at: string;
   products?: { internal_code: string; internal_name: string; item_kind: string } | null;
   product_variants?: { name: string; code: string } | null;
-  locations?: { name: string; code: string } | null;
+  locations?: { name: string; code: string; branch_id: string } | null;
   product_identifiers?: Array<{ kind: string; value: string }>;
 }
 
@@ -44,7 +45,6 @@ export interface DbStockDoc {
   stock_document_lines?: Array<{
     id: string;
     quantity: number;
-    unit_cost: number;
     from_location_id: string | null;
     to_location_id: string | null;
     products?: { internal_name: string } | null;
@@ -109,6 +109,26 @@ const BarcodeSvg: React.FC<{ value: string; width?: number; height?: number }> =
   );
 };
 
+const adjustmentSchema = z
+  .object({
+    stockBalanceId: z.string().uuid("Seleccioná una existencia válida."),
+    direction: z.enum(["in", "out"]),
+    quantity: z.coerce.number().int().positive("La cantidad debe ser un entero positivo."),
+    unitCost: z.coerce.number().min(0, "El costo no puede ser negativo."),
+    reason: z.string().trim().min(5, "Indicá un motivo de al menos 5 caracteres.").max(240),
+  })
+  .superRefine((value, context) => {
+    if (value.direction === "in" && value.unitCost <= 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["unitCost"],
+        message: "Los ingresos deben registrar un costo unitario mayor a cero.",
+      });
+    }
+  });
+
+const createOperationKey = (): string => `stock-adjustment-${crypto.randomUUID()}`;
+
 export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
   activeModuleId = "stock",
   onSelectModule,
@@ -126,7 +146,9 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
   const [adjRowId, setAdjRowId] = useState<string>("");
   const [adjType, setAdjType] = useState<"in" | "out">("in");
   const [adjQty, setAdjQty] = useState<string>("1");
+  const [adjUnitCost, setAdjUnitCost] = useState<string>("");
   const [adjReason, setAdjReason] = useState<string>("");
+  const [adjOperationKey, setAdjOperationKey] = useState<string>(createOperationKey);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   // Label printer state (Finding 7)
@@ -146,7 +168,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           id, product_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at,
           products(internal_code, internal_name, item_kind),
           product_variants(name, code),
-          locations(name, code)
+          locations(name, code, branch_id)
         `)
         .order("updated_at", { ascending: false });
 
@@ -158,7 +180,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         .select("product_id, variant_id, kind, value")
         .eq("kind", "barcode");
 
-      const rows: DbStockRow[] = ((balData || []) as unknown as DbStockRow[]).map((b) => {
+      const rows: DbStockRow[] = (balData || []).map((b) => {
         const identifiers = (piData || []).filter(
           (pi: { product_id: string; variant_id: string | null }) => pi.product_id === b.product_id && pi.variant_id === b.variant_id,
         );
@@ -175,12 +197,12 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
       }
 
       // 3. Fetch recent stock documents
-      const { data: docData } = await supabase
+      const { data: docData, error: docError } = await supabase
         .from("stock_documents")
         .select(`
           id, kind, reason, created_at,
           stock_document_lines(
-            id, quantity, unit_cost, from_location_id, to_location_id,
+            id, quantity, from_location_id, to_location_id,
             products(internal_name),
             product_variants(name)
           )
@@ -188,7 +210,8 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         .order("created_at", { ascending: false })
         .limit(20);
 
-      setRecentDocs((docData as unknown as DbStockDoc[]) || []);
+      if (docError) throw docError;
+      setRecentDocs(docData || []);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al cargar datos de inventario");
     } finally {
@@ -204,22 +227,32 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
   const handleCreateAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     const targetRow = stockBalances.find((r) => r.id === adjRowId);
-    if (!targetRow || !adjQty) return;
+    if (!targetRow) {
+      setError("Seleccioná una existencia para ajustar.");
+      return;
+    }
 
     try {
       setSubmitting(true);
       setError(null);
-      const qtyNum = Math.round(Number(adjQty));
-      if (qtyNum <= 0) throw new Error("La cantidad debe ser un entero positivo.");
-
-      const opKey = `adj-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      const branchId = "20000000-0000-0000-0000-000000000001";
+      const parsed = adjustmentSchema.safeParse({
+        stockBalanceId: adjRowId,
+        direction: adjType,
+        quantity: adjQty,
+        unitCost: adjType === "in" ? adjUnitCost : 0,
+        reason: adjReason,
+      });
+      if (!parsed.success) {
+        throw new Error(parsed.error.issues[0]?.message ?? "Revisá los datos del ajuste.");
+      }
+      const branchId = targetRow.locations?.branch_id;
+      if (!branchId) throw new Error("La ubicación seleccionada no tiene una sucursal asociada.");
 
       const linePayload = {
         product_id: targetRow.product_id,
         variant_id: targetRow.variant_id || null,
-        quantity: qtyNum,
-        unit_cost: 0,
+        quantity: parsed.data.quantity,
+        unit_cost: parsed.data.direction === "in" ? parsed.data.unitCost : 0,
         from_location_id: adjType === "out" ? targetRow.location_id : null,
         to_location_id: adjType === "in" ? targetRow.location_id : null,
       };
@@ -227,8 +260,8 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
       const { error: postErr } = await supabase.rpc("post_stock_document", {
         document_kind: "adjustment",
         target_branch_id: branchId,
-        operation_key: opKey,
-        operation_reason: adjReason.trim() || `Ajuste manual de stock (${adjType === "in" ? "Ingreso" : "Egreso"})`,
+        operation_key: adjOperationKey,
+        operation_reason: parsed.data.reason,
         lines: [linePayload],
       });
 
@@ -240,7 +273,9 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
       });
       setIsAdjModalOpen(false);
       setAdjQty("1");
+      setAdjUnitCost("");
       setAdjReason("");
+      setAdjOperationKey(createOperationKey());
       await fetchStockData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al registrar movimiento");
@@ -309,6 +344,11 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           type="error"
           message={error}
           onClose={() => setError(null)}
+          action={
+            <button type="button" className="pag-btn" onClick={() => void fetchStockData()}>
+              Reintentar
+            </button>
+          }
         />
       )}
 
@@ -378,6 +418,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                       if (stockBalances.length > 0 && !adjRowId) {
                         setAdjRowId(stockBalances[0].id);
                       }
+                      setAdjOperationKey(createOperationKey());
                       setIsAdjModalOpen(true);
                     }}
                   >
@@ -487,6 +528,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                                 style={{ fontSize: "11px", padding: "4px 8px" }}
                                 onClick={() => {
                                   setAdjRowId(row.id);
+                                  setAdjOperationKey(createOperationKey());
                                   setIsAdjModalOpen(true);
                                 }}
                               >
@@ -730,9 +772,10 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                       borderRadius: "8px",
                     }}
                   >
-                    {Array.from({ length: Math.min(100, labelQty) }).map((_, idx) => (
+                    {Array.from({ length: labelQty }).map((_, idx) => (
                       <div
                         key={idx}
+                        className="printable-stock-label"
                         style={{
                           background: "#ffffff",
                           border: "1px solid #d1d5db",
@@ -774,8 +817,9 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
       >
         <form onSubmit={handleCreateAdjustment} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div className="erp-form-group">
-            <label className="erp-form-label">Variante / Ubicación a Ajustar *</label>
+            <label className="erp-form-label" htmlFor="stock-adjustment-balance">Variante / Ubicación a Ajustar *</label>
             <select
+              id="stock-adjustment-balance"
               value={adjRowId}
               onChange={(e) => setAdjRowId(e.target.value)}
               className="erp-form-input"
@@ -791,8 +835,9 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">Sentido del Movimiento *</label>
+              <label className="erp-form-label" htmlFor="stock-adjustment-direction">Sentido del Movimiento *</label>
               <select
+                id="stock-adjustment-direction"
                 value={adjType}
                 onChange={(e) => setAdjType(e.target.value as "in" | "out")}
                 className="erp-form-input"
@@ -803,8 +848,9 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
             </div>
 
             <div className="erp-form-group">
-              <label className="erp-form-label">Cantidad (Unidades) *</label>
+              <label className="erp-form-label" htmlFor="stock-adjustment-quantity">Cantidad (Unidades) *</label>
               <input
+                id="stock-adjustment-quantity"
                 type="number"
                 required
                 min="1"
@@ -816,10 +862,35 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
             </div>
           </div>
 
+          {adjType === "in" && (
+            <div className="erp-form-group">
+              <label className="erp-form-label" htmlFor="stock-adjustment-unit-cost">Costo unitario de ingreso *</label>
+              <input
+                id="stock-adjustment-unit-cost"
+                type="number"
+                required
+                min="0.01"
+                step="0.01"
+                inputMode="decimal"
+                value={adjUnitCost}
+                onChange={(e) => setAdjUnitCost(e.target.value)}
+                className="erp-form-input"
+                aria-describedby="stock-adjustment-unit-cost-hint"
+              />
+              <small id="stock-adjustment-unit-cost-hint" className="erp-form-hint">
+                Se usa para el costo promedio y la rentabilidad. No puede quedar en cero.
+              </small>
+            </div>
+          )}
+
           <div className="erp-form-group">
-            <label className="erp-form-label">Motivo de Auditoría</label>
+            <label className="erp-form-label" htmlFor="stock-adjustment-reason">Motivo de Auditoría *</label>
             <input
+              id="stock-adjustment-reason"
               type="text"
+              required
+              minLength={5}
+              maxLength={240}
               placeholder="Ej: Conteo físico o rotura en depósito"
               value={adjReason}
               onChange={(e) => setAdjReason(e.target.value)}
