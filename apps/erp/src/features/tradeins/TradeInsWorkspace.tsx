@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Smartphone, Search, Eye, Plus, ShieldCheck, RefreshCw, DollarSign } from "lucide-react";
 import { WorkspaceHeader, Modal, FeedbackAlert, KpiCard } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDateTime } from "../../lib/formatters";
+import { supabase } from "../../lib/supabase";
+import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   listTradeIns,
   intakeTradeInDirect,
@@ -45,10 +47,48 @@ interface Feedback {
   message: string;
 }
 
+interface TradeInProductOption {
+  id: string;
+  internal_code: string;
+  internal_name: string;
+  inventory_tracking: "serial" | "imei";
+}
+
 const stageOf = (t: TradeInOverview): string => (isTradeInRejected(t) ? "rejected" : t.stage);
 
+const tradeInErrorMessage = (error: unknown): string => {
+  if (error && typeof error === "object") {
+    const record = error as { code?: unknown; message?: unknown; details?: unknown };
+    const code = typeof record.code === "string" ? record.code : "";
+    const message =
+      typeof record.message === "string"
+        ? record.message
+        : typeof record.details === "string"
+          ? record.details
+          : "";
+    if (code === "23514" && message.toLowerCase().includes("inventory units")) {
+      return "El producto seleccionado no admite recepción de equipos usados. Elegí un producto con seguimiento por serie o IMEI.";
+    }
+    if (message) return message;
+  }
+  return error instanceof Error && error.message.trim() !== ""
+    ? error.message
+    : "La operación no pudo completarse.";
+};
+
 export const TradeInsWorkspace = () => {
+  const { hasPermission } = useErpAuth();
+  const canManageTradeIns = hasPermission("trade_ins.manage");
+  const canApproveTradeIns = hasPermission("trade_ins.approve");
+  const canViewCosts = hasPermission("costs.view");
+  const canRefurbishTradeIns = canManageTradeIns && hasPermission("costs.manage");
+  const canReleaseTradeIns =
+    canApproveTradeIns &&
+    hasPermission("stock.move") &&
+    hasPermission("purchases.manage") &&
+    hasPermission("costs.manage");
   const [items, setItems] = useState<TradeInOverview[]>([]);
+  const [tradeInProducts, setTradeInProducts] = useState<TradeInProductOption[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>("all");
@@ -101,13 +141,39 @@ export const TradeInsWorkspace = () => {
     }
   };
 
+  const loadTradeInProducts = async () => {
+    const { data, error: productsError } = await supabase
+      .from("products")
+      .select("id, internal_code, internal_name, inventory_tracking")
+      .eq("item_kind", "product")
+      .eq("is_active", true)
+      .in("inventory_tracking", ["serial", "imei"])
+      .order("internal_name", { ascending: true });
+    if (productsError) throw productsError;
+    setTradeInProducts((data ?? []) as TradeInProductOption[]);
+  };
+
   useEffect(() => {
     void loadTradeIns();
   }, []);
 
+  const openIntakeModal = () => {
+    if (!canManageTradeIns) return;
+    setIsModalOpen(true);
+    if (tradeInProducts.length > 0) return;
+    void loadTradeInProducts().catch((loadError: unknown) => {
+      setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los productos compatibles.");
+    });
+  };
+
   const selectedItem = useMemo(
     () => items.find((t) => t.id === selectedId) ?? null,
     [items, selectedId]
+  );
+
+  const selectedProduct = useMemo(
+    () => tradeInProducts.find((product) => product.id === productId) ?? null,
+    [productId, tradeInProducts]
   );
 
   const filteredItems = useMemo(() => {
@@ -151,7 +217,7 @@ export const TradeInsWorkspace = () => {
       await loadTradeIns();
       setFeedback({ type: "success", message: successMessage });
     } catch (e) {
-      setFeedback({ type: "error", message: e instanceof Error ? e.message : "La operación no pudo completarse." });
+      setFeedback({ type: "error", message: tradeInErrorMessage(e) });
     } finally {
       setActionBusy(false);
     }
@@ -173,8 +239,13 @@ export const TradeInsWorkspace = () => {
 
   const handleIntake = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTradeIns) return;
     if (!branchId.trim() || !customerId.trim() || !productId.trim()) {
-      setFeedback({ type: "error", message: "Sucursal, cliente y producto son obligatorios." });
+      setFeedback({ type: "error", message: "Sucursal, cliente y producto compatible son obligatorios." });
+      return;
+    }
+    if (!selectedProduct) {
+      setFeedback({ type: "error", message: "Elegí un producto activo con seguimiento por serie o IMEI." });
       return;
     }
     if (!ownerName.trim() || !declarationText.trim()) {
@@ -189,6 +260,14 @@ export const TradeInsWorkspace = () => {
     const imei = deviceImei.trim();
     if (imei !== "" && !IMEI_REGEX.test(imei)) {
       setFeedback({ type: "error", message: "El IMEI debe contener entre 14 y 16 dígitos numéricos." });
+      return;
+    }
+    if (selectedProduct.inventory_tracking === "serial" && deviceSerial.trim() === "") {
+      setFeedback({ type: "error", message: "El producto seleccionado requiere un número de serie." });
+      return;
+    }
+    if (selectedProduct.inventory_tracking === "imei" && imei === "") {
+      setFeedback({ type: "error", message: "El producto seleccionado requiere un IMEI válido." });
       return;
     }
     await runAction(
@@ -512,10 +591,12 @@ export const TradeInsWorkspace = () => {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <button type="button" className="btn-primary" onClick={() => setIsModalOpen(true)}>
-              <Plus size={16} />
-              Recibir Equipo Usado
-            </button>
+            {canManageTradeIns && (
+              <button type="button" className="btn-primary" onClick={openIntakeModal}>
+                <Plus size={16} />
+                Recibir Equipo Usado
+              </button>
+            )}
           </div>
         </div>
 
@@ -570,7 +651,21 @@ export const TradeInsWorkspace = () => {
                   const stKey = stageOf(item);
                   const st = STAGE_MAP[stKey] ?? STAGE_MAP.quarantine;
                   return (
-                    <tr key={item.id} style={{ cursor: "pointer" }} onClick={() => setSelectedId(item.id)}>
+                    <tr
+                      key={item.id}
+                      className="interactive-row"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Abrir canje ${item.product_name ?? shortId(item.id)}`}
+                      onClick={() => setSelectedId(item.id)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedId(item.id);
+                        }
+                      }}
+                    >
                       <td>
                         <span className="type-badge purple" style={{ fontFamily: "monospace" }} title={item.id}>
                           {shortId(item.id)}
@@ -615,11 +710,15 @@ export const TradeInsWorkspace = () => {
                       <td>
                         <div style={{ display: "flex", flexDirection: "column" }}>
                           <strong style={{ color: "var(--brand-primary)" }}>
-                            {formatCurrency(item.appraised_value_base ?? item.declared_value_base, "ARS")}
+                            {canViewCosts
+                              ? formatCurrency(item.appraised_value_base ?? item.declared_value_base, "ARS")
+                              : "Restringido"}
                           </strong>
-                          <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                            Declarado: {formatCurrency(item.declared_value_base, "ARS")}
-                          </span>
+                          {canViewCosts && (
+                            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                              Declarado: {formatCurrency(item.declared_value_base, "ARS")}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="text-right">
@@ -675,14 +774,18 @@ export const TradeInsWorkspace = () => {
                 <li>
                   Tasación:{" "}
                   {selectedItem.evaluation_id
-                    ? `${formatCurrency(selectedItem.appraised_value_base, "ARS")} • ${selectedItem.evaluation_decision ?? "pendiente de revisión"}`
+                    ? canViewCosts
+                      ? `${formatCurrency(selectedItem.appraised_value_base, "ARS")} • ${selectedItem.evaluation_decision ?? "pendiente de revisión"}`
+                      : "registrada • valor restringido"
                     : "pendiente"}
                 </li>
                 <li>Liberación: {selectedItem.release_id ? formatDateTime(selectedItem.released_at) : "pendiente"}</li>
                 <li>
                   Pago aplicado:{" "}
                   {selectedItem.payment_id
-                    ? `${formatCurrency(selectedItem.payment_amount, "ARS")} • ${formatDateTime(selectedItem.payment_applied_at)}`
+                    ? canViewCosts
+                      ? `${formatCurrency(selectedItem.payment_amount, "ARS")} • ${formatDateTime(selectedItem.payment_applied_at)}`
+                      : "registrado • importe restringido"
                     : "pendiente"}
                 </li>
               </ol>
@@ -699,40 +802,52 @@ export const TradeInsWorkspace = () => {
               <div>
                 <span className="stat-label">IMEI</span>
                 <strong style={{ display: "block", fontSize: "13px", fontFamily: "monospace" }}>
-                  {selectedItem.imei ?? "—"}
+                  {selectedItem.imei ?? "Restringido"}
                 </strong>
                 <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                  {selectedItem.imei_checked_at ? `Verificado: ${formatDateTime(selectedItem.imei_checked_at)}` : "Sin verificación"}
+                  {selectedItem.imei
+                    ? selectedItem.imei_checked_at
+                      ? `Verificado: ${formatDateTime(selectedItem.imei_checked_at)}`
+                      : "Sin verificación"
+                    : "Identificador restringido"}
                 </span>
               </div>
               <div>
                 <span className="stat-label">Tasación / Reacondicionamiento est.</span>
                 <strong style={{ display: "block", fontSize: "13px" }}>
-                  {formatCurrency(selectedItem.appraised_value_base, "ARS")} /{" "}
-                  {formatCurrency(selectedItem.estimated_refurbishment_cost_base, "ARS")}
+                  {canViewCosts
+                    ? `${formatCurrency(selectedItem.appraised_value_base, "ARS")} / ${formatCurrency(selectedItem.estimated_refurbishment_cost_base, "ARS")}`
+                    : "Valores restringidos"}
                 </strong>
               </div>
               <div>
                 <span className="stat-label">Liberación / Pago</span>
                 <strong style={{ display: "block", fontSize: "13px" }}>
                   {selectedItem.release_id ? `Liberado ${formatDateTime(selectedItem.released_at)}` : "Sin liberar"} •{" "}
-                  {selectedItem.payment_id ? formatCurrency(selectedItem.payment_amount, "ARS") : "Sin pago"}
+                  {selectedItem.payment_id
+                    ? canViewCosts
+                      ? formatCurrency(selectedItem.payment_amount, "ARS")
+                      : "Pago registrado"
+                    : "Sin pago"}
                 </strong>
               </div>
             </div>
 
-            <div className="erp-form-group">
-              <label className="erp-form-label">Motivo operativo (para cualquier acción)</label>
-              <input
-                type="text"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                className="erp-form-input"
-                placeholder="Ej: Revisión de documentación del titular"
-              />
-            </div>
+            {(canManageTradeIns || canApproveTradeIns || canReleaseTradeIns || canViewCosts) && (
+              <div className="erp-form-group">
+                <label className="erp-form-label">Motivo operativo (para cualquier acción)</label>
+                <input
+                  type="text"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="erp-form-input"
+                  placeholder="Ej: Revisión de documentación del titular"
+                />
+              </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {canApproveTradeIns && (
+              <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>1. Revisar procedencia</strong>
               <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
                 <button type="button" className="btn-primary" disabled={actionBusy} onClick={() => handleProvenance("approved")}>
@@ -742,9 +857,11 @@ export const TradeInsWorkspace = () => {
                   Rechazar
                 </button>
               </div>
-            </div>
+              </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {canManageTradeIns && (
+              <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>2. Verificación IMEI</strong>
               <div className="erp-form-group" style={{ marginTop: "8px" }}>
                 <label className="erp-form-label">Proveedor</label>
@@ -785,10 +902,14 @@ export const TradeInsWorkspace = () => {
               <button type="button" className="pag-btn" disabled={actionBusy} onClick={handleImeiFallback}>
                 Registrar respaldo manual
               </button>
-            </div>
+              </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {(canManageTradeIns || canApproveTradeIns) && (
+              <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>3. Tasación y revisión</strong>
+              {canManageTradeIns && (
+                <>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "8px" }}>
                 <div className="erp-form-group">
                   <label className="erp-form-label">Valor tasado (base)</label>
@@ -837,6 +958,9 @@ export const TradeInsWorkspace = () => {
               <button type="button" className="btn-primary" disabled={actionBusy} onClick={handleCreateEvaluation}>
                 Crear tasación
               </button>
+                </>
+              )}
+              {canApproveTradeIns && (
               <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
                 <button type="button" className="pag-btn" disabled={actionBusy} onClick={() => handleReviewEvaluation("approved")}>
                   Aprobar tasación
@@ -845,9 +969,12 @@ export const TradeInsWorkspace = () => {
                   Rechazar tasación
                 </button>
               </div>
-            </div>
+              )}
+              </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {canRefurbishTradeIns && (
+              <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>4. Reacondicionamiento</strong>
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "8px", marginTop: "8px" }}>
                 <div className="erp-form-group">
@@ -884,10 +1011,14 @@ export const TradeInsWorkspace = () => {
               <button type="button" className="pag-btn" disabled={actionBusy} onClick={handleRefurbishment}>
                 Registrar reacondicionamiento
               </button>
-            </div>
+              </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {(canReleaseTradeIns || canManageTradeIns || canViewCosts) && (
+              <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>5. Liberar a stock y aplicar a venta</strong>
+              {canReleaseTradeIns && (
+                <>
               <div className="erp-form-group" style={{ marginTop: "8px" }}>
                 <label className="erp-form-label">Depósito destino</label>
                 <input
@@ -901,43 +1032,54 @@ export const TradeInsWorkspace = () => {
               <button type="button" className="btn-primary" disabled={actionBusy} onClick={handleRelease}>
                 Liberar a stock
               </button>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "8px", marginTop: "12px" }}>
-                <div className="erp-form-group">
-                  <label className="erp-form-label">Venta destino</label>
-                  <input
-                    type="text"
-                    value={saleId}
-                    onChange={(e) => setSaleId(e.target.value)}
-                    className="erp-form-input"
-                    placeholder="UUID de la venta"
-                  />
+                </>
+              )}
+              {canManageTradeIns && (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "8px", marginTop: "12px" }}>
+                    <div className="erp-form-group">
+                      <label className="erp-form-label">Venta destino</label>
+                      <input
+                        type="text"
+                        value={saleId}
+                        onChange={(e) => setSaleId(e.target.value)}
+                        className="erp-form-input"
+                        placeholder="UUID de la venta"
+                      />
+                    </div>
+                    <div className="erp-form-group">
+                      <label className="erp-form-label">Monto</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={paymentAmount}
+                        onChange={(e) => setPaymentAmount(e.target.value)}
+                        className="erp-form-input"
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button type="button" className="pag-btn" disabled={actionBusy} onClick={handleApplyPayment}>
+                      Aplicar pago
+                    </button>
+                    <button type="button" className="pag-btn" disabled={actionBusy} onClick={handleReversePayment}>
+                      Revertir pago
+                    </button>
+                  </div>
+                </>
+              )}
+              {canViewCosts && (
+                <div style={{ display: "flex", gap: "8px", marginTop: canManageTradeIns ? "8px" : "12px" }}>
+                  <button type="button" className="pag-btn" disabled={actionBusy} onClick={handleCosts}>
+                    Ver costos
+                  </button>
                 </div>
-                <div className="erp-form-group">
-                  <label className="erp-form-label">Monto</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    className="erp-form-input"
-                  />
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button type="button" className="pag-btn" disabled={actionBusy} onClick={handleApplyPayment}>
-                  Aplicar pago
-                </button>
-                <button type="button" className="pag-btn" disabled={actionBusy} onClick={handleReversePayment}>
-                  Revertir pago
-                </button>
-                <button type="button" className="pag-btn" disabled={actionBusy} onClick={handleCosts}>
-                  Ver costos
-                </button>
-              </div>
+              )}
               {costsResult && (
                 <pre style={{ marginTop: "8px", fontSize: "11px", whiteSpace: "pre-wrap" }}>{costsResult}</pre>
               )}
-            </div>
+              </div>
+            )}
           </div>
         </Modal>
       )}
@@ -977,15 +1119,28 @@ export const TradeInsWorkspace = () => {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">Producto (ID) *</label>
-              <input
-                type="text"
+              <label className="erp-form-label">Producto compatible *</label>
+              <select
                 required
                 value={productId}
-                onChange={(e) => setProductId(e.target.value)}
-                className="erp-form-input"
-                placeholder="UUID de producto"
-              />
+                onChange={(e) => {
+                  setProductId(e.target.value);
+                  setVariantId("");
+                  setDeviceSerial("");
+                  setDeviceImei("");
+                }}
+                className="erp-form-select"
+              >
+                <option value="">Seleccionar producto serial/IMEI…</option>
+                {tradeInProducts.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.internal_code} · {product.internal_name} · {product.inventory_tracking === "imei" ? "IMEI" : "Serie"}
+                  </option>
+                ))}
+              </select>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                Sólo se muestran productos activos con unidad física identificable.
+              </span>
             </div>
             <div className="erp-form-group">
               <label className="erp-form-label">Variante (ID, opcional)</label>
@@ -1000,23 +1155,27 @@ export const TradeInsWorkspace = () => {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">Serie del equipo</label>
+              <label className="erp-form-label">
+                Serie del equipo{selectedProduct?.inventory_tracking === "serial" ? " *" : ""}
+              </label>
               <input
                 type="text"
                 value={deviceSerial}
                 onChange={(e) => setDeviceSerial(e.target.value)}
                 className="erp-form-input"
-                placeholder="Nro de serie (opcional)"
+                placeholder={selectedProduct?.inventory_tracking === "serial" ? "Nro de serie obligatorio" : "Nro de serie (opcional)"}
               />
             </div>
             <div className="erp-form-group">
-              <label className="erp-form-label">IMEI (14-16 dígitos)</label>
+              <label className="erp-form-label">
+                IMEI (14-16 dígitos){selectedProduct?.inventory_tracking === "imei" ? " *" : ""}
+              </label>
               <input
                 type="text"
                 value={deviceImei}
                 onChange={(e) => setDeviceImei(e.target.value)}
                 className="erp-form-input"
-                placeholder="Opcional"
+                placeholder={selectedProduct?.inventory_tracking === "imei" ? "IMEI obligatorio" : "Opcional"}
               />
             </div>
           </div>

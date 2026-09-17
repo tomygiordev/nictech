@@ -21,7 +21,16 @@ import {
   type PcBuildCostLine,
 } from "./api";
 
-const SLOT_CODES = ["CPU", "GPU", "RAM", "STORAGE", "MOTHERBOARD", "PSU"] as const;
+const SLOT_OPTIONS = [
+  { code: "cpu", label: "CPU" },
+  { code: "gpu", label: "GPU" },
+  { code: "ram", label: "RAM" },
+  { code: "storage", label: "Storage" },
+  { code: "motherboard", label: "Motherboard" },
+  { code: "psu", label: "PSU" },
+] as const;
+
+const SLOT_CODES: ReadonlySet<string> = new Set(SLOT_OPTIONS.map((slot) => slot.code));
 
 interface ComponentDraft {
   slot_code: string;
@@ -32,7 +41,7 @@ interface ComponentDraft {
 }
 
 const emptyDraft = (): ComponentDraft => ({
-  slot_code: "CPU",
+  slot_code: "cpu",
   product_id: "",
   variant_id: "",
   inventory_unit_id: "",
@@ -205,6 +214,10 @@ export const PcBuildsWorkspace = () => {
       setCreateError("Agregá al menos un componente con slot y producto.");
       return;
     }
+    if (components.some((component) => !SLOT_CODES.has(component.slot_code))) {
+      setCreateError("Seleccioná un slot válido para cada componente.");
+      return;
+    }
 
     setIsCreating(true);
     try {
@@ -257,6 +270,10 @@ export const PcBuildsWorkspace = () => {
     const components = toComponentInputs(revDrafts);
     if (components.length === 0) {
       setDetailError("Cargá al menos un componente para la nueva revisión.");
+      return;
+    }
+    if (components.some((component) => !SLOT_CODES.has(component.slot_code))) {
+      setDetailError("Seleccioná un slot válido para cada componente.");
       return;
     }
     void runDetailAction("revision", async () => {
@@ -421,9 +438,9 @@ export const PcBuildsWorkspace = () => {
             value={d.slot_code}
             onChange={(e) => onChange(i, { slot_code: e.target.value })}
           >
-            {SLOT_CODES.map((s) => (
-              <option key={s} value={s}>
-                {s}
+            {SLOT_OPTIONS.map((slot) => (
+              <option key={slot.code} value={slot.code}>
+                {slot.label}
               </option>
             ))}
           </select>
@@ -541,7 +558,21 @@ export const PcBuildsWorkspace = () => {
                   </tr>
                 ) : (
                   filteredProjects.map((p) => (
-                    <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => setSelectedId(p.id)}>
+                    <tr
+                      key={p.id}
+                      className="interactive-row"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Abrir proyecto ${p.title} de ${p.customer_name}`}
+                      onClick={() => setSelectedId(p.id)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedId(p.id);
+                        }
+                      }}
+                    >
                       <td>
                         <span className="type-badge purple" style={{ fontFamily: "monospace" }} title={p.id}>
                           {shortId(p.id)}

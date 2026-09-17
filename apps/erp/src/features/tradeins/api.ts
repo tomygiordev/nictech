@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase";
+import type { Database, Json } from "../../types/supabase";
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -8,9 +9,9 @@ const client = () => {
 const newOpKey = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export type TradeInStage = "applied_to_sale" | "ready_for_stock" | "evaluating" | "quarantine";
-export type ProvenanceDecision = "approved" | "rejected" | null;
-export type ImeiStatus = "clear" | "blocked" | "checking" | "unavailable" | "error" | "not_required" | null;
-export type EvaluationDecision = "approved" | "rejected" | string | null;
+export type ProvenanceDecision = Database["erp"]["Enums"]["trade_in_review_decision"] | null;
+export type ImeiStatus = Database["erp"]["Enums"]["imei_check_status"] | null;
+export type EvaluationDecision = Database["erp"]["Enums"]["trade_in_review_decision"] | null;
 
 export interface TradeInOverview {
   id: string;
@@ -29,7 +30,7 @@ export interface TradeInOverview {
   inventory_unit_id: string | null;
   serial_number: string | null;
   imei: string | null;
-  unit_status: string | null;
+  unit_status: Database["erp"]["Enums"]["inventory_unit_status"] | null;
   declared_value_base: number | null;
   received_at: string | null;
   provenance_decision: ProvenanceDecision;
@@ -55,62 +56,23 @@ export interface TradeInOverview {
   stage: TradeInStage;
 }
 
-interface TradeInOverviewRow {
-  id: string;
-  organization_id: string | null;
-  branch_id: string | null;
-  customer_id: string | null;
-  customer_name: string | null;
-  customer_code: string | null;
-  customer_phone: string | null;
-  product_id: string | null;
-  product_name: string | null;
-  product_code: string | null;
-  variant_id: string | null;
-  variant_code: string | null;
-  variant_name: string | null;
-  inventory_unit_id: string | null;
-  serial_number: string | null;
-  imei: string | null;
-  unit_status: string | null;
-  declared_value_base: number | string | null;
-  received_at: string | null;
-  provenance_decision: ProvenanceDecision;
-  provenance_reviewed_at: string | null;
-  imei_request_version: number | string | null;
-  imei_status: ImeiStatus;
-  imei_source: string | null;
-  imei_checked_at: string | null;
-  evaluation_id: string | null;
-  evaluation_version: number | string | null;
-  appraised_value_base: number | string | null;
-  estimated_refurbishment_cost_base: number | string | null;
-  evaluation_decision: EvaluationDecision;
-  actual_refurbishment_cost: number | string | null;
-  release_id: string | null;
-  release_total_cost: number | string | null;
-  release_location_id: string | null;
-  released_at: string | null;
-  payment_id: string | null;
-  sale_id: string | null;
-  payment_amount: number | string | null;
-  payment_applied_at: string | null;
-  stage: TradeInStage;
-}
+type TradeInOverviewRow = Database["erp"]["Views"]["trade_ins_overview"]["Row"];
+type JsonObject = { [key: string]: Json | undefined };
 
-const toNumberOrNull = (value: number | string | null | undefined): number | null => {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isNaN(n) ? null : n;
+const requireTradeInId = (value: string | null): string => {
+  if (value === null) throw new Error("La vista de canjes devolvió un id nulo.");
+  return value;
 };
 
-const toIntOrNull = (value: number | string | null | undefined): number | null => {
-  const n = toNumberOrNull(value);
-  return n === null ? null : Math.trunc(n);
+const parseTradeInStage = (value: string | null): TradeInStage => {
+  if (value === "applied_to_sale" || value === "ready_for_stock" || value === "evaluating" || value === "quarantine") {
+    return value;
+  }
+  throw new Error(`El canje devolvió una etapa inválida: ${value ?? "null"}.`);
 };
 
 const mapRow = (row: TradeInOverviewRow): TradeInOverview => ({
-  id: row.id,
+  id: requireTradeInId(row.id),
   organization_id: row.organization_id,
   branch_id: row.branch_id,
   customer_id: row.customer_id,
@@ -127,29 +89,29 @@ const mapRow = (row: TradeInOverviewRow): TradeInOverview => ({
   serial_number: row.serial_number,
   imei: row.imei,
   unit_status: row.unit_status,
-  declared_value_base: toNumberOrNull(row.declared_value_base),
+  declared_value_base: row.declared_value_base,
   received_at: row.received_at,
   provenance_decision: row.provenance_decision,
   provenance_reviewed_at: row.provenance_reviewed_at,
-  imei_request_version: toIntOrNull(row.imei_request_version),
+  imei_request_version: row.imei_request_version,
   imei_status: row.imei_status,
   imei_source: row.imei_source,
   imei_checked_at: row.imei_checked_at,
   evaluation_id: row.evaluation_id,
-  evaluation_version: toIntOrNull(row.evaluation_version),
-  appraised_value_base: toNumberOrNull(row.appraised_value_base),
-  estimated_refurbishment_cost_base: toNumberOrNull(row.estimated_refurbishment_cost_base),
+  evaluation_version: row.evaluation_version,
+  appraised_value_base: row.appraised_value_base,
+  estimated_refurbishment_cost_base: row.estimated_refurbishment_cost_base,
   evaluation_decision: row.evaluation_decision,
-  actual_refurbishment_cost: toNumberOrNull(row.actual_refurbishment_cost),
+  actual_refurbishment_cost: row.actual_refurbishment_cost,
   release_id: row.release_id,
-  release_total_cost: toNumberOrNull(row.release_total_cost),
+  release_total_cost: row.release_total_cost,
   release_location_id: row.release_location_id,
   released_at: row.released_at,
   payment_id: row.payment_id,
   sale_id: row.sale_id,
-  payment_amount: toNumberOrNull(row.payment_amount),
+  payment_amount: row.payment_amount,
   payment_applied_at: row.payment_applied_at,
-  stage: row.stage,
+  stage: parseTradeInStage(row.stage),
 });
 
 export const isTradeInRejected = (t: TradeInOverview): boolean =>
@@ -165,7 +127,7 @@ export const listTradeIns = async (): Promise<TradeInOverview[]> => {
     .order("received_at", { ascending: false });
 
   if (error) throw error;
-  return ((data || []) as TradeInOverviewRow[]).map(mapRow);
+  return (data ?? []).map(mapRow);
 };
 
 export interface IntakeTradeInDirectInput {
@@ -188,17 +150,17 @@ export const intakeTradeInDirect = async (input: IntakeTradeInDirectInput): Prom
     target_customer_id: input.customerId,
     target_product_id: input.productId,
     target_variant_id: input.variantId || null,
-    device_serial: input.deviceSerial || null,
-    device_imei: input.deviceImei || null,
+    device_serial: input.deviceSerial || "",
+    device_imei: input.deviceImei || "",
     owner_name: input.ownerName,
     declaration_text: input.declarationText,
     declared_value: input.declaredValue,
-    evidence_doc: input.evidenceDoc || null,
+    evidence_doc: input.evidenceDoc || undefined,
     operation_reason: input.operationReason || "Recepción de equipo en canje",
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const reviewTradeInProvenance = async (
@@ -213,7 +175,7 @@ export const reviewTradeInProvenance = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const requestTradeInImeiCheck = async (
@@ -229,7 +191,7 @@ export const requestTradeInImeiCheck = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export type ImeiManualFallbackStatus = "clear" | "not_required";
@@ -237,7 +199,7 @@ export type ImeiManualFallbackStatus = "clear" | "not_required";
 export const recordTradeInImeiManualFallback = async (
   tradeInId: string,
   fallbackStatus: ImeiManualFallbackStatus,
-  documentation: Record<string, string | number | boolean | null>,
+  documentation: JsonObject,
   operationReason?: string
 ): Promise<string> => {
   const keys = Object.keys(documentation || {});
@@ -254,12 +216,12 @@ export const recordTradeInImeiManualFallback = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const createTradeInEvaluation = async (
   tradeInId: string,
-  conditionSnapshot: Record<string, string | number | boolean | null>,
+  conditionSnapshot: JsonObject,
   appraisedValueBase: number,
   estimatedRefurbishmentCostBase: number,
   operationReason?: string
@@ -274,7 +236,7 @@ export const createTradeInEvaluation = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const reviewTradeInEvaluation = async (
@@ -289,7 +251,7 @@ export const reviewTradeInEvaluation = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const recordTradeInRefurbishment = async (
@@ -311,7 +273,7 @@ export const recordTradeInRefurbishment = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const releaseTradeInToStock = async (
@@ -327,7 +289,7 @@ export const releaseTradeInToStock = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const applyTradeInSalePayment = async (
@@ -345,7 +307,7 @@ export const applyTradeInSalePayment = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const reverseTradeInSalePayment = async (
@@ -361,11 +323,13 @@ export const reverseTradeInSalePayment = async (
   if (error) throw error;
 };
 
-export const getTradeInCosts = async (tradeInId: string): Promise<unknown> => {
+export type TradeInCosts = Database["erp"]["Functions"]["get_trade_in_costs"]["Returns"];
+
+export const getTradeInCosts = async (tradeInId: string): Promise<TradeInCosts> => {
   const { data, error } = await client().rpc("get_trade_in_costs", {
     target_trade_in_id: tradeInId,
   });
 
   if (error) throw error;
-  return data as unknown;
+  return data;
 };

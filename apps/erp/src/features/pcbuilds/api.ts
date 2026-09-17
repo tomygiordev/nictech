@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase";
+import type { Json } from "../../types/supabase";
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -27,7 +28,7 @@ export interface PcBuildProjectOverview {
   latest_revision_version: number | null;
   spec_version_id: string | null;
   rule_set_version_id: string | null;
-  configuration: Record<string, unknown> | null;
+  configuration: Json | null;
   components_count: number;
   total_components_cost: number;
   latest_compatibility_outcome: PcCompatibilityOutcome;
@@ -114,6 +115,45 @@ export interface PcBuildCostLine {
   unit_cost_snapshot: number;
 }
 
+const toJson = (value: unknown): Json => {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(toJson);
+  if (typeof value === "object") {
+    const result: { [key: string]: Json | undefined } = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+      result[key] = nestedValue === undefined ? undefined : toJson(nestedValue);
+    }
+    return result;
+  }
+  throw new Error("El payload del armado contiene un valor no serializable.");
+};
+
+const parseCreatePcBuildAtomicResult = (value: Json): CreatePcBuildAtomicResult => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Respuesta inválida al crear el armado de PC.");
+  }
+
+  const { project_id, revision_id, compatibility_run_id, compatibility_outcome } = value;
+  const validOutcome =
+    compatibility_outcome === null ||
+    compatibility_outcome === "pass" ||
+    compatibility_outcome === "warning" ||
+    compatibility_outcome === "fail";
+
+  if (
+    typeof project_id !== "string" ||
+    typeof revision_id !== "string" ||
+    typeof compatibility_run_id !== "string" ||
+    !validOutcome
+  ) {
+    throw new Error("Respuesta incompleta al crear el armado de PC.");
+  }
+
+  return { project_id, revision_id, compatibility_run_id, compatibility_outcome };
+};
+
 export const listPcBuildProjects = async (): Promise<PcBuildProjectOverview[]> => {
   const { data, error } = await client()
     .from("pc_build_projects_overview")
@@ -122,42 +162,39 @@ export const listPcBuildProjects = async (): Promise<PcBuildProjectOverview[]> =
 
   if (error) throw error;
 
-  return (data || []).map((row: Record<string, unknown>) => ({
-    id: String(row.id ?? ""),
-    organization_id: String(row.organization_id ?? ""),
-    branch_id: String(row.branch_id ?? ""),
-    customer_id: String(row.customer_id ?? ""),
-    customer_name: String(row.customer_name ?? "Cliente"),
-    customer_code: String(row.customer_code ?? ""),
-    customer_phone: (row.customer_phone as string | null) ?? null,
-    title: String(row.title ?? ""),
-    notes: (row.notes as string | null) ?? null,
-    created_at: String(row.created_at ?? ""),
-    current_state: (row.current_state as PcBuildState) ?? null,
-    state_changed_at: (row.state_changed_at as string | null) ?? null,
-    latest_revision_id: (row.latest_revision_id as string | null) ?? null,
-    latest_revision_version:
-      row.latest_revision_version === null || row.latest_revision_version === undefined
-        ? null
-        : Number(row.latest_revision_version),
-    spec_version_id: (row.spec_version_id as string | null) ?? null,
-    rule_set_version_id: (row.rule_set_version_id as string | null) ?? null,
-    configuration: (row.configuration as Record<string, unknown> | null) ?? null,
-    components_count: Number(row.components_count ?? 0),
-    total_components_cost: Number(row.total_components_cost ?? 0),
-    latest_compatibility_outcome: (row.latest_compatibility_outcome as PcCompatibilityOutcome) ?? null,
-    compatibility_checked_at: (row.compatibility_checked_at as string | null) ?? null,
-    reservation_batch_id: (row.reservation_batch_id as string | null) ?? null,
-    reservation_status: (row.reservation_status as string | null) ?? null,
-    reservation_expires_at: (row.reservation_expires_at as string | null) ?? null,
-    latest_test_run_id: (row.latest_test_run_id as string | null) ?? null,
-    test_completed_at: (row.test_completed_at as string | null) ?? null,
-    completion_id: (row.completion_id as string | null) ?? null,
-    equipment_id: (row.equipment_id as string | null) ?? null,
-    fulfillment_stock_document_id: (row.fulfillment_stock_document_id as string | null) ?? null,
-    built_serial_number: (row.built_serial_number as string | null) ?? null,
-    completed_at: (row.completed_at as string | null) ?? null,
-  }));
+  return (data ?? []).map((row) => ({
+    id: row.id ?? "",
+    organization_id: row.organization_id ?? "",
+    branch_id: row.branch_id ?? "",
+    customer_id: row.customer_id ?? "",
+    customer_name: row.customer_name ?? "Cliente",
+    customer_code: row.customer_code ?? "",
+    customer_phone: row.customer_phone,
+    title: row.title ?? "",
+    notes: row.notes,
+    created_at: row.created_at ?? "",
+    current_state: row.current_state,
+    state_changed_at: row.state_changed_at,
+    latest_revision_id: row.latest_revision_id,
+    latest_revision_version: row.latest_revision_version,
+    spec_version_id: row.spec_version_id,
+    rule_set_version_id: row.rule_set_version_id,
+    configuration: row.configuration,
+    components_count: row.components_count ?? 0,
+    total_components_cost: row.total_components_cost ?? 0,
+    latest_compatibility_outcome: row.latest_compatibility_outcome,
+    compatibility_checked_at: row.compatibility_checked_at,
+    reservation_batch_id: row.reservation_batch_id,
+    reservation_status: row.reservation_status,
+    reservation_expires_at: row.reservation_expires_at,
+    latest_test_run_id: row.latest_test_run_id,
+    test_completed_at: row.test_completed_at,
+    completion_id: row.completion_id,
+    equipment_id: row.equipment_id,
+    fulfillment_stock_document_id: row.fulfillment_stock_document_id,
+    built_serial_number: row.built_serial_number,
+    completed_at: row.completed_at,
+  })) satisfies Json;
 };
 
 export const createPcBuildAtomic = async (
@@ -169,52 +206,51 @@ export const createPcBuildAtomic = async (
     variant_id: c.variant_id?.trim() ? c.variant_id.trim() : null,
     inventory_unit_id: c.inventory_unit_id?.trim() ? c.inventory_unit_id.trim() : null,
     quantity: c.quantity.trim(),
-    specifications: c.specifications ?? {},
-    warranty: c.warranty ?? {},
+    specifications: toJson(c.specifications ?? {}),
+    warranty: toJson(c.warranty ?? {}),
   }));
 
   const { data, error } = await client().rpc("create_pc_build_atomic", {
     target_branch_id: input.branchId,
     target_customer_id: input.customerId,
     build_title: input.title.trim(),
-    build_notes: input.notes?.trim() ? input.notes.trim() : null,
+    build_notes: input.notes?.trim() ?? "",
     components_list: componentsList,
     operation_reason: input.reason?.trim() ? input.reason.trim() : "Creación de proyecto de PC armada",
   });
 
   if (error) throw error;
-  const result = data as {
-    project_id: string;
-    revision_id: string;
-    compatibility_run_id: string;
-    compatibility_outcome: PcCompatibilityOutcome;
-  };
-  return result;
+  return parseCreatePcBuildAtomicResult(data);
 };
 
 export const createPcBuildRevision = async (input: CreatePcBuildRevisionInput): Promise<string> => {
+  if (!input.specVersionId || !input.ruleSetVersionId) {
+    throw new Error("La revisión requiere versiones de especificación y reglas de compatibilidad.");
+  }
+
   const components = input.components.map((c) => ({
     slot_code: c.slot_code.trim(),
     product_id: c.product_id.trim(),
     variant_id: c.variant_id?.trim() ? c.variant_id.trim() : null,
     inventory_unit_id: c.inventory_unit_id?.trim() ? c.inventory_unit_id.trim() : null,
     quantity: c.quantity.trim(),
-    specifications: c.specifications ?? {},
-    warranty: c.warranty ?? {},
-  }));
+    specifications: toJson(c.specifications ?? {}),
+    warranty: toJson(c.warranty ?? {}),
+  })) satisfies Json;
 
   const { data, error } = await client().rpc("create_pc_build_revision", {
     target_project_id: input.projectId,
-    target_spec_version_id: input.specVersionId ?? null,
-    target_rule_set_version_id: input.ruleSetVersionId ?? null,
-    configuration: input.configuration ?? {},
+    target_spec_version_id: input.specVersionId,
+    target_rule_set_version_id: input.ruleSetVersionId,
+    configuration: toJson(input.configuration ?? {}),
     components,
     operation_key: newOpKey("pc-rev"),
     operation_reason: input.reason?.trim() ? input.reason.trim() : "Nueva revisión de configuración",
   });
 
   if (error) throw error;
-  return data as string;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al crear la revisión de PC.");
+  return data;
 };
 
 export const recordPcCompatibilityRun = async (
@@ -228,7 +264,8 @@ export const recordPcCompatibilityRun = async (
   });
 
   if (error) throw error;
-  return data as string;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al registrar la compatibilidad.");
+  return data;
 };
 
 export const reservePcBuildComponents = async (input: ReservePcBuildInput): Promise<string> => {
@@ -236,26 +273,28 @@ export const reservePcBuildComponents = async (input: ReservePcBuildInput): Prom
     target_project_id: input.projectId,
     target_revision_id: input.revisionId,
     expires_at: input.expiresAt,
-    lines: input.lines,
+    lines: input.lines satisfies Json,
     operation_key: newOpKey("pc-res"),
     operation_reason: input.reason?.trim() ? input.reason.trim() : "Reserva de componentes para armado",
   });
 
   if (error) throw error;
-  return data as string;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al reservar los componentes.");
+  return data;
 };
 
 export const recordPcTestRun = async (input: RecordPcTestRunInput): Promise<string> => {
   const { data, error } = await client().rpc("record_pc_test_run", {
     target_revision_id: input.revisionId,
     target_template_version_id: input.templateVersionId,
-    results: input.results,
-    run_notes: input.notes?.trim() ? input.notes.trim() : null,
+    results: input.results satisfies Json,
+    run_notes: input.notes?.trim() ?? "",
     operation_key: newOpKey("pc-test"),
   });
 
   if (error) throw error;
-  return data as string;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al registrar el testeo.");
+  return data;
 };
 
 export const completePcBuild = async (input: CompletePcBuildInput): Promise<string> => {
@@ -264,13 +303,14 @@ export const completePcBuild = async (input: CompletePcBuildInput): Promise<stri
     target_revision_id: input.revisionId,
     target_reservation_batch_id: input.reservationBatchId,
     build_serial: input.serial.trim(),
-    warranty_snapshot: input.warranty ?? {},
+    warranty_snapshot: toJson(input.warranty ?? {}),
     operation_key: newOpKey("pc-done"),
     operation_reason: input.reason?.trim() ? input.reason.trim() : "Finalización de armado de PC",
   });
 
   if (error) throw error;
-  return data as string;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al completar el armado.");
+  return data;
 };
 
 export const getPcBuildCosts = async (completionId: string): Promise<PcBuildCostLine[]> => {
@@ -280,10 +320,9 @@ export const getPcBuildCosts = async (completionId: string): Promise<PcBuildCost
 
   if (error) throw error;
 
-  const rows = (data as Array<Record<string, unknown>> | null) ?? [];
-  return rows.map((row) => ({
-    component_id: String(row.component_id ?? ""),
-    quantity: Number(row.quantity ?? 0),
-    unit_cost_snapshot: Number(row.unit_cost_snapshot ?? 0),
+  return (data ?? []).map((row) => ({
+    component_id: row.component_id,
+    quantity: row.quantity,
+    unit_cost_snapshot: row.unit_cost_snapshot,
   }));
 };
