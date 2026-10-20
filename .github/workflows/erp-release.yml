@@ -150,6 +150,12 @@ jobs:
         run: |
           set -euo pipefail
           (cd assets && sha256sum --check SHA256SUMS.txt)
+          # GitHub normaliza los espacios al adjuntar archivos a una Release.
+          # Preparar los nombres finales antes de generar el manifiesto público.
+          for asset in assets/*.exe assets/*.blockmap; do
+            mv -- "$asset" "${asset// /.}"
+          done
+          (cd assets && sha256sum -- *.exe *.blockmap > SHA256SUMS.txt)
           printf '%s\n' \
             "NicTech ERP ${ERP_VERSION} para Windows x64." \
             '' \

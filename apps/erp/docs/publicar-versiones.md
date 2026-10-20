@@ -62,15 +62,15 @@ También se puede usar **Actions → ERP · Instaladores Windows → Run workflo
 | `NicTech ERP Setup X.Y.Z.exe.blockmap` | Archivo complementario generado por el empaquetador. El cliente no necesita abrirlo. |
 | `SHA256SUMS.txt` | Huellas SHA-256 de los tres archivos anteriores para comprobar integridad. |
 
-Los mismos archivos quedan en el artifact de la ejecución y en la Release en borrador. Las Releases publicadas permanecen hasta que se eliminen; los artifacts de Actions vencen a los 30 días, sujeto a la política del repositorio. En un repositorio privado, el cliente necesita acceso al repositorio para descargar desde GitHub: se puede entregar el `.exe` por otro medio sin cambiar la privacidad del código.
+Los mismos ejecutables quedan en el artifact de la ejecución y en la Release en borrador. En la Release, los nombres usan puntos en lugar de espacios: por ejemplo, `NicTech.ERP.Setup.0.1.1.exe`. Cada descarga incluye un `SHA256SUMS.txt` correspondiente a sus propios nombres de archivo. Las Releases publicadas permanecen hasta que se eliminen; los artifacts de Actions vencen a los 30 días, sujeto a la política del repositorio. En un repositorio privado, el cliente necesita acceso al repositorio para descargar desde GitHub: se puede entregar el `.exe` por otro medio sin cambiar la privacidad del código.
 
 Para consultar la huella de un archivo descargado en Windows:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath '.\NicTech ERP Setup 0.1.1.exe'
+Get-FileHash -Algorithm SHA256 -LiteralPath '.\NicTech.ERP.Setup.0.1.1.exe'
 ```
 
-Comparar el valor con la línea correspondiente de `SHA256SUMS.txt`.
+Comparar el valor con la línea correspondiente de `SHA256SUMS.txt`. Si se descargó el artifact de Actions, usar el nombre con espacios.
 
 ## Alcance de esta entrega
 
