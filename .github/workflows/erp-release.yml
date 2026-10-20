@@ -1,0 +1,177 @@
+name: ERP · Instaladores Windows
+
+on:
+  push:
+    tags:
+      - 'erp-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validar y empaquetar
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      release_tag: ${{ steps.metadata.outputs.release_tag }}
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Comprobar versión y configuración pública
+        id: metadata
+        run: |
+          @'
+          const fs = require('node:fs');
+          const { version } = JSON.parse(fs.readFileSync('apps/erp/package.json', 'utf8'));
+          if (typeof version !== 'string' || version !== version.trim() || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
+            throw new Error('La versión del ERP debe tener formato X.Y.Z.');
+          }
+          const expectedTag = `erp-v${version}`;
+          const isTag = process.env.GITHUB_REF_TYPE === 'tag';
+          if (isTag && process.env.GITHUB_REF_NAME !== expectedTag) {
+            throw new Error(`El tag debe coincidir con apps/erp/package.json: ${expectedTag}`);
+          }
+          const url = process.env.VITE_SUPABASE_URL?.trim();
+          const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+          if (!url || !key) {
+            throw new Error('Configurá las variables GitHub VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.');
+          }
+          const parsedUrl = new URL(url);
+          if (parsedUrl.protocol !== 'https:' || parsedUrl.username || parsedUrl.password) {
+            throw new Error('VITE_SUPABASE_URL debe ser la URL HTTPS pública de Supabase.');
+          }
+          let publicKey = key.startsWith('sb_publishable_');
+          if (!publicKey && key.split('.').length === 3) {
+            try {
+              const payload = JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString('utf8'));
+              publicKey = payload.role === 'anon';
+            } catch { /* Se rechaza cualquier clave con formato desconocido. */ }
+          }
+          if (!publicKey) {
+            throw new Error('Usá una clave publishable o anon; nunca secret ni service_role.');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nrelease_tag=${isTag ? expectedTag : ''}\n`);
+          '@ | node
+
+      - name: Instalar dependencias reproducibles
+        run: npm ci
+
+      - name: Verificar TypeScript del ERP
+        run: npm run typecheck:erp
+
+      - name: Ejecutar pruebas del ERP
+        run: npm run test:run -- apps/erp
+
+      - name: Verificar preparación de versiones
+        run: node --test scripts/release-erp.test.mjs
+
+      - name: Generar instalador y portable
+        run: npm run build:erp:electron
+
+      - name: Comprobar entregables y calcular SHA-256
+        env:
+          ERP_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          $releaseDir = Join-Path $PWD 'apps/erp/release'
+          $expectedNames = @(
+            "NicTech ERP Setup $env:ERP_VERSION.exe",
+            "NicTech ERP $env:ERP_VERSION.exe",
+            "NicTech ERP Setup $env:ERP_VERSION.exe.blockmap"
+          )
+          $lines = foreach ($name in $expectedNames) {
+            $file = Join-Path $releaseDir $name
+            if (!(Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Falta un entregable: $name"
+            }
+            $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          $lines | Set-Content -LiteralPath (Join-Path $releaseDir 'SHA256SUMS.txt') -Encoding utf8NoBOM
+
+      - name: Guardar instaladores descargables
+        uses: actions/upload-artifact@v7
+        with:
+          name: nictech-erp-${{ steps.metadata.outputs.version }}-windows
+          path: |
+            apps/erp/release/NicTech ERP Setup ${{ steps.metadata.outputs.version }}.exe
+            apps/erp/release/NicTech ERP ${{ steps.metadata.outputs.version }}.exe
+            apps/erp/release/NicTech ERP Setup ${{ steps.metadata.outputs.version }}.exe.blockmap
+            apps/erp/release/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  release:
+    name: Preparar borrador de versión
+    needs: build
+    if: needs.build.outputs.release_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Recuperar instaladores validados
+        uses: actions/download-artifact@v8
+        with:
+          name: nictech-erp-${{ needs.build.outputs.version }}-windows
+          path: assets
+
+      - name: Crear o completar borrador
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          ERP_VERSION: ${{ needs.build.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd assets && sha256sum --check SHA256SUMS.txt)
+          printf '%s\n' \
+            "NicTech ERP ${ERP_VERSION} para Windows x64." \
+            '' \
+            '- Setup: instalación habitual en la PC del cliente.' \
+            '- Portable: ejecución sin instalar.' \
+            '- SHA256SUMS.txt: comprobación de integridad de los archivos.' \
+            '' \
+            'Requiere Internet y una cuenta creada en Supabase Auth con acceso al ERP.' \
+            'Los ejecutables todavía no tienen firma digital. Esta versión no incluye actualización automática.' \
+            '' \
+            "Código: ${GITHUB_SHA}" > release-notes.md
+          if existing=$(gh release view "$RELEASE_TAG" --json isDraft); then
+            if ! jq --exit-status '.isDraft == true' <<< "$existing" > /dev/null; then
+              echo 'La versión ya está publicada. No se reemplazan sus archivos; creá una nueva versión.' >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" assets/* --clobber
+          else
+            gh release create "$RELEASE_TAG" assets/* \
+              --draft --verify-tag \
+              --title "NicTech ERP ${ERP_VERSION}" \
+              --notes-file release-notes.md
+          fi
+          release_url=$(gh release view "$RELEASE_TAG" --json url --jq '.url')
+          printf 'Borrador listo para revisar: %s\n' "$release_url" >> "$GITHUB_STEP_SUMMARY"

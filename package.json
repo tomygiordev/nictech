@@ -14,6 +14,8 @@
     "dev:erp:electron": "npm run electron:dev --workspace @nictech/erp",
     "preview:erp:electron": "npm run electron:preview --workspace @nictech/erp",
     "build:erp:electron": "npm run electron:dist --workspace @nictech/erp",
+    "version:erp": "node scripts/release-erp.mjs version",
+    "release:erp": "node scripts/release-erp.mjs publish",
     "dev:all": "concurrently -n \"store,erp\" -c \"cyan.bold,magenta.bold\" \"npm run dev:storefront\" \"npm run dev:erp\"",
     "dev:all:db": "npm run db:start && npm run dev:all",
     "start": "powershell -ExecutionPolicy Bypass -File ./start-dev.ps1",
