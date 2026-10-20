@@ -84,6 +84,9 @@ function createMainWindow() {
     minHeight: 700,
     backgroundColor: "#0f172a",
     title: "NicTech ERP — Sistema de Gestión",
+    icon: path.join(__dirname, app.isPackaged
+      ? "../dist/brand/nictech-symbol.png"
+      : "../public/brand/nictech-symbol.png"),
     frame: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -232,6 +235,7 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(() => {
+  if (process.platform === "win32") app.setAppUserModelId("ar.com.nictech.erp");
   Menu.setApplicationMenu(null);
   createMainWindow();
 

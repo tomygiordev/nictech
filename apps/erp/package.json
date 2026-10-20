@@ -1,7 +1,7 @@
 {
   "name": "@nictech/erp",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Sistema de gestión NicTech ERP",
   "author": "NicTech",
   "type": "module",
@@ -36,12 +36,15 @@
       "package.json"
     ],
     "win": {
+      "icon": "public/brand/nictech.ico",
       "target": [
         "nsis",
         "portable"
       ]
     },
     "nsis": {
+      "installerIcon": "public/brand/nictech.ico",
+      "uninstallerIcon": "public/brand/nictech.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "NicTech ERP"

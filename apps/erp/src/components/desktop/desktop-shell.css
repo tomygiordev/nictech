@@ -33,43 +33,6 @@ html[data-native-shell] {
   pointer-events: none;
 }
 
-.desktop-titlebar__mark {
-  position: relative;
-  display: grid;
-  place-items: center;
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  background: #032068;
-  color: #fff;
-  font-size: 16px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.desktop-titlebar__mark > span {
-  position: absolute;
-  right: 3px;
-  bottom: 4px;
-  width: 4px;
-  height: 4px;
-  border-radius: 2px;
-  background: #00c2ff;
-}
-
-.desktop-titlebar__name {
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 750;
-  letter-spacing: -0.01em;
-}
-
-.desktop-titlebar__name > span {
-  font-weight: 500;
-}
-
 .desktop-titlebar__version {
   margin-left: 1px;
   color: #5b6e93;

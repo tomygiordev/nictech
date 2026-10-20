@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState, type ReactNode, type MouseEvent } from "react";
 import { Copy, Minus, Square, X } from "lucide-react";
 import type { DesktopWindowState, ElectronAPI } from "../../types/electron";
+import { NicTechBrand } from "../brand/NicTechBrand";
 import "./desktop-shell.css";
 
 const INITIAL_WINDOW_STATE: DesktopWindowState = {
@@ -54,8 +55,7 @@ function DesktopWindow({ api, children }: { api: ElectronAPI; children: ReactNod
     <div className="desktop-shell" data-focused={windowState.isFocused} data-maximized={windowState.isMaximized}>
       <header className="desktop-titlebar" aria-label="Ventana de NicTech ERP" onDoubleClick={handleTitleDoubleClick}>
         <div className="desktop-titlebar__brand">
-          <span className="desktop-titlebar__mark" aria-hidden="true">N<span /></span>
-          <span className="desktop-titlebar__name">NicTech <span>ERP</span></span>
+          <NicTechBrand size="titlebar" />
           {version && <span className="desktop-titlebar__version">v{version}</span>}
         </div>
         <div className="desktop-titlebar__controls" role="group" aria-label="Controles de la ventana">

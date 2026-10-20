@@ -37,6 +37,7 @@ import { ErpAccessGate } from "./auth/ErpAccessGate";
 import { useErpAuth } from "./auth/ErpAuthContext";
 import { Modal, ConfirmDialog } from "./components/erp/WorkspaceUi";
 import { ModuleTutorialModal } from "./features/help/ModuleTutorialModal";
+import { NicTechBrand } from "./components/brand/NicTechBrand";
 import { getInitials } from "./lib/formatters";
 import { supabase } from "./lib/supabase";
 import "./styles.css";
@@ -319,12 +320,7 @@ export const App = () => {
         aria-label="Navegación del ERP"
       >
         <div className="brand-lockup">
-          <div className="brand-title-wrap">
-            <div className="brand-logo-mark">N</div>
-            <span className="brand-text">
-              NicTech <span>ERP</span>
-            </span>
-          </div>
+          <NicTechBrand />
           <button
             type="button"
             className="sidebar-collapse-btn"

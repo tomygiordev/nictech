@@ -9,7 +9,7 @@ const { pathToFileURL } = require("node:url");
 const electronDirectory = path.resolve(__dirname, "../electron");
 const appUrl = pathToFileURL(path.resolve(electronDirectory, "../dist/index.html")).href;
 
-async function bootMain({ development = false } = {}) {
+async function bootMain({ development = false, platform = "win32" } = {}) {
   const handlers = new Map();
   const menus = [];
   const windows = [];
@@ -61,6 +61,7 @@ async function bootMain({ development = false } = {}) {
     isPackaged: !development,
     getPath: () => "C:/Users/test/AppData/Roaming",
     setPath: () => {},
+    setAppUserModelId: (id) => { app.userModelId = id; },
     requestSingleInstanceLock: () => true,
     whenReady: () => Promise.resolve(),
     getVersion: () => "0.1.0",
@@ -81,7 +82,7 @@ async function bootMain({ development = false } = {}) {
     require: (name) => name === "electron" ? electron : require(name),
     __dirname: electronDirectory,
     URL,
-    process: { argv: [], env: {}, platform: "win32", resourcesPath: "C:/NicTech/resources" },
+    process: { argv: [], env: {}, platform, resourcesPath: "C:/NicTech/resources" },
   });
   await Promise.resolve();
   const window = windows[0];
@@ -99,6 +100,17 @@ test("frameless windows have no application or Alt menu and retain isolation", a
   assert.equal(window.options.webPreferences.sandbox, true);
   assert.equal(window.options.webPreferences.nodeIntegration, false);
   assert.equal(window.options.webPreferences.devTools, false);
+});
+
+test("official NicTech window icon resolves from packaged assets or development public assets", async () => {
+  const packaged = await bootMain();
+  assert.equal(packaged.window.options.icon, path.resolve(electronDirectory, "../dist/brand/nictech-symbol.png"));
+  assert.equal(packaged.app.userModelId, "ar.com.nictech.erp");
+  const development = await bootMain({ development: true });
+  assert.equal(development.window.options.icon, path.resolve(electronDirectory, "../public/brand/nictech-symbol.png"));
+  assert.equal(development.app.userModelId, "ar.com.nictech.erp");
+  const linux = await bootMain({ platform: "linux" });
+  assert.equal(linux.app.userModelId, undefined);
 });
 
 test("window controls minimize, maximize, restore and close the sending main window", async () => {

@@ -1,0 +1,36 @@
+.nictech-brand {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nictech-brand__logo {
+  display: block;
+  flex: 0 0 auto;
+  width: 126px;
+  height: auto;
+  object-fit: contain;
+}
+
+.nictech-brand__erp {
+  padding: 2px 5px;
+  border: 1px solid #dce6f6;
+  border-radius: 5px;
+  background: #edf4ff;
+  color: #032068;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0.025em;
+}
+
+.nictech-brand--titlebar .nictech-brand__logo {
+  width: 89px;
+}
+
+.nictech-brand--titlebar .nictech-brand__erp {
+  background: #ffffff;
+  font-size: 9px;
+}

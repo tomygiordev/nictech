@@ -235,38 +235,6 @@ textarea:focus-visible {
   border-bottom: 1px solid var(--border-light);
 }
 
-.brand-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand-logo-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #005bd5 0%, #032068 100%);
-  display: grid;
-  place-items: center;
-  color: #ffffff;
-  font-weight: 800;
-  font-size: 19px;
-  letter-spacing: -0.03em;
-  box-shadow: 0 4px 14px rgba(0, 91, 213, 0.35);
-}
-
-.brand-text {
-  font-size: 17px;
-  font-weight: 750;
-  color: var(--text-main);
-  letter-spacing: -0.015em;
-}
-
-.brand-text span {
-  font-weight: 600;
-  color: var(--brand-primary);
-}
-
 .sidebar-collapse-btn {
   width: 28px;
   height: 28px;
