@@ -84,6 +84,8 @@ export const QuotesWorkspace = () => {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [repairOrders, setRepairOrders] = useState<RepairOrderOption[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
+  const [isLoadingQuotePrerequisites, setIsLoadingQuotePrerequisites] = useState(false);
+  const [quotePrerequisitesError, setQuotePrerequisitesError] = useState<string | null>(null);
   const [quoteCurrency, setQuoteCurrency] = useState<"ARS" | "USD">("ARS");
   const [quoteReason, setQuoteReason] = useState<string>("Presupuesto inicial para reparación");
   const [lines, setLines] = useState<LineFormItem[]>([
@@ -130,6 +132,8 @@ export const QuotesWorkspace = () => {
 
   // Load orders and products when opening new quote modal
   const loadNewQuotePrerequisites = useCallback(async () => {
+    setIsLoadingQuotePrerequisites(true);
+    setQuotePrerequisitesError(null);
     try {
       const [ordersRes, prodsRes] = await Promise.all([
         supabase
@@ -158,15 +162,19 @@ export const QuotesWorkspace = () => {
         }];
       });
       setRepairOrders(ordersList);
-      if (ordersList.length > 0 && !selectedOrderId) {
-        setSelectedOrderId(ordersList[0].id);
-      }
+      setSelectedOrderId((current) =>
+        ordersList.some((order) => order.id === current) ? current : ordersList[0]?.id ?? ""
+      );
 
       setAvailableProducts((prodsRes.data || []).filter((product) => product.item_kind === "product" || product.item_kind === "service"));
     } catch (e) {
-      setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudieron cargar las órdenes y los productos. Cerrá y volvé a abrir el presupuesto para reintentar." });
+      const message = e instanceof Error ? e.message : "No se pudieron cargar las órdenes y los productos.";
+      setQuotePrerequisitesError(message);
+      setFeedback({ type: "error", message: `${message} Podés reintentar desde el formulario.` });
+    } finally {
+      setIsLoadingQuotePrerequisites(false);
     }
-  }, [selectedOrderId]);
+  }, []);
 
   useEffect(() => {
     if (isNewModalOpen) {
@@ -850,7 +858,7 @@ export const QuotesWorkspace = () => {
         title="Crear Presupuesto Técnico Versionado"
         subtitle="Presupuesto formal vinculado a una orden de taller con líneas de repuestos y servicios"
         icon={Receipt}
-        maxWidth="760px"
+        maxWidth="900px"
       >
         <form onSubmit={handleCreateQuote} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px" }}>
@@ -860,14 +868,35 @@ export const QuotesWorkspace = () => {
                 value={selectedOrderId}
                 onChange={(e) => setSelectedOrderId(e.target.value)}
                 className="erp-form-select"
+                disabled={isLoadingQuotePrerequisites || Boolean(quotePrerequisitesError) || repairOrders.length === 0}
                 required
               >
+                <option value="">
+                  {isLoadingQuotePrerequisites ? "Cargando órdenes abiertas…" : "Seleccionar orden abierta…"}
+                </option>
                 {repairOrders.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.order_code} — {o.customer_name} ({o.brand} {o.model})
                   </option>
                 ))}
               </select>
+              {isLoadingQuotePrerequisites && (
+                <span role="status" style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  Consultando órdenes que siguen abiertas…
+                </span>
+              )}
+              {!isLoadingQuotePrerequisites && quotePrerequisitesError && (
+                <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", color: "var(--rose-accent)", fontSize: "12px" }}>
+                  <span>No se pudo consultar la lista de órdenes. {quotePrerequisitesError}</span>
+                  <button type="button" className="pag-btn" onClick={() => void loadNewQuotePrerequisites()}>Reintentar</button>
+                </div>
+              )}
+              {!isLoadingQuotePrerequisites && !quotePrerequisitesError && repairOrders.length === 0 && (
+                <div role="status" style={{ padding: "10px 12px", border: "1px solid var(--border-line)", borderRadius: "8px", background: "var(--surface-subtle)", fontSize: "12px", color: "var(--text-muted)" }}>
+                  <strong style={{ display: "block", marginBottom: "3px", color: "var(--text-main)" }}>No hay órdenes abiertas elegibles</strong>
+                  <span>Las órdenes cerradas o finalizadas no aparecen en esta lista. Abrí una orden desde Taller y volvé a crear el presupuesto.</span>
+                </div>
+              )}
             </div>
 
             <div className="erp-form-group">
@@ -908,18 +937,19 @@ export const QuotesWorkspace = () => {
               </button>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "260px", overflowY: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "260px", overflowY: "auto", overflowX: "auto" }}>
               {lines.map((item, idx) => (
                 <div
                   key={item.id}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "110px 2fr 70px 100px 90px 70px 32px",
+                    gridTemplateColumns: "minmax(84px, 1fr) minmax(220px, 3fr) 52px 74px 74px 58px 28px",
                     gap: "8px",
                     alignItems: "center",
                     background: "var(--surface-subtle)",
                     padding: "8px 10px",
                     borderRadius: "6px",
+                    minWidth: "640px",
                   }}
                 >
                   <select
@@ -955,7 +985,7 @@ export const QuotesWorkspace = () => {
                       value={item.description}
                       onChange={(e) => handleUpdateLine(idx, { description: e.target.value })}
                       className="erp-form-input"
-                      style={{ fontSize: "12px", padding: "4px 8px" }}
+                      style={{ fontSize: "12px", padding: "4px 8px", minWidth: 0, width: "100%" }}
                       required
                     />
                   )}
@@ -1061,7 +1091,7 @@ export const QuotesWorkspace = () => {
             <button
               type="submit"
               className="btn-primary"
-              disabled={submitting}
+              disabled={submitting || isLoadingQuotePrerequisites || Boolean(quotePrerequisitesError) || repairOrders.length === 0 || !selectedOrderId}
             >
               {submitting ? "Guardando..." : "Guardar Presupuesto Formal"}
             </button>

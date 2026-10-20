@@ -1,9 +1,10 @@
 import { supabase } from "../../lib/supabase";
 import type { Database, Json } from "../../types/supabase";
-import { saleSchema } from "./schemas";
-import type { PosRegister, PosSaleInput } from "./types";
+import { invoiceSaleSchema, saleSchema } from "./schemas";
+import type { InvoiceKind, PosInvoiceSaleInput, PosRegister, PosSaleInput } from "./types";
 
 export type CreateSaleRpcArgs = Database["erp"]["Functions"]["create_sale"]["Args"];
+export type CreateSaleWithInvoiceRpcArgs = Database["erp"]["Functions"]["create_sale_with_invoice"]["Args"];
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -56,46 +57,49 @@ export const createSale = async (input: PosSaleInput): Promise<string> => {
   return data;
 };
 
-export interface CreateSaleWithFiscalDocumentResult {
+export interface CreateSaleWithInvoiceResult {
   saleId: string;
   documentId: string;
-  fiscalRequestId: string;
-  fiscalStatus: "queued";
+  documentNumber: string;
+  invoiceKind: InvoiceKind;
 }
 
-const parseSaleWithFiscalDocumentResult = (value: Json): CreateSaleWithFiscalDocumentResult => {
+export const buildCreateSaleWithInvoiceRpcArgs = (input: PosInvoiceSaleInput): CreateSaleWithInvoiceRpcArgs => {
+  const parsedInput = invoiceSaleSchema.parse(input);
+  return {
+    ...buildCreateSaleRpcArgs(parsedInput),
+    target_invoice_kind: parsedInput.invoiceKind,
+  };
+};
+
+const parseSaleWithInvoiceResult = (value: Json): CreateSaleWithInvoiceResult => {
   if (value === null || Array.isArray(value) || typeof value !== "object") {
-    throw new Error("Respuesta inválida al emitir el comprobante de la venta.");
+    throw new Error("Respuesta inválida al emitir la factura de la venta.");
   }
   const result = value as {
     sale_id?: unknown;
     document_id?: unknown;
-    fiscal_request_id?: unknown;
-    fiscal_status?: unknown;
+    document_number?: unknown;
+    invoice_kind?: unknown;
   };
   if (
     typeof result.sale_id !== "string" ||
     typeof result.document_id !== "string" ||
-    typeof result.fiscal_request_id !== "string" ||
-    result.fiscal_status !== "queued"
+    typeof result.document_number !== "string" ||
+    (result.invoice_kind !== "fiscal" && result.invoice_kind !== "non_fiscal")
   ) {
-    throw new Error("Respuesta incompleta al emitir el comprobante de la venta.");
+    throw new Error("Respuesta incompleta al emitir la factura de la venta.");
   }
   return {
     saleId: result.sale_id,
     documentId: result.document_id,
-    fiscalRequestId: result.fiscal_request_id,
-    fiscalStatus: "queued",
+    documentNumber: result.document_number,
+    invoiceKind: result.invoice_kind,
   };
 };
 
-export const createSaleWithFiscalDocument = async (
-  input: PosSaleInput,
-): Promise<CreateSaleWithFiscalDocumentResult> => {
-  const { data, error } = await client().rpc(
-    "create_sale_with_fiscal_document",
-    buildCreateSaleRpcArgs(input),
-  );
+export const createSaleWithInvoice = async (input: PosInvoiceSaleInput): Promise<CreateSaleWithInvoiceResult> => {
+  const { data, error } = await client().rpc("create_sale_with_invoice", buildCreateSaleWithInvoiceRpcArgs(input));
   if (error) throw error;
-  return parseSaleWithFiscalDocumentResult(data);
+  return parseSaleWithInvoiceResult(data);
 };

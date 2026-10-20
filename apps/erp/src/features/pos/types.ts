@@ -37,3 +37,9 @@ export type PosSaleInput = {
   lines: PosSaleLineInput[];
   paymentLines: PosPaymentLineInput[];
 };
+
+export type InvoiceKind = "fiscal" | "non_fiscal";
+
+export type PosInvoiceSaleInput = PosSaleInput & {
+  invoiceKind: InvoiceKind;
+};

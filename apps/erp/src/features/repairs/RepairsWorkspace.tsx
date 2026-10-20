@@ -44,6 +44,7 @@ import { useErpAuth } from "../../auth/ErpAuthContext";
 import { supabase } from "../../lib/supabase";
 import { listOpenCashSessions } from "../cash/api";
 import {
+  getRepairStatusLabel,
   listRepairOrders,
   listRepairStateEvents,
   listAvailableTransitions,
@@ -159,7 +160,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const [repairs, setRepairs] = useState<RepairOrderOverview[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [activeFilter, setActiveFilter] = useState<string>("active");
   const [search, setSearch] = useState<string>("");
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -491,7 +492,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     if (transition.requires_final_tests && !selectedTicket.qc_passed) {
       setFeedback({
         type: "error",
-        message: "Para avanzar a este estado es obligatorio realizar y aprobar el Protocolo QC (Pruebas Finales).",
+        message: "Para avanzar a este estado es obligatorio completar y aprobar el control de calidad final.",
       });
       openQcModal(selectedTicket);
       return;
@@ -544,7 +545,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       if (!result) {
         setFeedback({
           type: "error",
-          message: "Registrá un resultado para cada control obligatorio antes de confirmar el protocolo QC.",
+          message: "Registrá un resultado para cada control obligatorio antes de confirmar el control de calidad.",
         });
         return;
       }
@@ -554,7 +555,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     if (resultsArray.length === 0) {
       setFeedback({
         type: "error",
-        message: "La plantilla QC no contiene controles obligatorios para registrar.",
+          message: "La plantilla de control de calidad no tiene controles obligatorios para registrar.",
       });
       return;
     }
@@ -567,8 +568,8 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       setFeedback({
         type: allPassed ? "success" : "error",
         message: allPassed
-          ? `¡Protocolo QC completado y APROBADO para ${qcTargetTicket.order_code}!`
-          : `Protocolo QC registrado con fallas para ${qcTargetTicket.order_code}. Se requiere corrección técnica.`,
+          ? `¡Control de calidad aprobado para ${qcTargetTicket.order_code}!`
+          : `Control de calidad registrado con fallas para ${qcTargetTicket.order_code}. Se requiere corrección técnica.`,
       });
       setIsQcModalOpen(false);
       await fetchRepairsData();
@@ -581,7 +582,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         }
       }
     } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al registrar QC." });
+      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al registrar el control de calidad." });
     } finally {
       setSubmittingQc(false);
     }
@@ -608,7 +609,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
       setFeedback({
         type: "success",
-        message: `Repuesto consumido e incorporado a la orden ${selectedTicket.order_code}. Nota: cualquier QC previo queda invalidado para garantizar control de calidad.`,
+        message: `Repuesto consumido e incorporado a la orden ${selectedTicket.order_code}. Nota: el control de calidad anterior queda invalidado y debe repetirse.`,
       });
       setIsPartModalOpen(false);
       await fetchRepairsData();
@@ -880,8 +881,8 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const filteredRepairs = useMemo(() => {
     return repairs.filter((r) => {
       const matchFilter =
-        activeFilter === "all"
-          ? true
+        activeFilter === "active"
+          ? !r.delivery_id
           : activeFilter === "delivered"
           ? Boolean(r.delivery_id)
           : activeFilter === "ready"
@@ -915,7 +916,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       <WorkspaceHeader
         title="Taller & Servicio Técnico"
-        description="Gestión integral de órdenes de reparación, protocolos QC obligatorios, consumo de repuestos y pólizas de garantía."
+        description="Gestión integral de órdenes de reparación, controles de calidad obligatorios, consumo de repuestos y pólizas de garantía."
         actions={
           <button
             type="button"
@@ -959,12 +960,12 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               label="Listos para Retirar"
               value={readyCount}
               trend={{ text: "Esperando cliente", positive: true }}
-              sublabel="Con QC aprobado, pendientes de retiro"
+              sublabel="Con control final aprobado, pendientes de retiro"
             />
             <KpiCard
               icon={ClipboardCheck}
               iconVariant="navy"
-              label="QC Verificados"
+              label="Control final aprobado"
               value={qcPassedCount}
               trend={{ text: "Conformidad técnica", positive: true }}
               sublabel="Equipos que superaron control final"
@@ -982,10 +983,16 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           <div className="flow-card">
             <div className="flow-card__header">
               <div>
-                <h2 className="flow-card__title">Órdenes de Reparación Activas</h2>
-                <p className="flow-card__subtitle">Trazabilidad completa desde ingreso hasta entrega con control de calidad</p>
+                <h2 className="flow-card__title">
+                  {activeFilter === "delivered" ? "Reparaciones Entregadas" : "Órdenes de Reparación Activas"}
+                </h2>
+                <p className="flow-card__subtitle">
+                  {activeFilter === "delivered"
+                    ? "Órdenes con retiro formal registrado"
+                    : "Trazabilidad completa desde ingreso hasta entrega con control de calidad"}
+                </p>
               </div>
-              <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+              <div className="flow-card__tools">
                 <div className="search-box">
                   <Search size={16} />
                   <input
@@ -1007,9 +1014,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             </div>
 
             {/* Filter Pills */}
-            <div style={{ padding: "12px 24px", borderBottom: "1px solid var(--border-line)", display: "flex", gap: "8px", overflowX: "auto" }}>
+            <div className="flow-filter-bar" role="group" aria-label="Filtrar reparaciones por estado">
               {[
-                { id: "all", label: "Todas" },
+                { id: "active", label: "Activas" },
                 { id: "received", label: "Recibidos" },
                 { id: "diagnosis", label: "En Diagnóstico" },
                 { id: "repair", label: "En Reparación" },
@@ -1021,16 +1028,6 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   type="button"
                   onClick={() => setActiveFilter(f.id)}
                   className={`btn-pill ${activeFilter === f.id ? "btn-pill--active" : ""}`}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: "20px",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    border: "1px solid var(--border-line)",
-                    background: activeFilter === f.id ? "var(--accent-mint)" : "transparent",
-                    color: activeFilter === f.id ? "#000" : "var(--text-muted)",
-                  }}
                 >
                   {f.label}
                 </button>
@@ -1050,7 +1047,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               </div>
             ) : (
               <div className="flow-table-container">
-                <table className="flow-table">
+                <table className="flow-table flow-table--actions">
                   <thead>
                     <tr>
                       <th>Código</th>
@@ -1059,7 +1056,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                       <th>Dispositivo</th>
                       <th>Falla Declarada</th>
                       <th>Estado</th>
-                      <th>Control QC</th>
+                      <th>Control de calidad</th>
                       <th>Presupuesto</th>
                       <th>Repuestos</th>
                       <th style={{ textAlign: "right" }}>Acción</th>
@@ -1068,9 +1065,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   <tbody>
                     {filteredRepairs.map((r) => {
                       const isDelivered = Boolean(r.delivery_id);
-                      const statusInfo = isDelivered
-                        ? STATUS_MAP.delivered
-                        : STATUS_MAP[r.status_code] || { label: r.status_name, pillClass: "flow-status-pill pending" };
+                      const statusPillClass = isDelivered
+                        ? STATUS_MAP.delivered.pillClass
+                        : STATUS_MAP[r.status_code]?.pillClass || "flow-status-pill pending";
 
                       return (
                         <tr
@@ -1110,7 +1107,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                             {r.reported_fault}
                           </td>
                           <td>
-                            <span className={statusInfo.pillClass}>{statusInfo.label}</span>
+                            <span className={statusPillClass}>{getRepairStatusLabel(r)}</span>
                           </td>
                           <td>
                             {r.qc_passed ? (
@@ -1171,7 +1168,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         <div className="flow-card">
           <div className="flow-card__header">
             <div>
-              <h2 className="flow-card__title">Protocolos Técnicos & QC Final</h2>
+              <h2 className="flow-card__title">Controles de calidad finales</h2>
               <p className="flow-card__subtitle">Registro inmutable de inspecciones de laboratorio y criterios de conformidad</p>
             </div>
           </div>
@@ -1179,7 +1176,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           {loadingTests ? (
             <div style={{ padding: "40px", textAlign: "center" }}>
               <Loader2 className="animate-spin" size={32} style={{ margin: "0 auto 12px" }} />
-              <p>Cargando protocolos QC...</p>
+              <p>Cargando controles de calidad…</p>
             </div>
           ) : testRuns.length === 0 ? (
             <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
@@ -1248,7 +1245,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 className="btn-primary"
                 onClick={() => setIsClaimModalOpen(true)}
               >
-                <ShieldAlert size={16} /> Abrir Reclamo RMA
+                <ShieldAlert size={16} /> Abrir reclamo de garantía
               </button>
             </div>
 
@@ -1313,7 +1310,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           <div className="flow-card">
             <div className="flow-card__header">
               <div>
-                <h3 className="flow-card__title">Reclamos Técnicos (RMA) Registrados</h3>
+                <h3 className="flow-card__title">Reclamos de garantía registrados</h3>
                 <p className="flow-card__subtitle">Historial independiente de reclamos sin alterar la orden de servicio previa</p>
               </div>
             </div>
@@ -1326,7 +1323,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 <table className="flow-table">
                   <thead>
                     <tr>
-                      <th>Código RMA</th>
+                      <th>Código de reclamo</th>
                       <th>Orden Origen</th>
                       <th>Cliente</th>
                       <th>Fecha Apertura</th>
@@ -1370,8 +1367,8 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Estado Actual</div>
                 <div style={{ marginTop: "4px" }}>
-                  <span className={STATUS_MAP[selectedTicket.status_code]?.pillClass || "flow-status-pill pending"}>
-                    {selectedTicket.delivery_id ? "Entregado" : selectedTicket.status_name}
+                  <span className={selectedTicket.delivery_id ? STATUS_MAP.delivered.pillClass : STATUS_MAP[selectedTicket.status_code]?.pillClass || "flow-status-pill pending"}>
+                    {getRepairStatusLabel(selectedTicket)}
                   </span>
                 </div>
               </div>
@@ -1415,7 +1412,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                       style={{ padding: "6px 12px", fontSize: "12px" }}
                       onClick={() => openQcModal(selectedTicket)}
                     >
-                      <ClipboardCheck size={14} /> {selectedTicket.qc_passed ? "Re-inspeccionar QC" : "Ejecutar QC"}
+                      <ClipboardCheck size={14} /> {selectedTicket.qc_passed ? "Reinspeccionar equipo" : "Iniciar control final"}
                     </button>
                   </div>
                 </div>
@@ -1431,27 +1428,30 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             )}
 
             {/* Tab navigation inside ticket */}
-            <div style={{ display: "flex", borderBottom: "1px solid var(--border-line)", gap: "16px" }}>
+            <div className="flow-detail-tabs" role="tablist" aria-label="Detalle de la reparación">
               <button
                 type="button"
-                className={`btn-pill ${detailTab === "info" ? "btn-pill--active" : ""}`}
-                style={{ padding: "8px 12px", background: "transparent", border: "none", borderBottom: detailTab === "info" ? "2px solid var(--accent-mint)" : "none", color: detailTab === "info" ? "var(--accent-mint)" : "var(--text-muted)", cursor: "pointer", fontWeight: 600 }}
+                role="tab"
+                aria-selected={detailTab === "info"}
+                className={`flow-detail-tab ${detailTab === "info" ? "active" : ""}`}
                 onClick={() => setDetailTab("info")}
               >
                 Información de Ingreso
               </button>
               <button
                 type="button"
-                className={`btn-pill ${detailTab === "parts" ? "btn-pill--active" : ""}`}
-                style={{ padding: "8px 12px", background: "transparent", border: "none", borderBottom: detailTab === "parts" ? "2px solid var(--accent-mint)" : "none", color: detailTab === "parts" ? "var(--accent-mint)" : "var(--text-muted)", cursor: "pointer", fontWeight: 600 }}
+                role="tab"
+                aria-selected={detailTab === "parts"}
+                className={`flow-detail-tab ${detailTab === "parts" ? "active" : ""}`}
                 onClick={() => setDetailTab("parts")}
               >
                 Repuestos & Stock ({ticketParts.length})
               </button>
               <button
                 type="button"
-                className={`btn-pill ${detailTab === "history" ? "btn-pill--active" : ""}`}
-                style={{ padding: "8px 12px", background: "transparent", border: "none", borderBottom: detailTab === "history" ? "2px solid var(--accent-mint)" : "none", color: detailTab === "history" ? "var(--accent-mint)" : "var(--text-muted)", cursor: "pointer", fontWeight: 600 }}
+                role="tab"
+                aria-selected={detailTab === "history"}
+                className={`flow-detail-tab ${detailTab === "history" ? "active" : ""}`}
                 onClick={() => setDetailTab("history")}
               >
                 Historial de Trazabilidad ({ticketEvents.length})
@@ -1851,7 +1851,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         <Modal
           isOpen={isQcModalOpen}
           onClose={() => setIsQcModalOpen(false)}
-          title={`Protocolo de Control de Calidad (QC): ${qcTargetTicket.order_code}`}
+          title={`Control de calidad: ${qcTargetTicket.order_code}`}
           maxWidth="580px"
         >
           <form onSubmit={handleQcSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1948,7 +1948,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               >
                 {submittingQc ? <Loader2 className="animate-spin" size={16} /> : <ClipboardCheck size={16} />}
                 {isQcComplete
-                  ? "Confirmar Registro QC"
+                  ? "Guardar control de calidad"
                   : `Completar controles (${completedQcItems}/${requiredQcItems.length})`}
               </button>
             </div>
@@ -2007,7 +2007,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
             <div style={{ padding: "10px 12px", background: "rgba(245, 158, 11, 0.1)", borderRadius: "6px", fontSize: "12px", color: "#f59e0b" }}>
               <AlertCircle size={14} style={{ display: "inline", marginRight: "6px" }} />
-              El stock se descontará atómicamente del almacén taller. Por política técnica H16, si la orden tenía QC previo, deberá re-inspeccionarse antes de la entrega.
+              El stock se descontará del almacén del taller. Si se agregan repuestos después del control final, habrá que volver a inspeccionar el equipo antes de entregarlo.
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
@@ -2043,7 +2043,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             <div style={{ padding: "12px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "8px", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
               <div style={{ fontWeight: 600, color: "#10b981", fontSize: "13px" }}>Acreditación de Retiro</div>
               <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
-                Dispositivo: <strong>{selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</strong> con QC Aprobado.
+                Dispositivo: <strong>{selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</strong> con control de calidad aprobado.
               </div>
             </div>
 
@@ -2124,7 +2124,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         <Modal
           isOpen={isClaimModalOpen}
           onClose={() => setIsClaimModalOpen(false)}
-          title="Apertura de Reclamo Técnico (RMA)"
+          title="Apertura de reclamo de garantía"
           maxWidth="560px"
         >
           <form onSubmit={handleOpenClaimSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -2172,7 +2172,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 disabled={submittingClaim}
               >
                 {submittingClaim ? <Loader2 className="animate-spin" size={16} /> : <ShieldAlert size={16} />}
-                Emitir Reclamo RMA
+                Registrar reclamo
               </button>
             </div>
           </form>

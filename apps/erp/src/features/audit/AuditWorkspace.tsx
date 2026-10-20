@@ -68,7 +68,7 @@ export const AuditWorkspace = () => {
       } catch (e) {
         if (cancelled) return;
         setRows([]);
-        setError(e instanceof Error ? e.message : "No se pudo leer erp.audit_events.");
+        setError(e instanceof Error ? e.message : "No se pudo cargar el registro de auditoría.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -107,7 +107,7 @@ export const AuditWorkspace = () => {
     <div className="flow-dashboard">
       <WorkspaceHeader
         title="Libro de Auditoría & Trazabilidad Inmutable"
-        description="Registro cronológico de cada operación, cambio de stock, autenticación y modificación contable (erp.audit_events)."
+        description="Registro cronológico de operaciones, cambios de stock, accesos y movimientos contables."
         badge="Auditoría ERP"
       />
 
@@ -115,7 +115,7 @@ export const AuditWorkspace = () => {
         <StatePanel
           type="info"
           title="Actor limitado por permisos"
-          message="Nota: la columna actor_user_id no está visible para este rol (RLS/grant sobre erp.audit_events); el operador se deriva de metadata cuando existe, si no se muestra Sistema."
+          message="Este perfil no puede ver quién realizó algunos eventos; cuando no hay datos disponibles, el operador figura como Sistema."
         />
       )}
 
@@ -131,7 +131,7 @@ export const AuditWorkspace = () => {
               <span className="flow-kpi-card__val">{logs.length}</span>
               <span className="flow-trend-tag positive">Persistidos</span>
             </div>
-            <span className="flow-kpi-card__sub">Tabla central erp.audit_events (últimos 100)</span>
+            <span className="flow-kpi-card__sub">Últimos 100 registros disponibles</span>
           </div>
         </div>
 
@@ -255,9 +255,9 @@ export const AuditWorkspace = () => {
         </div>
 
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
-          <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            Schema{" "}
-            <select value={schemaFilter} onChange={(e) => setSchemaFilter(e.target.value)}>
+          <label className="erp-form-group">
+            <span className="erp-form-label">Esquema</span>
+            <select className="erp-form-input" value={schemaFilter} onChange={(e) => setSchemaFilter(e.target.value)}>
               <option value="all">Todos</option>
               {schemas.map((s) => (
                 <option key={s} value={s}>
@@ -266,9 +266,9 @@ export const AuditWorkspace = () => {
               ))}
             </select>
           </label>
-          <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            Tabla{" "}
-            <select value={tableFilter} onChange={(e) => setTableFilter(e.target.value)}>
+          <label className="erp-form-group">
+            <span className="erp-form-label">Tabla</span>
+            <select className="erp-form-input" value={tableFilter} onChange={(e) => setTableFilter(e.target.value)}>
               <option value="all">Todas</option>
               {tables.map((t) => (
                 <option key={t} value={t}>
@@ -277,9 +277,9 @@ export const AuditWorkspace = () => {
               ))}
             </select>
           </label>
-          <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            Acción{" "}
-            <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+          <label className="erp-form-group">
+            <span className="erp-form-label">Acción</span>
+            <select className="erp-form-input" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
               <option value="all">Todas</option>
               {actions.map((a) => (
                 <option key={a} value={a}>
@@ -291,14 +291,14 @@ export const AuditWorkspace = () => {
         </div>
 
         {loading ? (
-          <StatePanel type="loading" message="Cargando eventos de auditoría desde erp.audit_events..." />
+          <StatePanel type="loading" message="Cargando eventos recientes…" />
         ) : error ? (
           <StatePanel type="error" title="No se pudo leer la auditoría" message={error} />
         ) : filteredLogs.length === 0 ? (
           <StatePanel
             type="empty"
             title="Sin eventos"
-            message="No se encontraron eventos de auditoría registrados en erp.audit_events para los filtros aplicados."
+            message="No se encontraron eventos para los filtros aplicados."
           />
         ) : (
           <div className="flow-table-wrapper">

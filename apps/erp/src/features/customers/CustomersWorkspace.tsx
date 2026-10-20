@@ -108,7 +108,7 @@ export const CustomersWorkspace = () => {
   const [search, setSearch] = useState<string>("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
-  const [customerToDelete, setCustomerToDelete] = useState<string | null>(null);
+  const [customerToDeactivate, setCustomerToDeactivate] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<CustomerFeedback | null>(null);
   const [privateDetails, setPrivateDetails] = useState<CustomerPrivateDetails | null>(null);
   const [loadingPrivateDetails, setLoadingPrivateDetails] = useState(false);
@@ -266,16 +266,16 @@ export const CustomersWorkspace = () => {
     }
   }, [hasPermission]);
 
-  const confirmDeleteCustomer = async () => {
-    if (!customerToDelete) return;
+  const confirmDeactivateCustomer = async () => {
+    if (!customerToDeactivate) return;
     try {
       const { error: delErr } = await supabase
         .from("customers")
         .update({ is_active: false })
-        .eq("id", customerToDelete);
+        .eq("id", customerToDeactivate);
       if (delErr) throw delErr;
-      if (selectedCustomer?.id === customerToDelete) setSelectedCustomer(null);
-      setCustomerToDelete(null);
+      if (selectedCustomer?.id === customerToDeactivate) setSelectedCustomer(null);
+      setCustomerToDeactivate(null);
       setFeedback({ type: "success", message: "Cliente dado de baja del padrón." });
       await fetchCustomers();
     } catch (err) {
@@ -458,9 +458,10 @@ export const CustomersWorkspace = () => {
           style={{ color: "var(--rose-accent)", padding: "4px 8px" }}
           onClick={(e) => {
             e.stopPropagation();
-            setCustomerToDelete(c.id);
+            setCustomerToDeactivate(c.id);
           }}
-          aria-label={`Eliminar cliente ${c.name}`}
+          aria-label={`Dar de baja a ${c.name}`}
+          title={`Dar de baja a ${c.name}. El cliente quedará inactivo y conservará su historial.`}
         >
           <Trash2 size={13} />
         </button>
@@ -577,9 +578,9 @@ export const CustomersWorkspace = () => {
                   type="button"
                   className="pag-btn"
                   style={{ color: "var(--rose-accent)", marginLeft: "auto" }}
-                  onClick={() => setCustomerToDelete(selectedCustomer.id)}
+                  onClick={() => setCustomerToDeactivate(selectedCustomer.id)}
                 >
-                  <Trash2 size={14} /> Eliminar Cliente
+                  <Trash2 size={14} /> Dar de baja
                 </button>
               )}
             </div>
@@ -676,16 +677,16 @@ export const CustomersWorkspace = () => {
         </form>
       </Modal>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Deactivate Confirmation Dialog */}
       <ConfirmDialog
-        isOpen={Boolean(customerToDelete)}
-        title="Eliminar Cliente"
-        message="¿Estás seguro de que deseás eliminar este cliente del padrón del ERP?"
-        confirmLabel="Eliminar Cliente"
+        isOpen={Boolean(customerToDeactivate)}
+        title="Dar de baja al cliente"
+        message="El cliente quedará inactivo y dejará de aparecer en el padrón activo. Se conserva su historial de compras y reparaciones."
+        confirmLabel="Dar de baja"
         cancelLabel="Cancelar"
         variant="danger"
-        onConfirm={confirmDeleteCustomer}
-        onCancel={() => setCustomerToDelete(null)}
+        onConfirm={confirmDeactivateCustomer}
+        onCancel={() => setCustomerToDeactivate(null)}
       />
     </div>
   );

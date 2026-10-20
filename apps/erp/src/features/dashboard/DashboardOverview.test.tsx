@@ -4,16 +4,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ErpAuthContext } from "../../auth/ErpAuthContext";
 import { DashboardOverview } from "./DashboardOverview";
 
-const { fromMock } = vi.hoisted(() => ({
-  fromMock: vi.fn((table: string) => ({
-    select: vi.fn(() => {
-      if (table === "products") {
-        return Promise.resolve({ data: null, error: new Error("permiso denegado") });
-      }
-      return Promise.resolve({ data: [], error: null });
-    }),
-  })),
-}));
+const { fromMock, productEqMock } = vi.hoisted(() => {
+  const productEqMock = vi.fn(() => Promise.resolve({ data: null, error: new Error("permiso denegado") }));
+  const fromMock = vi.fn((table: string) => ({
+    select: vi.fn(() => table === "products"
+      ? { eq: productEqMock }
+      : Promise.resolve({ data: [], error: null })),
+  }));
+
+  return { fromMock, productEqMock };
+});
 
 vi.mock("../../lib/supabase", () => ({
   supabase: { from: fromMock },
@@ -62,6 +62,7 @@ describe("DashboardOverview operational truth", () => {
   it("shows an explicit data error and session-derived operator context", async () => {
     renderDashboard();
 
+    expect(productEqMock).toHaveBeenCalledWith("is_active", true);
     expect(await screen.findByText("No se pudo actualizar el resumen")).toBeInTheDocument();
     expect(screen.getAllByText("No disponible")).toHaveLength(4);
     expect(screen.getByText("3 permisos habilitados")).toBeInTheDocument();

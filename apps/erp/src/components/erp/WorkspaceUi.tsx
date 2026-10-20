@@ -245,6 +245,7 @@ export interface ModalProps {
   maxWidth?: string;
   footer?: React.ReactNode;
   icon?: LucideIcon;
+  scrollBody?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -256,6 +257,7 @@ export const Modal: React.FC<ModalProps> = ({
   maxWidth = "520px",
   footer,
   icon: Icon,
+  scrollBody = false,
 }) => {
   const titleId = useId();
   const subtitleId = useId();
@@ -356,7 +358,10 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         ref={dialogRef}
         className="erp-modal-content flow-card"
-        style={{ maxWidth }}
+        style={{
+          maxWidth,
+          ...(scrollBody ? { maxHeight: "90dvh", overflow: "hidden" } : {}),
+        }}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -392,7 +397,12 @@ export const Modal: React.FC<ModalProps> = ({
           </button>
         </div>
 
-        <div className="erp-modal-body">{children}</div>
+        <div
+          className="erp-modal-body"
+          style={scrollBody ? { minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" } : undefined}
+        >
+          {children}
+        </div>
 
         {footer && <div className="erp-modal-footer">{footer}</div>}
       </div>

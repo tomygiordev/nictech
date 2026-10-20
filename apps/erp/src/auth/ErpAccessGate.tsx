@@ -10,11 +10,24 @@ type ErpAccessGateProps = {
 };
 
 export const ErpAccessGate = ({ permission, children }: ErpAccessGateProps) => {
-  const { session, loading, error, hasPermission } = useErpAuth();
+  const { session, loading, error, hasPermission, retry } = useErpAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  const handleSignOut = async () => {
+    setLoginLoading(true);
+    setLoginError(null);
+    try {
+      const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+      if (signOutError) throw signOutError;
+    } catch (signOutError) {
+      setLoginError(signOutError instanceof Error ? signOutError.message : "No se pudo cerrar la sesión.");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -41,7 +54,17 @@ export const ErpAccessGate = ({ permission, children }: ErpAccessGateProps) => {
   }
 
   if (error) {
-    return <StatePanel type="error" title="Error de autenticación / configuración" message={error} />;
+    return (
+      <div>
+        <StatePanel type="error" title="No se pudo habilitar el acceso al ERP" message={error} />
+        <p>Si el problema continúa, pedile al administrador que verifique que tu cuenta esté habilitada para operar.</p>
+        {loginError && <p role="alert">{loginError}</p>}
+        <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+          {retry && <button type="button" className="action-btn primary" onClick={retry} disabled={loginLoading}>Reintentar</button>}
+          {session && <button type="button" className="action-btn" onClick={() => void handleSignOut()} disabled={loginLoading}>Cerrar sesión</button>}
+        </div>
+      </div>
+    );
   }
 
   if (!session) {

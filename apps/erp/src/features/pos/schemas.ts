@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { PosSaleInput } from "./types";
+import type { PosInvoiceSaleInput, PosSaleInput } from "./types";
 
 const uuid = z.string().uuid();
 const requiredText = z.string().trim().min(1);
@@ -63,6 +63,10 @@ export const saleSchema: z.ZodType<PosSaleInput> = z.object({
   lines: z.array(posSaleLineSchema).min(1).max(250),
   paymentLines: z.array(posPaymentLineSchema).max(20),
 });
+
+export const invoiceSaleSchema: z.ZodType<PosInvoiceSaleInput> = saleSchema.and(z.object({
+  invoiceKind: z.enum(["fiscal", "non_fiscal"]),
+}));
 
 export type SaleFormInput = z.infer<typeof saleSchema>;
 

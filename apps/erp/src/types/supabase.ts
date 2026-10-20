@@ -1672,6 +1672,42 @@ export type Database = {
           },
         ]
       }
+      document_counters: {
+        Row: {
+          branch_id: string
+          invoice_kind: string
+          last_number: number
+          organization_id: string
+        }
+        Insert: {
+          branch_id: string
+          invoice_kind: string
+          last_number?: number
+          organization_id: string
+        }
+        Update: {
+          branch_id?: string
+          invoice_kind?: string
+          last_number?: number
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_counters_branch_fk"
+            columns: ["branch_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "document_counters_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       document_events: {
         Row: {
           actor_id: string | null
@@ -1816,6 +1852,7 @@ export type Database = {
           customer_snapshot: Json
           document_number: string
           id: string
+          invoice_kind: string | null
           issued_at: string
           issued_by: string | null
           organization_id: string
@@ -1831,6 +1868,7 @@ export type Database = {
           customer_snapshot: Json
           document_number: string
           id?: string
+          invoice_kind?: string | null
           issued_at?: string
           issued_by?: string | null
           organization_id: string
@@ -1846,6 +1884,7 @@ export type Database = {
           customer_snapshot?: Json
           document_number?: string
           id?: string
+          invoice_kind?: string | null
           issued_at?: string
           issued_by?: string | null
           organization_id?: string
@@ -12372,6 +12411,21 @@ export type Database = {
         }
         Returns: Json
       }
+      create_sale_with_invoice: {
+        Args: {
+          lines: Json
+          operation_key: string
+          operation_reason: string
+          payment_lines?: Json
+          sale_currency: string
+          target_branch_id: string
+          target_customer_id: string
+          target_exchange_snapshot_id: string
+          target_invoice_kind: string
+          target_reservation_batch_id?: string
+        }
+        Returns: Json
+      }
       create_stock_reservation: {
         Args: {
           expiration_time: string
@@ -12526,6 +12580,13 @@ export type Database = {
           tax_id: string
         }[]
       }
+      get_document_sale_receipts: {
+        Args: { target_document_ids: string[] }
+        Returns: {
+          document_id: string
+          receipt: Json
+        }[]
+      }
       get_inventory_unit_identifiers: {
         Args: { target_unit_id: string }
         Returns: {
@@ -12635,6 +12696,20 @@ export type Database = {
           owner_type: string
           private_object_path: string
           target_branch_id: string
+          target_template_version_id: string
+        }
+        Returns: string
+      }
+      issue_invoice_document: {
+        Args: {
+          content_sha256: string
+          customer_snapshot: Json
+          document_number: string
+          operation_key: string
+          operation_reason: string
+          target_branch_id: string
+          target_invoice_kind: string
+          target_owner_id: string
           target_template_version_id: string
         }
         Returns: string

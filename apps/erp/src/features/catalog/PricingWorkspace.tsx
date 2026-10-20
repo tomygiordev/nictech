@@ -163,7 +163,7 @@ export const PricingWorkspace: React.FC<PricingWorkspaceProps> = ({ onSelectModu
         <KpiCard icon={DollarSign} iconVariant="green" label="ARS vigente" value={arsSnapshot ? `${arsSnapshot.rate_to_base}` : "Pendiente"} trend={{ text: "Base ERP", positive: Boolean(arsSnapshot) }} sublabel="Debe ser 1,00" />
         <KpiCard icon={DollarSign} iconVariant="navy" label="USD vigente" value={usdSnapshot ? `${usdSnapshot.rate_to_base}` : "Pendiente"} trend={{ text: "Snapshot", positive: Boolean(usdSnapshot) }} sublabel="Última cotización registrada" />
         <KpiCard icon={Clock3} iconVariant="steel" label="Histórico" value={snapshots.length} trend={{ text: "Inmutable", positive: true }} sublabel="Snapshots de la organización" />
-        <KpiCard icon={CheckCircle2} iconVariant="dark" label="Permiso de edición" value={canManage ? "Sí" : "No"} trend={{ text: "pricing.manage", positive: canManage }} sublabel="Controlado por RBAC" />
+        <KpiCard icon={CheckCircle2} iconVariant="dark" label="Permiso de edición" value={canManage ? "Sí" : "No"} trend={{ text: canManage ? "Habilitado" : "Restringido", positive: canManage }} sublabel="Tu rol define si podés editar listas de precios" />
       </div>
 
       <div className="flow-card">

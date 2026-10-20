@@ -34,6 +34,7 @@
   --green-soft: #e8f1fd;
   --green-border: #9ec5fe;
   --green-lime: #00c2ff;
+  --accent-mint: var(--brand-primary);
 
   /* Operational Status Accents (Soft & Refined) */
   --emerald-success: #10b981;
@@ -422,6 +423,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   height: 40px;
   padding: 0 16px;
   background: var(--surface-subtle);
@@ -440,7 +442,9 @@ textarea:focus-visible {
 }
 
 .flow-search-pill input {
+  flex: 1 1 auto;
   width: 100%;
+  min-width: 0;
   border: 0;
   outline: 0;
   background: transparent;
@@ -483,6 +487,39 @@ textarea:focus-visible {
   color: var(--text-main);
   border-color: #cbd5e1;
   transform: translateY(-1px);
+}
+
+.header-primary-action {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--brand-primary);
+  border-radius: var(--radius-pill);
+  background: var(--brand-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 91, 213, 0.2);
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+
+.header-primary-action:hover {
+  border-color: var(--brand-hover);
+  background: var(--brand-hover);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 91, 213, 0.28);
+  transform: translateY(-1px);
+}
+
+.header-primary-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .header-badge {
@@ -733,6 +770,22 @@ textarea:focus-visible {
   letter-spacing: -0.015em;
 }
 
+.flow-card__title::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 15px;
+  margin-inline-end: 9px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--brand-cyan), var(--brand-primary));
+  vertical-align: -2px;
+  transition: height var(--duration-fast) var(--ease-out);
+}
+
+.flow-card:hover .flow-card__title::before {
+  height: 19px;
+}
+
 .flow-card__subtitle {
   margin: 2px 0 0;
   font-size: 13px;
@@ -878,16 +931,19 @@ textarea:focus-visible {
   background: #005bd5;
 }
 
-/* Recent Orders Table */
-.flow-table-wrapper {
+/* Recent Orders & ERP Tables */
+.flow-table-wrapper,
+.flow-table-container {
   max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .flow-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13.5px;
+  min-width: 540px;
 }
 
 .flow-table th {
@@ -908,7 +964,25 @@ textarea:focus-visible {
   color: var(--text-main);
   font-weight: 450;
   vertical-align: middle;
+  overflow-wrap: anywhere;
   transition: background var(--duration-fast) var(--ease-out);
+}
+
+.flow-table--actions th:last-child,
+.flow-table--actions td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--surface-white);
+  box-shadow: -8px 0 10px -10px rgba(15, 23, 42, 0.5);
+}
+
+.flow-table--actions th:last-child {
+  z-index: 2;
+}
+
+.flow-table--actions td:first-child {
+  white-space: nowrap;
 }
 
 .flow-table tr:hover td {
@@ -1574,6 +1648,147 @@ textarea:focus-visible {
    Comprehensive ERP Button & Action System
    ========================================================================== */
 
+.btn-ghost,
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-input);
+  background: var(--surface-white);
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+
+.btn-ghost:hover:not(:disabled),
+.action-btn:hover:not(:disabled) {
+  border-color: var(--brand-border);
+  background: var(--brand-soft);
+  color: var(--brand-primary);
+  transform: translateY(-1px);
+}
+
+.btn-ghost:disabled,
+.action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.action-btn.primary {
+  border-color: var(--brand-primary);
+  background: var(--brand-primary);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 91, 213, 0.2);
+}
+
+.action-btn.primary:hover:not(:disabled) {
+  border-color: var(--brand-hover);
+  background: var(--brand-hover);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 91, 213, 0.28);
+}
+
+.flow-tabs-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.flow-tabs-nav--switcher {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--border-line);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+
+.flow-tab-btn,
+.btn-pill,
+.flow-detail-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.flow-tab-btn:hover,
+.btn-pill:hover,
+.flow-detail-tab:hover {
+  border-color: var(--border-line);
+  background: var(--surface-white);
+  color: var(--text-main);
+}
+
+.flow-tab-btn.active,
+.btn-pill.btn-pill--active,
+.flow-detail-tab.active {
+  border-color: var(--brand-border);
+  background: var(--brand-soft);
+  color: var(--brand-primary);
+}
+
+.flow-tab-btn:focus-visible,
+.btn-pill:focus-visible,
+.flow-detail-tab:focus-visible {
+  outline-offset: 2px;
+}
+
+.flow-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border-line);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.flow-filter-bar > * {
+  flex: 0 0 auto;
+}
+
+.flow-detail-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-line);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.flow-detail-tab {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-radius: 8px 8px 0 0;
+}
+
 .btn-primary-form,
 .btn-primary {
   display: inline-flex;
@@ -1841,9 +2056,12 @@ textarea:focus-visible {
 
 .erp-modal-content {
   width: 100%;
+  max-width: calc(100vw - 24px);
   margin: 0;
   max-height: 90vh;
+  max-height: 90dvh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   box-shadow: var(--shadow-dropdown);
   display: flex;
   flex-direction: column;
@@ -1851,12 +2069,17 @@ textarea:focus-visible {
 }
 
 .erp-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  flex-shrink: 0;
   margin-bottom: 16px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border-light);
+  background: var(--surface-white);
 }
 
 .erp-modal-header__title-group {
@@ -1910,15 +2133,20 @@ textarea:focus-visible {
 
 .erp-modal-body {
   flex: 1;
+  min-width: 0;
 }
 
 .erp-modal-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--border-light);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  background: var(--surface-white);
 }
 
 /* ==========================================================================
@@ -1929,6 +2157,7 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
   margin-bottom: 12px;
 }
 
@@ -1940,8 +2169,12 @@ textarea:focus-visible {
 
 .erp-form-input,
 .erp-form-select,
-.erp-form-textarea {
+.erp-form-textarea,
+.form-input,
+.flow-input {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 9px 12px;
   border-radius: var(--radius-input);
   border: 1px solid var(--border-line);
@@ -1953,10 +2186,21 @@ textarea:focus-visible {
 
 .erp-form-input:focus,
 .erp-form-select:focus,
-.erp-form-textarea:focus {
+.erp-form-textarea:focus,
+.form-input:focus,
+.flow-input:focus {
   border-color: var(--brand-primary);
   box-shadow: 0 0 0 3px var(--brand-glow);
   outline: none;
+}
+
+textarea.erp-form-input,
+textarea.erp-form-textarea,
+textarea.form-input,
+textarea.flow-input {
+  display: block;
+  min-height: 96px;
+  resize: vertical;
 }
 
 .erp-form-row {
@@ -1965,88 +2209,52 @@ textarea:focus-visible {
   gap: 12px;
 }
 
+/* Shared search fields in workspace lists use the ERP control skin. */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(100%, 360px);
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-input);
+  background: var(--surface-white);
+  color: var(--text-muted);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.search-box:focus-within {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px var(--brand-glow);
+}
+
+.search-box input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 13.5px;
+}
+
+.search-box input::placeholder {
+  color: var(--text-light);
+}
+
 /* ==========================================================================
    Responsive Breakpoints
    ========================================================================== */
 
-@media (max-width: 1200px) {
-  .kpi-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .flow-dashboard-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 860px) {
-  .erp-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .side-nav {
-    position: fixed;
-    left: 0;
-    top: 0;
-    height: 100vh;
-    transform: translateX(-100%);
-    width: min(85vw, 280px);
-    transition: transform var(--duration-normal) var(--ease-out);
-  }
-  .side-nav--open {
-    transform: translateX(0);
-  }
-  .nav-backdrop {
-    position: fixed;
-    inset: 0;
-    display: block;
-    background: rgba(15, 23, 42, 0.4);
-    backdrop-filter: blur(4px);
-    z-index: 25;
-  }
-  .forms-grid {
-    grid-template-columns: 1fr;
-  }
-  .workspace-content {
-    padding: 20px 16px 36px;
-  }
-}
-
-@media (max-width: 580px) {
-  .kpi-grid {
-    grid-template-columns: 1fr;
-  }
-  .form-fields-grid {
-    grid-template-columns: 1fr;
-  }
-  .form-fieldset {
-    grid-column: span 1;
-  }
-  .quick-actions-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .flow-topbar {
-    padding: 0 16px;
-  }
-  .flow-topbar .flow-search-pill {
-    display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
-  }
-}
+/* ==========================================================================
+   Responsive Grid & Clean Scroll Base Utilities
+   ========================================================================== */
 
 .mobile-nav-toggle {
   display: none;
-}
-
-@media (max-width: 860px) {
-  .mobile-nav-toggle {
-    display: grid !important;
-  }
 }
 
 /* Global Smooth Scrollbars for ERP */
@@ -2073,10 +2281,6 @@ textarea:focus-visible {
   background: #94a3b8;
 }
 
-/* ==========================================================================
-   Responsive Grid & Clean Scroll Utilities
-   ========================================================================== */
-
 .pos-workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
@@ -2089,12 +2293,6 @@ textarea:focus-visible {
   min-width: 0;
 }
 
-@media (max-width: 1024px) {
-  .pos-workspace-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 .whatsapp-workspace-grid {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -2102,23 +2300,11 @@ textarea:focus-visible {
   align-items: start;
 }
 
-@media (max-width: 860px) {
-  .whatsapp-workspace-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 .forms-2col-grid {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
   gap: 20px;
   margin-top: 20px;
-}
-
-@media (max-width: 960px) {
-  .forms-2col-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .horizontal-scroll-pills {
@@ -2130,6 +2316,7 @@ textarea:focus-visible {
   scrollbar-width: none;
   -ms-overflow-style: none;
   padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .horizontal-scroll-pills > * {
@@ -2147,46 +2334,224 @@ textarea:focus-visible {
   white-space: nowrap !important;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   Responsive Breakpoints & Mobile-First Hardening
+   ========================================================================== */
+
+@media (max-width: 1200px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .flow-dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .erp-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .side-nav {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    height: 100dvh;
+    transform: translateX(-100%);
+    width: min(85vw, 290px);
+    transition: transform var(--duration-normal) var(--ease-out);
+    z-index: 100;
+    box-shadow: 0 0 32px rgba(0, 0, 0, 0.25);
+    background: var(--surface-white);
+  }
+  .side-nav--open {
+    transform: translateX(0);
+  }
+  .nav-backdrop {
+    position: fixed;
+    inset: 0;
+    display: block;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 90;
+    animation: flowFadeIn var(--duration-fast) var(--ease-out);
+  }
+  .mobile-nav-toggle {
+    display: grid !important;
+  }
+  .forms-grid {
+    grid-template-columns: 1fr;
+  }
+  .pos-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+  .pos-workspace-grid > form.flow-card {
+    position: static !important;
+  }
+  .workspace-content {
+    padding: 20px 16px calc(36px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 860px) {
+  .flow-topbar {
+    gap: 12px;
+    padding-inline: 20px;
+  }
+  .flow-topbar__left {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .flow-topbar__right {
+    flex: 0 1 auto;
+    min-width: 0;
+    gap: 8px;
+  }
+  .flow-search-pill,
+  .flow-search-pill:focus-within {
+    flex: 0 1 230px;
+    width: clamp(190px, 27vw, 230px);
+  }
+  .flow-table {
+    min-width: 0;
+  }
+  .flow-table th,
+  .flow-table td {
+    padding: 8px 9px;
+  }
+  .flow-table th {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .flow-table--actions td:last-child {
+    white-space: nowrap;
+  }
+  .whatsapp-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+  .forms-2col-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .form-fields-grid {
+    grid-template-columns: 1fr;
+  }
+  .form-fieldset {
+    grid-column: span 1;
+  }
+  .erp-form-row {
+    grid-template-columns: 1fr;
+  }
+  .quick-actions-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .workspace-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .workspace-header__actions {
+    width: 100%;
+  }
+  .workspace-header__actions .btn-primary,
+  .workspace-header__actions .btn-secondary,
+  .workspace-header__actions .btn-danger {
+    min-height: 44px;
+    width: 100%;
+  }
   .flow-topbar {
     padding: 0 14px;
     height: 56px;
     gap: 8px;
   }
-
+  .flow-topbar .flow-search-pill {
+    display: none;
+  }
+  .flow-topbar__left {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
   .flow-topbar__left h1 {
     font-size: 15px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 180px;
+    max-width: 170px;
   }
-
   .flow-topbar__left p {
     display: none;
   }
-
   .flow-topbar__right {
     gap: 6px;
+    flex-shrink: 0;
   }
-
+  .header-primary-action {
+    min-width: 40px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .header-primary-action span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .flow-card__header,
+  .flow-card__tools {
+    align-items: stretch;
+  }
+  .flow-card__header {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .flow-card__tools {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .search-box {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+  }
   .pos-workspace-grid .flow-search-pill {
     display: flex;
     flex-basis: 100% !important;
     min-width: 0 !important;
     width: 100%;
   }
-
   .pos-workspace-grid .horizontal-scroll-pills {
     flex-basis: 100%;
   }
-
   .topbar-hide-mobile {
     display: none !important;
   }
+  .erp-modal-footer {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .erp-modal-footer > * {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
-@media (max-width: 860px), (pointer: coarse) {
+@media (max-width: 1024px), (pointer: coarse) {
   button,
   .pag-btn,
   .btn-primary,
@@ -2195,7 +2560,9 @@ textarea:focus-visible {
   .btn-ghost,
   .nav-item,
   .nav-footer-btn,
-  .flow-select-pill {
+  .flow-select-pill,
+  .flow-tab-btn,
+  .btn-pill {
     min-height: 44px;
   }
 
@@ -2208,9 +2575,28 @@ textarea:focus-visible {
     height: 44px;
   }
 
+  .header-primary-action {
+    min-width: 0;
+    width: auto;
+    min-height: 44px;
+    height: 44px;
+    padding-inline: 14px;
+    border-radius: var(--radius-pill);
+  }
+
   input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
     font-size: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-primary-action {
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 50%;
   }
 }

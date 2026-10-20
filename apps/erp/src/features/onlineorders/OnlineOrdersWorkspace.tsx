@@ -312,8 +312,8 @@ export const OnlineOrdersWorkspace = () => {
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
-        title="Pedidos de la Tienda Online (E-commerce Fulfillment)"
-        description="Bandeja centralizada de ventas web (erp.web_orders): pago aprobado, remisión de stock y despacho vía fulfill transaccional."
+        title="Pedidos de la tienda online"
+        description="Consulta y gestión de pedidos web: pago, preparación, despacho y cambios registrados."
         badge={`${orders.length} Pedidos en Base de Datos`}
       />
 
@@ -333,7 +333,7 @@ export const OnlineOrdersWorkspace = () => {
           label="Total Pedidos"
           value={orders.length}
           trend={{ text: "Web", positive: true }}
-          sublabel="erp.web_orders"
+          sublabel="Pedidos capturados desde la tienda"
         />
 
         <KpiCard
@@ -357,9 +357,9 @@ export const OnlineOrdersWorkspace = () => {
         <KpiCard
           icon={Truck}
           iconVariant="dark"
-          label="Cumplidos"
+          label="Despachados"
           value={fulfilledCount}
-          trend={{ text: "Fulfillment", positive: true }}
+          trend={{ text: "Completados", positive: true }}
           sublabel="Venta + stock remitido"
         />
       </div>
@@ -369,7 +369,7 @@ export const OnlineOrdersWorkspace = () => {
         <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h2 className="flow-card__title">Bandeja de Pedidos Web</h2>
-            <p className="flow-card__subtitle">Estado derivado de fulfillment + último evento (web_order_events). Sin estados manuales.</p>
+            <p className="flow-card__subtitle">Estado derivado del despacho y del último cambio registrado. Sin estados manuales.</p>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -401,7 +401,7 @@ export const OnlineOrdersWorkspace = () => {
             { id: "all", label: `Todos (${orders.length})` },
             { id: "paid", label: `Pagados p/ cumplir (${paidCount})` },
             { id: "pending", label: `Pendientes (${pendingCount})` },
-            { id: "fulfilled", label: `Cumplidos (${fulfilledCount})` },
+            { id: "fulfilled", label: `Despachados (${fulfilledCount})` },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -534,7 +534,7 @@ export const OnlineOrdersWorkspace = () => {
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div style={{ padding: "12px", background: "var(--surface-white)", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
               <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
-                Estado derivado (fulfillment + último evento)
+                Estado derivado (despacho + último cambio)
               </span>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
                 <span className="flow-status-pill processing">{paymentLabel(selectedOrder)}</span>

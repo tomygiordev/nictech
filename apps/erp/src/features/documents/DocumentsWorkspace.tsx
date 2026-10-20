@@ -7,6 +7,7 @@ import {
   Ban,
   Building2,
   Calendar,
+  Printer,
 } from "lucide-react";
 import {
   WorkspaceHeader,
@@ -17,7 +18,6 @@ import {
 } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDateTime } from "../../lib/formatters";
 import {
-  expectedCanonicalPath,
   issueDocument,
   listDocumentEvents,
   listDocumentTemplateVersions,
@@ -28,8 +28,10 @@ import {
   listFiscalRequests,
   requestFiscalIssuance,
   sha256Hex,
+  cancelSale,
   voidDocument,
 } from "./api";
+import SaleReceipt from "../../components/erp/SaleReceipt";
 import type {
   DocumentEventRecord,
   DocumentOwnerType,
@@ -52,9 +54,8 @@ const OWNER_TYPE_LABELS: Record<DocumentOwnerType, string> = {
 
 const OWNER_TYPES = Object.keys(OWNER_TYPE_LABELS) as DocumentOwnerType[];
 
-// The outbox and its audit trail are available, but there is not yet an ARCA
-// provider/worker configured for this deployment. Keep that limitation explicit
-// in the operator UI: an enqueued request is not a CAE nor a fiscal invoice.
+// Local invoice issuance is complete. This flag controls only the optional future
+// provider authorization path; it never gates sale or invoice creation.
 const FISCAL_PROVIDER_CONNECTED = false;
 
 const snapshotText = (doc: DocumentRecord, key: string): string => {
@@ -63,6 +64,46 @@ const snapshotText = (doc: DocumentRecord, key: string): string => {
   if (typeof value === "number") return String(value);
   return "";
 };
+
+const customerDisplayName = (doc: DocumentRecord): string =>
+  snapshotText(doc, "display_name") || snapshotText(doc, "legal_name") || "—";
+
+const customerLegalName = (doc: DocumentRecord): string =>
+  snapshotText(doc, "legal_name") || snapshotText(doc, "display_name") || "—";
+
+const normalizeCustomerName = (name: string): string =>
+  name.trim().replace(/\s+/g, " ").toLocaleLowerCase("es-AR");
+
+const customerLegalNameLabel = (doc: DocumentRecord): string => {
+  const displayName = customerDisplayName(doc);
+  const legalName = customerLegalName(doc);
+  return normalizeCustomerName(displayName) === normalizeCustomerName(legalName)
+    ? "Igual al cliente"
+    : legalName;
+};
+
+const SALE_STATE_LABELS: Record<string, string> = {
+  confirmed: "Confirmada",
+  cancelled: "Cancelada",
+};
+
+const PAYMENT_STATE_LABELS: Record<string, string> = {
+  unpaid: "Sin pagar",
+  partial: "Pago parcial",
+  paid: "Pagado",
+  refunded: "Revertido en ERP",
+};
+
+const DOCUMENT_EVENT_LABELS: Record<string, string> = {
+  issued: "Emitido",
+  voided: "Anulado",
+};
+
+const saleStateLabel = (state: string | null): string =>
+  state ? SALE_STATE_LABELS[state] ?? state : "Sin evento comercial";
+
+const paymentStateLabel = (state: string | null): string =>
+  state ? PAYMENT_STATE_LABELS[state] ?? state : "Sin evento de pago";
 
 const snapshotTotal = (doc: DocumentRecord): number => {
   if (doc.amount_ars !== null) return doc.amount_ars;
@@ -107,11 +148,11 @@ export const DocumentsWorkspace = () => {
   const [ownerId, setOwnerId] = useState("");
   const [documentNumber, setDocumentNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
-  const [customerTaxId, setCustomerTaxId] = useState("");
   const [totalArs, setTotalArs] = useState("");
   const [reason, setReason] = useState("");
 
   const [voidReason, setVoidReason] = useState("");
+  const [saleCancelReason, setSaleCancelReason] = useState("");
   const [fiscalPointId, setFiscalPointId] = useState("");
   const [voucherType, setVoucherType] = useState("");
   const [fiscalReason, setFiscalReason] = useState("");
@@ -163,6 +204,10 @@ export const DocumentsWorkspace = () => {
     [docs, selectedDocId],
   );
 
+  useEffect(() => {
+    setSaleCancelReason("");
+  }, [selectedDocId]);
+
   const selectedFiscalRequest = useMemo(() => {
     if (!selectedDoc) return null;
     return fiscalRequests.find((r) => r.document_id === selectedDoc.id) ?? null;
@@ -202,11 +247,11 @@ export const DocumentsWorkspace = () => {
     setSaving(true);
     try {
       const snapshot = {
-        customer_name: customerName.trim(),
-        tax_id: customerTaxId.trim(),
+        display_name: customerName.trim(),
+        legal_name: customerName.trim(),
         total_ars: parseFloat(totalArs) || 0,
       };
-      if (snapshot.customer_name === "") throw new Error("La razón social es obligatoria.");
+      if (snapshot.display_name === "") throw new Error("El nombre del cliente es obligatorio.");
       const digest = await sha256Hex(
         JSON.stringify({
           owner_type: ownerType,
@@ -233,7 +278,6 @@ export const DocumentsWorkspace = () => {
       setOwnerId("");
       setDocumentNumber("");
       setCustomerName("");
-      setCustomerTaxId("");
       setTotalArs("");
       setReason("");
       await refresh();
@@ -257,6 +301,30 @@ export const DocumentsWorkspace = () => {
       setSelectedEvents(events);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "No se pudo anular el documento.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelSale = async () => {
+    if (
+      !selectedDoc ||
+      selectedDoc.owner_type !== "sale" ||
+      !selectedDoc.sale_receipt ||
+      selectedDoc.sale_receipt.sale_state === "cancelled" ||
+      saving
+    ) return;
+    setActionError(null);
+    setSaving(true);
+    try {
+      await cancelSale(selectedDoc.sale_receipt.sale_id, saleCancelReason);
+      setFeedback(
+        `Venta cancelada en ERP. Se registró la reversión de sus pagos y se repuso el stock. Los cobros externos no se devolvieron; gestioná su devolución desde el medio o proveedor correspondiente. El comprobante "${selectedDoc.document_number}" permanece en Documentos.`,
+      );
+      setSaleCancelReason("");
+      await refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "No se pudo cancelar la venta.");
     } finally {
       setSaving(false);
     }
@@ -292,8 +360,8 @@ export const DocumentsWorkspace = () => {
       const q = search.toLowerCase();
       const matchSearch =
         d.document_number.toLowerCase().includes(q) ||
-        snapshotText(d, "customer_name").toLowerCase().includes(q) ||
-        snapshotText(d, "tax_id").includes(q);
+        customerDisplayName(d).toLowerCase().includes(q) ||
+        customerLegalName(d).toLowerCase().includes(q);
       return matchFilter && matchSearch;
     });
   }, [docs, activeFilter, search]);
@@ -312,16 +380,16 @@ export const DocumentsWorkspace = () => {
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
-        title="Documentos Fiscales"
-        description="Registro trazable de documentos vinculados a ventas, pagos, reparaciones, armados o canjes."
-        badge="En desarrollo"
+        title="Documentos y facturas"
+        description="Consultá ventas con comprobantes fiscales y no fiscales, pagos, reparaciones, armados y canjes."
+        badge="Prototipo comercial"
       />
 
       {!FISCAL_PROVIDER_CONNECTED && (
         <FeedbackAlert
-          type="warning"
-          message="ARCA · En desarrollo"
-          submessage="Podés registrar y auditar documentos, pero no se obtiene CAE ni se envía un comprobante fiscal. Las solicitudes existentes quedan sólo en cola hasta configurar un proveedor fiscal."
+          type="info"
+          message="Autorización fiscal pendiente de integración con ARCA"
+          submessage="Los comprobantes fiscales se registran y numeran en el ERP. Para contar con autorización fiscal deben obtener CAE/CAEA; las solicitudes previas permanecen visibles para auditoría."
         />
       )}
 
@@ -352,10 +420,10 @@ export const DocumentsWorkspace = () => {
         <KpiCard
           icon={ShieldCheck}
           iconVariant="steel"
-          label="Solicitudes Fiscales"
+          label="Solicitudes a proveedor"
           value={fiscalRequests.length}
-          trend={{ text: "Outbox", positive: true }}
-          sublabel={FISCAL_PROVIDER_CONNECTED ? "Envío al proveedor fiscal" : "Sin proveedor fiscal conectado"}
+          trend={{ text: "Opcional", positive: true }}
+          sublabel="Autorización separada de la emisión interna"
         />
         <KpiCard
           icon={Calendar}
@@ -363,7 +431,7 @@ export const DocumentsWorkspace = () => {
           label="Puntos de Venta"
           value={`${fiscalPoints.length} PV`}
           trend={{ text: "Fiscales", positive: true }}
-          sublabel="Puntos de venta activos"
+          sublabel="Configuración opcional para proveedor futuro"
         />
       </div>
 
@@ -430,8 +498,8 @@ export const DocumentsWorkspace = () => {
                   <th>Documento</th>
                   <th>Dueño</th>
                   <th>Cliente</th>
-                  <th>CUIT / DNI</th>
-                  <th>Estado Fiscal</th>
+                  <th>Razón social</th>
+                  <th>Tipo / proveedor</th>
                   <th>Total</th>
                   <th>Estado</th>
                 </tr>
@@ -446,6 +514,7 @@ export const DocumentsWorkspace = () => {
                 ) : (
                   filteredDocs.map((doc) => {
                     const request = fiscalRequests.find((r) => r.document_id === doc.id) ?? null;
+                    const reversedPaymentCount = doc.sale_receipt?.payments.filter((payment) => payment.reversed).length ?? 0;
                     return (
                       <tr
                         key={doc.id}
@@ -473,19 +542,26 @@ export const DocumentsWorkspace = () => {
                           </span>
                         </td>
                         <td>
-                          <strong>{snapshotText(doc, "customer_name") || "—"}</strong>
+                          <strong>{customerDisplayName(doc)}</strong>
                         </td>
                         <td>
                           <span className="nowrap" style={{ fontSize: "12px", fontFamily: "monospace", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                            {snapshotText(doc, "tax_id") || "—"}
+                            {customerLegalNameLabel(doc)}
                           </span>
                         </td>
                         <td>
-                          {!request ? (
-                            <span className="flow-status-pill pending">Sin timbrado</span>
+                          {doc.invoice_kind === "fiscal" ? (
+                            <span className="flow-status-pill pending">Fiscal · pendiente de CAE</span>
+                          ) : doc.invoice_kind === "non_fiscal" ? (
+                            <span className="flow-status-pill pending">No fiscal</span>
+                          ) : request ? (
+                            <span className="flow-status-pill processing">Solicitud a proveedor</span>
                           ) : (
-                            <span className="flow-status-pill processing">
-                              {request.voucher_type} {String(request.voucher_number)} · Encolado
+                            <span className="flow-status-pill pending">Documento interno</span>
+                          )}
+                          {request && (
+                            <span style={{ display: "block", marginTop: "3px", fontSize: "10px", color: "var(--text-muted)" }}>
+                              {request.voucher_type} {String(request.voucher_number)}
                             </span>
                           )}
                         </td>
@@ -499,6 +575,21 @@ export const DocumentsWorkspace = () => {
                             <span className="flow-status-pill pending">Anulado</span>
                           ) : (
                             <span className="flow-status-pill completed">Emitido</span>
+                          )}
+                          {doc.sale_receipt?.sale_state === "cancelled" && (
+                            <span className="flow-status-pill pending" style={{ display: "block", width: "fit-content", marginTop: "4px" }}>
+                              Venta cancelada
+                            </span>
+                          )}
+                          {doc.sale_receipt?.payment_state === "refunded" && (
+                            <span className="flow-status-pill processing" style={{ display: "block", width: "fit-content", marginTop: "4px" }}>
+                              Reversión registrada en ERP
+                            </span>
+                          )}
+                          {reversedPaymentCount > 0 && (
+                            <span style={{ display: "block", marginTop: "4px", fontSize: "10px", color: "var(--text-muted)" }}>
+                              {reversedPaymentCount} pago(s) con reverso ERP
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -516,7 +607,7 @@ export const DocumentsWorkspace = () => {
           isOpen={Boolean(selectedDoc)}
           onClose={() => setSelectedDocId(null)}
           title={selectedDoc.document_number}
-          subtitle={`${OWNER_TYPE_LABELS[selectedDoc.owner_type]} • ${snapshotText(selectedDoc, "customer_name")}`}
+          subtitle={`${OWNER_TYPE_LABELS[selectedDoc.owner_type]} • ${customerDisplayName(selectedDoc)}`}
           icon={FileText}
           maxWidth="640px"
         >
@@ -538,28 +629,110 @@ export const DocumentsWorkspace = () => {
                   </strong>
                 </div>
                 <div>
-                  <span className="stat-label">Estado Fiscal Real</span>
+                  <span className="stat-label">Tipo de comprobante</span>
                   <span style={{ display: "block", fontSize: "13px", marginTop: "2px", fontWeight: 700 }}>
-                    {!selectedFiscalRequest && "Sin solicitud fiscal"}
-                    {selectedFiscalRequest && selectedFiscalStatus === "queued" && "En cola · sin proveedor conectado"}
-                    {selectedFiscalRequest && selectedFiscalStatus === "authorized" && `Autorizado · CAE ${selectedCae ?? ""}`}
-                    {selectedFiscalRequest && selectedFiscalStatus === "rejected" && "Rechazado por el proveedor"}
-                    {selectedFiscalRequest && selectedFiscalStatus === "failed" && "Fallido · reintentar vía outbox"}
+                    {selectedDoc.invoice_kind === "fiscal" && "Comprobante fiscal · sin autorización ARCA"}
+                    {selectedDoc.invoice_kind === "non_fiscal" && "Comprobante no fiscal"}
+                    {selectedDoc.invoice_kind === null && "Documento interno"}
                   </span>
                 </div>
                 <div>
-                  <span className="stat-label">Ruta Canónica Esperada (Storage privado)</span>
-                  <span style={{ display: "block", fontSize: "11px", marginTop: "2px", fontFamily: "monospace", wordBreak: "break-all" }}>
-                    {expectedCanonicalPath(
-                      selectedDoc.organization_id,
-                      selectedDoc.branch_id,
-                      selectedDoc.owner_type,
-                      selectedDoc.owner_id,
-                      selectedDoc.content_sha256,
-                    )}
+                  <span className="stat-label">Autorización fiscal</span>
+                  <span style={{ display: "block", fontSize: "13px", marginTop: "2px", fontWeight: 700 }}>
+                    {!selectedFiscalRequest && selectedDoc.invoice_kind === "fiscal" && "No autorizada · integración ARCA pendiente"}
+                    {!selectedFiscalRequest && selectedDoc.invoice_kind === "non_fiscal" && "No aplica"}
+                    {!selectedFiscalRequest && selectedDoc.invoice_kind === null && "No solicitada"}
+                    {selectedFiscalRequest && selectedFiscalStatus === "queued" && "En cola · integración futura"}
+                    {selectedFiscalRequest && selectedFiscalStatus === "authorized" && `Autorizada · CAE ${selectedCae ?? ""}`}
+                    {selectedFiscalRequest && selectedFiscalStatus === "rejected" && "Rechazada por el proveedor"}
+                    {selectedFiscalRequest && selectedFiscalStatus === "failed" && "Fallida · requiere reintento"}
                   </span>
                 </div>
+                <div>
+                  <span className="stat-label">PDF</span>
+                  <span style={{ display: "block", fontSize: "11px", marginTop: "2px" }}>No adjuntado</span>
+                </div>
+                {selectedDoc.sale_receipt && (
+                  <>
+                    <div>
+                      <span className="stat-label">Estado comercial de la venta</span>
+                      <span style={{ display: "block", fontSize: "13px", marginTop: "2px", fontWeight: 700 }}>
+                        {saleStateLabel(selectedDoc.sale_receipt.sale_state)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="stat-label">Estado de pago</span>
+                      <span style={{ display: "block", fontSize: "13px", marginTop: "2px", fontWeight: 700 }}>
+                        {paymentStateLabel(selectedDoc.sale_receipt.payment_state)}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
+
+              {selectedDoc.sale_receipt && (
+                <button type="button" className="btn-primary" onClick={() => window.print()}>
+                  <Printer size={15} /> Reimprimir comprobante
+                </button>
+              )}
+
+              {selectedDoc.owner_type === "sale" && (
+                <p style={{ margin: 0, fontSize: "11px", color: "var(--text-muted)" }}>
+                  Anular documento afecta solo el comprobante; no cancela la venta ni revierte pagos o stock.
+                </p>
+              )}
+
+              {selectedDoc.owner_type === "sale" && selectedDoc.sale_receipt && (
+                <section style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <strong style={{ fontSize: "12px" }}>Pagos y reversos registrados en ERP</strong>
+                  {selectedDoc.sale_receipt.payments.length === 0 ? (
+                    <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Sin pagos registrados.</span>
+                  ) : (
+                    <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "var(--text-muted)" }}>
+                      {selectedDoc.sale_receipt.payments.map((payment, index) => (
+                        <li key={`${selectedDoc.sale_receipt?.sale_id}-payment-${index}`}>
+                          {payment.method_name} · {formatCurrency(payment.amount, payment.currency_code)} · {payment.reversed ? "Reverso registrado en ERP" : "Pago original"}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
+
+              {selectedDoc.owner_type === "sale" &&
+                selectedDoc.sale_receipt &&
+                selectedDoc.sale_receipt.sale_state !== "cancelled" && (
+                  <section style={{ display: "flex", flexDirection: "column", gap: "10px", border: "1px solid var(--border-line)", borderRadius: "10px", padding: "12px" }}>
+                    <div>
+                      <strong style={{ display: "block", fontSize: "13px" }}>Cancelar venta y revertir en ERP</strong>
+                      <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
+                        Esta acción registra la reversión de los pagos en ERP y repone el stock; no devuelve cobros externos. Devolvé los pagos de tarjeta, Mercado Pago u otros proveedores desde el medio correspondiente. No anula ni elimina el comprobante; para eso, usá “Anular documento”.
+                      </p>
+                    </div>
+                    <div className="erp-form-group">
+                      <label className="erp-form-label">Motivo de cancelación de la venta *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Describí el motivo de la cancelación"
+                        value={saleCancelReason}
+                        onChange={(event) => setSaleCancelReason(event.target.value)}
+                        className="erp-form-input"
+                      />
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        className="pag-btn"
+                        style={{ color: "var(--rose-accent)", borderColor: "var(--rose-border)" }}
+                        disabled={saving || saleCancelReason.trim() === ""}
+                        onClick={() => void handleCancelSale()}
+                      >
+                        <Ban size={14} /> Cancelar venta y revertir en ERP
+                      </button>
+                    </div>
+                  </section>
+                )}
 
               <div>
                 <span className="stat-label">Historial de eventos</span>
@@ -567,7 +740,7 @@ export const DocumentsWorkspace = () => {
                   {selectedEvents.length === 0 && <li>Sin eventos registrados.</li>}
                   {selectedEvents.map((ev) => (
                     <li key={ev.id}>
-                      {ev.status} · {formatDateTime(new Date(ev.occurred_at))} · {ev.reason}
+                      {DOCUMENT_EVENT_LABELS[ev.status] ?? ev.status} · {formatDateTime(new Date(ev.occurred_at))} · {ev.reason}
                     </li>
                   ))}
                 </ul>
@@ -595,7 +768,7 @@ export const DocumentsWorkspace = () => {
 
               {selectedDoc.status !== "voided" && !isVoided(selectedEvents) && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
-                  {!selectedFiscalRequest && (
+                  {!selectedFiscalRequest && selectedDoc.invoice_kind === null && (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                       <div className="erp-form-group">
                         <label className="erp-form-label">Punto de venta fiscal *</label>
@@ -642,9 +815,14 @@ export const DocumentsWorkspace = () => {
                       </div>
                     </div>
                   )}
+                  {!selectedFiscalRequest && selectedDoc.invoice_kind !== null && (
+                    <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+                      La autorización ARCA requiere la integración fiscal correspondiente.
+                    </p>
+                  )}
                   <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
                     <div className="erp-form-group" style={{ flex: 1 }}>
-                      <label className="erp-form-label">Motivo de anulación *</label>
+                      <label className="erp-form-label">Motivo de anulación del documento *</label>
                       <input
                         type="text"
                         placeholder="Motivo formal"
@@ -660,7 +838,7 @@ export const DocumentsWorkspace = () => {
                       disabled={saving}
                       onClick={() => void handleVoidDoc()}
                     >
-                      <Ban size={14} /> Anular
+                      <Ban size={14} /> Anular documento
                     </button>
                   </div>
                 </div>
@@ -670,11 +848,13 @@ export const DocumentsWorkspace = () => {
         </Modal>
       )}
 
+      {selectedDoc?.sale_receipt && <SaleReceipt receipt={selectedDoc.sale_receipt} />}
+
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="Registrar documento"
-        subtitle="Registro interno trazable; no emite CAE ni comprobante fiscal mientras ARCA no esté conectado."
+        subtitle="Registro interno trazable de facturas emitidas en el ERP; la autorización de proveedores queda como flujo futuro opcional."
         icon={FileText}
         maxWidth="560px"
       >
@@ -741,29 +921,16 @@ export const DocumentsWorkspace = () => {
               <span className="erp-form-hint">Usá el identificador de la operación ya registrada. Este panel no crea ventas, reparaciones ni canjes.</span>
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Razón Social / Nombre *</label>
-              <input
-                type="text"
-                required
-                placeholder="Ej: Sofía Gómez"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="erp-form-input"
-              />
-            </div>
-            <div className="erp-form-group">
-              <label className="erp-form-label">CUIT / DNI *</label>
-              <input
-                type="text"
-                required
-                placeholder="Ej: 27-42104928-1"
-                value={customerTaxId}
-                onChange={(e) => setCustomerTaxId(e.target.value)}
-                className="erp-form-input"
-              />
-            </div>
+          <div className="erp-form-group">
+            <label className="erp-form-label">Nombre del cliente o razón social *</label>
+            <input
+              type="text"
+              required
+              placeholder="Ej: Sofía Gómez"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="erp-form-input"
+            />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">

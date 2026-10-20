@@ -46,7 +46,10 @@ const requireViewString = (value: string | null, label: string): string => {
 
 // PostgreSQL acepta NULL para el origen opcional del asiento, pero los tipos
 // generados de funciones sólo describen el tipo base del parámetro.
-const nullableRpcString = (value: string | null | undefined): string => value as string;
+// Supabase omite las propiedades cuyo valor es `undefined` al serializar un RPC.
+// La firma de `post_journal_entry` necesita recibir los campos de origen aun cuando
+// un asiento manual no tenga operación vinculada; PostgreSQL los admite como NULL.
+const nullableRpcString = (value: string | null | undefined): string => (value ?? null) as unknown as string;
 
 export type BranchOption = {
   id: string;
@@ -90,6 +93,7 @@ export const listCustomers = async (): Promise<CustomerOption[]> => {
   const { data, error } = await getSupabase()
     .from("customers")
     .select("id,code,display_name")
+    .eq("is_active", true)
     .order("display_name");
   if (error) throw error;
   return data ?? [];
@@ -231,8 +235,7 @@ export const recordReceivablePayment = async (input: ReceivablePaymentInput): Pr
   return parseRpcId(data, "receivable payment");
 };
 
-export const postJournalEntry = async (input: JournalEntryInput): Promise<string> => {
-  const { data, error } = await getSupabase().rpc("post_journal_entry", {
+export const buildPostJournalEntryRpcArgs = (input: JournalEntryInput) => ({
     target_branch_id: input.branchId,
     target_entry_date: input.entryDate,
     target_source_type: nullableRpcString(input.sourceType),
@@ -241,6 +244,9 @@ export const postJournalEntry = async (input: JournalEntryInput): Promise<string
     operation_reason: input.reason,
     lines: input.lines,
   });
+
+export const postJournalEntry = async (input: JournalEntryInput): Promise<string> => {
+  const { data, error } = await getSupabase().rpc("post_journal_entry", buildPostJournalEntryRpcArgs(input));
   if (error) throw error;
   return parseRpcId(data, "journal entry");
 };

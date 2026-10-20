@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCreateSaleRpcArgs } from "./api";
-import type { PosSaleInput } from "./types";
+import { buildCreateSaleRpcArgs, buildCreateSaleWithInvoiceRpcArgs } from "./api";
+import type { PosInvoiceSaleInput, PosSaleInput } from "./types";
 
 describe("POS create_sale payload", () => {
   it("keeps the ARS snapshot UUID and maps every RPC argument", () => {
@@ -56,5 +56,32 @@ describe("POS create_sale payload", () => {
         },
       ],
     });
+  });
+
+  it.each(["fiscal", "non_fiscal"] as const)("sends %s invoice kind to the internal issuance RPC", (invoiceKind) => {
+    const input: PosInvoiceSaleInput = {
+      branchId: "10000000-0000-4000-8000-000000000001",
+      customerId: "10000000-0000-4000-8000-000000000002",
+      currency: "ARS",
+      exchangeSnapshotId: "10000000-0000-4000-8000-000000000003",
+      operationKey: `pos-${invoiceKind}`,
+      reason: "Venta mostrador",
+      invoiceKind,
+      lines: [
+        {
+          kind: "free_concept",
+          product_id: null,
+          description: "Concepto de prueba",
+          quantity: 1,
+          unit_price: 100,
+          discount_amount: 0,
+          tax_rate_percent: 0,
+          tax_amount: 0,
+        },
+      ],
+      paymentLines: [],
+    };
+
+    expect(buildCreateSaleWithInvoiceRpcArgs(input).target_invoice_kind).toBe(invoiceKind);
   });
 });

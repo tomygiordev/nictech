@@ -94,7 +94,7 @@ describe("ERP App Navigation & Workspaces", () => {
 
   it("filters sidebar navigation and finds workspace by submodule search term", async () => {
     renderAppWithPermissions(ALL_PERMISSIONS);
-    const searchInput = screen.getByPlaceholderText("Buscar módulo o workspace...");
+    const searchInput = screen.getByPlaceholderText("Buscar en ERP...");
     fireEvent.change(searchInput, { target: { value: "proveedores" } });
 
     expect(screen.getByRole("button", { name: "Compras y proveedores" })).toBeInTheDocument();
@@ -108,7 +108,7 @@ describe("ERP App Navigation & Workspaces", () => {
     const catalogBtn = screen.getByRole("button", { name: "Catálogo y precios" });
     await user.click(catalogBtn);
 
-    expect(await screen.findByText("Catálogo Maestro de Productos")).toBeInTheDocument();
+    expect(await screen.findByText("Catálogo Maestro de Productos", {}, { timeout: 4000 })).toBeInTheDocument();
   });
 
   it("only shows workspaces for which the user has authorized permissions", () => {
@@ -132,15 +132,15 @@ describe("ERP App Navigation & Workspaces", () => {
     trigger.focus();
     await user.click(trigger);
 
-    const dialog = await screen.findByRole("dialog", { name: "Centro de Notificaciones" });
+    const dialog = await screen.findByRole("dialog", { name: "Estado de operaciones" });
     const closeButton = within(dialog).getByRole("button", { name: "Cerrar modal" });
     await waitFor(() => expect(closeButton).toHaveFocus());
 
-    expect(within(dialog).getByRole("status")).toHaveTextContent("No hay notificaciones disponibles");
+    expect(within(dialog).getByRole("status")).toHaveTextContent("Las alertas todavía no se reúnen en una bandeja única");
     expect(screen.queryByText("Nuevo pedido web recibido")).not.toBeInTheDocument();
 
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog", { name: "Centro de Notificaciones" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Estado de operaciones" })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
 
@@ -166,27 +166,27 @@ describe("ERP App Navigation & Workspaces", () => {
     // 1. Online orders
     const ordersBtn = screen.getByRole("button", { name: "Pedidos online" });
     await user.click(ordersBtn);
-    expect(await screen.findByText("Pedidos de la Tienda Online (E-commerce Fulfillment)")).toBeInTheDocument();
+    expect(await screen.findByText("Pedidos de la tienda online", {}, { timeout: 4000 })).toBeInTheDocument();
 
     // 2. Trade-ins (Equipos usados)
     const tradeInsBtn = screen.getByRole("button", { name: "Equipos usados" });
     await user.click(tradeInsBtn);
-    expect(await screen.findByText("Equipos Usados & Canjes en Parte de Pago (Trade-in)")).toBeInTheDocument();
+    expect(await screen.findByText("Equipos Usados & Canjes en Parte de Pago (Trade-in)", {}, { timeout: 4000 })).toBeInTheDocument();
 
-    // 3. Documents (Documentos y ARCA)
-    const docsBtn = screen.getByRole("button", { name: "Documentos y ARCA" });
+    // 3. Documents (internal ERP invoices; provider authorization is future work)
+    const docsBtn = screen.getByRole("button", { name: "Documentos y facturas" });
     await user.click(docsBtn);
-    expect(await screen.findByText("Documentos Fiscales")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Documentos y facturas" }, { timeout: 4000 })).toBeInTheDocument();
 
     // 4. WhatsApp
     const whatsappBtn = screen.getByRole("button", { name: "WhatsApp" });
     await user.click(whatsappBtn);
-    expect(await screen.findByText("WhatsApp Business & Comunicaciones")).toBeInTheDocument();
+    expect(await screen.findByText("WhatsApp Business & Comunicaciones", {}, { timeout: 4000 })).toBeInTheDocument();
 
     // 5. Integration Health (Integraciones)
     const healthBtn = screen.getByRole("button", { name: "Integraciones" });
     await user.click(healthBtn);
-    expect(await screen.findByText("Salud de Integraciones & Outbox Transaccional")).toBeInTheDocument();
+    expect(await screen.findByText("Estado de las integraciones", {}, { timeout: 4000 })).toBeInTheDocument();
   });
 
   it("renders login form when there is no active session", () => {

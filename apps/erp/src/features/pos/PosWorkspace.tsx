@@ -22,12 +22,15 @@ import {
   Layers,
 } from "lucide-react";
 import { WorkspaceHeader, StatePanel, FeedbackAlert } from "../../components/erp/WorkspaceUi";
-import { formatCurrency, formatDateTime } from "../../lib/formatters";
+import SaleReceipt from "../../components/erp/SaleReceipt";
+import { formatCurrency } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
 import { useErpAuth } from "../../auth/ErpAuthContext";
-import { createSaleWithFiscalDocument } from "./api";
+import { createSaleWithInvoice } from "./api";
+import { getDocumentSaleReceipt } from "../documents/api";
 import { canSubmitWithExchangeRate, ERP_BASE_CURRENCY } from "./schemas";
-import type { PosPaymentLineInput, PosSaleLineInput } from "./types";
+import type { InvoiceKind, PosPaymentLineInput, PosSaleLineInput } from "./types";
+import type { DocumentSaleReceipt } from "../../types/DocumentSaleReceipt";
 
 type PaymentKind = "cash" | "card" | "qr" | "transfer";
 
@@ -135,10 +138,15 @@ const posCheckoutSchema = z.object({
   branchId: z.string().uuid("Seleccioná una sucursal válida."),
   locationId: z.string().uuid("Seleccioná una ubicación de venta válida."),
   paymentMethodId: z.string().uuid("Seleccioná un medio de pago disponible."),
+  invoiceKind: z.enum(["", "fiscal", "non_fiscal"]).refine(
+    (value): value is InvoiceKind => value !== "",
+    "Seleccioná el tipo de comprobante.",
+  ),
   customerName: z.string().trim().min(1, "Ingresá el nombre del cliente.").max(120, "El nombre no puede superar 120 caracteres."),
 });
 
 type PosCheckoutValues = z.infer<typeof posCheckoutSchema>;
+type PosCheckoutInput = z.input<typeof posCheckoutSchema>;
 
 const classifyPaymentMethod = (code: string, settlementKind: string): PaymentKind | null => {
   const normalizedCode = code.trim().toUpperCase();
@@ -175,25 +183,17 @@ export const PosWorkspace: React.FC = () => {
   const [submittingSale, setSubmittingSale] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [lastTicket, setLastTicket] = useState<{
-    saleId: string;
-    documentId: string;
-    fiscalRequestId: string;
-    fiscalStatus: "queued";
-    ticketNumber: string;
-    items: CartItem[];
-    totalArs: number;
-    totalUsd: number;
+    receipt: DocumentSaleReceipt;
     paymentMethod: string;
-    customer: string;
-    date: string;
   } | null>(null);
   const operationRef = useRef<{ signature: string; key: string } | null>(null);
-  const checkoutForm = useForm<PosCheckoutValues>({
+  const checkoutForm = useForm<PosCheckoutInput, unknown, PosCheckoutValues>({
     resolver: zodResolver(posCheckoutSchema),
     defaultValues: {
       branchId: "",
       locationId: "",
       paymentMethodId: "",
+      invoiceKind: "fiscal",
       customerName: "Consumidor Final",
     },
   });
@@ -659,45 +659,79 @@ export const PosWorkspace: React.FC = () => {
         branchId: values.branchId,
         customerName: values.customerName,
         paymentMethodId: selectedMethod.id,
+        invoiceKind: values.invoiceKind,
         lines,
       });
       operationRef.current = resolveOperationKey(operationRef.current, operationSignature);
       const opKey = operationRef.current.key;
 
-      // 5. Atomic sale, document and fiscal request with variant isolation & stock deduction
-      const saleResult = await createSaleWithFiscalDocument({
+      // 5. Atomic sale and internally numbered invoice; checkout does not call a provider.
+      const saleResult = await createSaleWithInvoice({
         branchId: values.branchId,
         customerId: String(custId),
         currency: ERP_BASE_CURRENCY,
         exchangeSnapshotId: String(snapId),
         operationKey: opKey,
         reason: `Venta Mostrador POS - ${values.customerName}`,
+        invoiceKind: values.invoiceKind,
         lines,
         paymentLines,
       });
 
-      // 6. Generate real persistent ticket and notify
-      const ticketNum = opKey.toUpperCase();
-      const receiptData = {
-        saleId: saleResult.saleId,
-        documentId: saleResult.documentId,
-        fiscalRequestId: saleResult.fiscalRequestId,
-        fiscalStatus: saleResult.fiscalStatus,
-        ticketNumber: ticketNum,
-        items: [...cart],
-        totalArs: subtotalArs,
-        totalUsd: subtotalUsd,
-        paymentMethod: selectedMethod.name,
-        customer: values.customerName,
-        date: formatDateTime(new Date()),
+      // Prefer the committed sale and sale_lines read back through the
+      // documents.view receipt RPC. Keep a request-matched fallback if that
+      // read-back fails after the transaction has already committed.
+      const fallbackConfirmedAt = new Date().toISOString();
+      const localReceipt: DocumentSaleReceipt = {
+        sale_id: saleResult.saleId,
+        document_id: saleResult.documentId,
+        document_number: saleResult.documentNumber,
+        branch_name: branches.find((branch) => branch.id === values.branchId)?.name ?? "Sucursal",
+        invoice_kind: saleResult.invoiceKind,
+        customer_display_name: values.customerName,
+        customer_legal_name: values.customerName,
+        currency_code: ERP_BASE_CURRENCY,
+        exchange_rate: 1,
+        subtotal_amount: subtotalNetArs,
+        discount_amount: 0,
+        tax_amount: totalTaxArs,
+        total_amount: subtotalArs,
+        total_ars: subtotalArs,
+        confirmed_at: fallbackConfirmedAt,
+        document_status: "issued",
+        sale_state: null,
+        payment_state: null,
+        lines: lines.map((line) => ({
+          description: line.description,
+          quantity: line.quantity,
+          unit_price: line.unit_price,
+          discount_amount: line.discount_amount,
+          tax_rate_percent: line.tax_rate_percent,
+          tax_amount: line.tax_amount,
+          line_total: line.quantity * line.unit_price - line.discount_amount + line.tax_amount,
+        })),
+        payments: [{
+          method_name: selectedMethod.name,
+          amount: subtotalArs,
+          currency_code: ERP_BASE_CURRENCY,
+          occurred_at: fallbackConfirmedAt,
+          reversed: false,
+        }],
       };
+      let receipt = localReceipt;
+      try {
+        receipt = await getDocumentSaleReceipt(saleResult.documentId) ?? localReceipt;
+      } catch {
+        // The sale is already committed. Its authoritative receipt is
+        // available from Documents even if this immediate read-back fails.
+      }
 
-      setLastTicket(receiptData);
+      setLastTicket({ receipt, paymentMethod: selectedMethod.name });
       setCart([]);
       operationRef.current = null;
       setFeedback({
         type: "success",
-        message: `¡Venta ${ticketNum} completada! Comprobante generado y timbrado encolado (${saleResult.fiscalStatus}). Stock descontado atómicamente en ERP.`,
+        message: `¡Venta completada! Comprobante ${saleResult.invoiceKind === "fiscal" ? "fiscal" : "no fiscal"} ${saleResult.documentNumber} registrado en el ERP. Stock descontado atómicamente.`,
       });
 
       // Reload products to reflect updated variant stock immediately
@@ -720,7 +754,7 @@ export const PosWorkspace: React.FC = () => {
     <div className="flow-dashboard">
       <WorkspaceHeader
         title="Punto de Venta (POS)"
-        description="Terminal de facturación rápida con aislamiento de variantes de stock, lector de código de barras y cobro transaccional ERP."
+        description="Registrá la venta y elegí si el comprobante será fiscal o no fiscal."
         badge={
           dollarRate
             ? `Dólar: ${formatCurrency(dollarRate, "ARS")} • ${activeBranch?.name || "Sin sucursal"}`
@@ -762,16 +796,16 @@ export const PosWorkspace: React.FC = () => {
               </div>
               <div>
                 <strong style={{ fontSize: "16px", color: "var(--emerald-success)" }}>
-                  ¡Venta Confirmada! #{lastTicket.ticketNumber}
+                  ¡Venta Confirmada! #{lastTicket.receipt.document_number}
                 </strong>
                 <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>
-                  {lastTicket.customer} • {lastTicket.paymentMethod} • {formatCurrency(lastTicket.totalArs, "ARS")}
+                  {lastTicket.receipt.customer_display_name} • {lastTicket.paymentMethod} • {formatCurrency(lastTicket.receipt.total_amount, lastTicket.receipt.currency_code)}
                 </p>
                 <span style={{ fontSize: "10px", color: "var(--text-light)", fontFamily: "monospace" }}>
-                  ID Venta ERP: {lastTicket.saleId}
+                  ID Venta ERP: {lastTicket.receipt.sale_id}
                 </span>
                 <span style={{ display: "block", fontSize: "10px", color: "var(--text-light)", fontFamily: "monospace" }}>
-                  Documento: {lastTicket.documentId} • ARCA: {lastTicket.fiscalStatus} ({lastTicket.fiscalRequestId})
+                  {lastTicket.receipt.invoice_kind === "fiscal" ? "Comprobante fiscal" : "Comprobante no fiscal"}: {lastTicket.receipt.document_number} • Documento ERP: {lastTicket.receipt.document_id}
                 </span>
               </div>
             </div>
@@ -791,7 +825,7 @@ export const PosWorkspace: React.FC = () => {
                   gap: "6px",
                 }}
               >
-                <Printer size={14} /> Imprimir Comprobante
+                <Printer size={14} /> Imprimir comprobante
               </button>
               <button
                 type="button"
@@ -805,6 +839,8 @@ export const PosWorkspace: React.FC = () => {
           </div>
         </div>
       )}
+
+      {lastTicket && <SaleReceipt receipt={lastTicket.receipt} />}
 
       <div className="pos-workspace-grid" style={{ gap: "24px" }}>
         {/* Left: Product Catalog & Search */}
@@ -1139,6 +1175,31 @@ export const PosWorkspace: React.FC = () => {
               {checkoutForm.formState.errors.customerName.message}
             </p>
           )}
+
+          <div className="erp-form-group" style={{ marginBottom: "14px" }}>
+            <label className="erp-form-label" htmlFor="pos-invoice-kind">Tipo de comprobante</label>
+            <select
+              id="pos-invoice-kind"
+              className="erp-form-input"
+              {...checkoutForm.register("invoiceKind", {
+                onChange: () => {
+                  operationRef.current = null;
+                },
+              })}
+            >
+              <option value="">Seleccioná el tipo</option>
+              <option value="fiscal">Fiscal</option>
+              <option value="non_fiscal">No fiscal</option>
+            </select>
+            <span style={{ marginTop: "4px", fontSize: "11px", color: "var(--text-muted)" }}>
+              El comprobante fiscal se registra en el ERP. La autorización CAE/CAEA de ARCA queda pendiente de integración.
+            </span>
+            {checkoutForm.formState.errors.invoiceKind && (
+              <p role="alert" style={{ margin: "4px 0 0", color: "var(--rose-accent)", fontSize: "12px" }}>
+                {checkoutForm.formState.errors.invoiceKind.message}
+              </p>
+            )}
+          </div>
 
           {/* Cart Items List */}
           <div

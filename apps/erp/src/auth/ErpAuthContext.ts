@@ -8,6 +8,7 @@ export type ErpAuthContextValue = {
   permissions: string[];
   loading: boolean;
   error: string | null;
+  retry?: () => void;
   hasPermission: (permission: string) => boolean;
 };
 

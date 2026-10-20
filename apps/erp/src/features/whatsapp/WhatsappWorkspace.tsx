@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ErpModuleId } from "@nictech/domain";
 import { Search, Send, Phone, CheckCheck, ShieldCheck, UserCheck } from "lucide-react";
 import { WorkspaceHeader, StatePanel, FeedbackAlert } from "../../components/erp/WorkspaceUi";
 import { formatDateTime } from "../../lib/formatters";
@@ -54,7 +55,11 @@ const latestStatusOf = (events: MessageEvent[]): CommunicationStatus | null => {
   return latest.status;
 };
 
-export const WhatsappWorkspace = () => {
+export const WhatsappWorkspace = ({
+  onSelectModule,
+}: {
+  onSelectModule?: (moduleId: ErpModuleId) => void;
+}) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [customers, setCustomers] = useState<ConversationCustomer[]>([]);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -338,8 +343,8 @@ export const WhatsappWorkspace = () => {
       <div className="flow-dashboard">
         <WorkspaceHeader
           title="WhatsApp Business & Comunicaciones"
-          description="Bandeja de mensajería con cola de salida persistida y consentimientos."
-          badge="En desarrollo"
+          description="Conversaciones, consentimiento y solicitudes de mensajes registradas."
+          badge="Conexión pendiente"
         />
         <StatePanel type="loading" title="Cargando bandeja" message="Consultando conversaciones en Supabase…" />
       </div>
@@ -351,8 +356,8 @@ export const WhatsappWorkspace = () => {
       <div className="flow-dashboard">
         <WorkspaceHeader
           title="WhatsApp Business & Comunicaciones"
-          description="Bandeja de mensajería con cola de salida persistida y consentimientos."
-          badge="En desarrollo"
+          description="Conversaciones, consentimiento y solicitudes de mensajes registradas."
+          badge="Conexión pendiente"
         />
         <StatePanel
           type="error"
@@ -374,8 +379,8 @@ export const WhatsappWorkspace = () => {
     <div className="flow-dashboard">
       <WorkspaceHeader
         title="WhatsApp Business & Comunicaciones"
-        description="Bandeja real: conversaciones, consentimientos, plantillas versionadas y cola de salida. El estado de cada mensaje refleja communication_message_events; la integración con Meta WhatsApp Cloud API aún no está conectada, por lo que los mensajes quedan encolados sin simular envíos."
-        badge="En desarrollo"
+        description="Conversaciones, consentimientos y plantillas. La conexión con Meta WhatsApp Cloud API aún no está configurada: el ERP registra solicitudes, pero no envía mensajes."
+        badge="Conexión pendiente"
       />
 
       {feedback && (
@@ -389,15 +394,24 @@ export const WhatsappWorkspace = () => {
       <StatePanel
         type="info"
         title="Encolado real, sin simulación"
-        message="Encolar crea la conversación (si falta), el mensaje outbound y el evento queued más el pedido message.send.requested al outbox. Nada se marca como enviado, entregado o leído desde este workspace."
+        message="Al encolar se registra una solicitud de envío y queda pendiente de la integración. Desde este panel no se confirma que el mensaje haya sido enviado, entregado o leído."
       />
 
       {conversations.length === 0 ? (
-        <StatePanel
-          type="empty"
-          title="Sin conversaciones"
-          message="Todavía no hay conversaciones de WhatsApp. Se crean al encolar el primer mensaje o al recibir un inbound del proveedor."
-        />
+        <div style={{ display: "grid", gap: "12px" }}>
+          <StatePanel
+            type="empty"
+            title="Sin conversaciones"
+            message="Para iniciar un primer contacto ahora, abrí la ficha de un cliente con teléfono y elegí WhatsApp; se abrirá WhatsApp Web para que lo envíes manualmente. Para recibir conversaciones y enviar desde el ERP, primero hay que configurar Meta WhatsApp Cloud API y su conexión de entrada/salida."
+          />
+          {onSelectModule && (
+            <div style={{ display: "flex", justifyContent: "flex-start" }}>
+              <button type="button" className="btn-secondary" onClick={() => onSelectModule("customers")}>
+                <UserCheck size={16} /> Abrir clientes
+              </button>
+            </div>
+          )}
+        </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: "16px", minHeight: "560px" }}>
           <div className="flow-card" style={{ display: "flex", flexDirection: "column", padding: "16px", margin: 0 }}>

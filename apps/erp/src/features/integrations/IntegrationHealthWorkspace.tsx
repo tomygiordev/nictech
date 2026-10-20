@@ -37,7 +37,7 @@ const statusLabel: Record<DeliveryStatus, string> = {
   failed: "Fallido",
   retry_scheduled: "Reintento programado",
   pending: "Pendiente",
-  dead_letter: "Dead letter",
+  dead_letter: "Derivado a revisión manual",
 };
 
 const payloadSummary = (row: IntegrationOutboxRow): string => {
@@ -85,7 +85,7 @@ export const IntegrationHealthWorkspace = () => {
     } catch (e) {
       setOutbox([]);
       setAttempts([]);
-      setError(e instanceof Error ? e.message : "No se pudo leer erp.integration_outbox.");
+      setError(e instanceof Error ? e.message : "No se pudo leer la cola de integraciones.");
     } finally {
       setLoading(false);
     }
@@ -144,12 +144,12 @@ export const IntegrationHealthWorkspace = () => {
       setActionError(null);
       setActionOk(null);
       await moveIntegrationToDeadLetter(deadLetterTarget.id, deadLetterReason);
-      setActionOk(`Evento ${deadLetterTarget.id.slice(0, 8)} movido a dead letter.`);
+      setActionOk(`Evento ${deadLetterTarget.id.slice(0, 8)} derivado a revisión manual.`);
       setDeadLetterTarget(null);
       setDeadLetterReason("");
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "No se pudo mover a dead letter.");
+      setActionError(e instanceof Error ? e.message : "No se pudo derivar el evento a revisión manual.");
     } finally {
       setMovingId(null);
     }
@@ -188,9 +188,9 @@ export const IntegrationHealthWorkspace = () => {
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
-        title="Salud de Integraciones & Outbox Transaccional"
-        description="Cola real erp.integration_outbox con intentos de erp.integration_attempts y dead letters. Sin métricas inventadas."
-        badge="Outbox real"
+        title="Estado de las integraciones"
+        description="Seguimiento de eventos pendientes, intentos y errores registrados."
+        badge="Integraciones"
         actions={
           <button
             type="button"
@@ -210,8 +210,8 @@ export const IntegrationHealthWorkspace = () => {
       {!deadLettersAvailable && !loading && (
         <StatePanel
           type="info"
-          title="Dead letters sin acceso de lectura"
-          message={`No se pudo leer la DLQ con el permiso integrations.view. Detalle: ${deadLettersNote ?? "permiso denegado"}`}
+          title="Eventos derivados sin acceso de lectura"
+          message={`No se pudieron consultar los eventos derivados a revisión manual. Detalle: ${deadLettersNote ?? "permiso denegado"}`}
         />
       )}
 
@@ -223,7 +223,7 @@ export const IntegrationHealthWorkspace = () => {
             <strong style={{ fontSize: "13px", color: "#0f172a" }}>Pendientes</strong>
           </div>
           <p style={{ margin: 0, fontSize: "24px", fontWeight: 800 }}>{counters.pending}</p>
-          <p style={{ margin: 0, fontSize: "11px", color: "#64748b" }}>Outbox sin intentos registrados</p>
+          <p style={{ margin: 0, fontSize: "11px", color: "#64748b" }}>Eventos de integración sin intentos registrados</p>
         </div>
         <div className="flow-card" style={{ margin: 0, padding: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
@@ -236,13 +236,13 @@ export const IntegrationHealthWorkspace = () => {
         <div className="flow-card" style={{ margin: 0, padding: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
             <ArchiveX size={18} color="#dc2626" />
-            <strong style={{ fontSize: "13px", color: "#0f172a" }}>Dead letters</strong>
+            <strong style={{ fontSize: "13px", color: "#0f172a" }}>Revisión manual</strong>
           </div>
           <p style={{ margin: 0, fontSize: "24px", fontWeight: 800 }}>
             {deadLettersAvailable ? counters.dead : "—"}
           </p>
           <p style={{ margin: 0, fontSize: "11px", color: "#64748b" }}>
-            {deadLettersAvailable ? "Eventos movidos a DLQ" : "Sin grant de lectura"}
+            {deadLettersAvailable ? "Eventos derivados tras fallos" : "Sin permiso de lectura"}
           </p>
         </div>
         <div className="flow-card" style={{ margin: 0, padding: "16px" }}>
@@ -257,27 +257,26 @@ export const IntegrationHealthWorkspace = () => {
         </div>
       </div>
 
-      {/* Outbox & Dead Letter Queue */}
+      {/* Integration queue and manual review */}
       <div className="flow-card">
         <div className="flow-card__header">
           <div>
-            <h2 className="flow-card__title">Bandeja Outbox de Eventos Transaccionales</h2>
+            <h2 className="flow-card__title">Cola de eventos para integraciones</h2>
             <p className="flow-card__subtitle">
-              Datos reales de erp.integration_outbox + erp.integration_attempts. Sin latencias ni uptimes simulados:
-              integration_attempts no registra esas métricas.
+              Intentos y respuestas registrados para cada evento. Los indicadores muestran el estado disponible, sin métricas de latencia ni disponibilidad.
             </p>
           </div>
         </div>
 
         {loading ? (
-          <StatePanel type="loading" message="Leyendo erp.integration_outbox e intentos..." />
+          <StatePanel type="loading" message="Leyendo eventos e intentos de integración…" />
         ) : error ? (
-          <StatePanel type="error" title="No se pudo leer el outbox" message={error} />
+          <StatePanel type="error" title="No se pudo leer la cola de integraciones" message={error} />
         ) : outbox.length === 0 ? (
           <StatePanel
             type="empty"
-            title="Outbox vacío"
-            message="No hay eventos en erp.integration_outbox para esta organización (permiso integrations.view requerido)."
+            title="No hay eventos pendientes"
+            message="La cola de integraciones está vacía o tu rol no tiene permiso para consultar los eventos."
           />
         ) : (
           <div className="flow-table-wrapper">
@@ -367,8 +366,8 @@ export const IntegrationHealthWorkspace = () => {
                           disabled={!canMove || movingId === row.id}
                           title={
                             canMove
-                              ? "Mover a dead letter (requiere integrations.retry)"
-                              : "Solo los eventos con intentos fallidos pueden pasar a dead letter"
+                              ? "Derivar a revisión manual (requiere permiso para reintentar integraciones)"
+                              : "Solo los eventos con intentos fallidos pueden derivarse a revisión manual"
                           }
                           onClick={() => {
                             setDeadLetterTarget(row);
@@ -376,7 +375,7 @@ export const IntegrationHealthWorkspace = () => {
                             setActionError(null);
                           }}
                         >
-                          <RotateCcw size={12} /> A DLQ
+                          <RotateCcw size={12} /> Revisar manualmente
                         </button>}
                         {!canManage && <span style={{ fontSize: "11px", color: "#64748b" }}>Solo lectura</span>}
                         </div>
@@ -396,7 +395,7 @@ export const IntegrationHealthWorkspace = () => {
           setDeadLetterTarget(null);
           setDeadLetterReason("");
         }}
-        title="Mover evento a dead letter"
+        title="Derivar evento a revisión manual"
         subtitle={
           deadLetterTarget
             ? `Evento ${deadLetterTarget.id.slice(0, 8)} · ${deadLetterTarget.event_type}. Requiere permiso integrations.retry y motivo.`
@@ -421,7 +420,7 @@ export const IntegrationHealthWorkspace = () => {
               onClick={() => void handleConfirmDeadLetter()}
               disabled={movingId !== null || deadLetterReason.trim() === ""}
             >
-              {movingId ? "Moviendo…" : "Confirmar pase a DLQ"}
+              {movingId ? "Derivando…" : "Confirmar derivación"}
             </button>
           </div>
         }
@@ -444,7 +443,7 @@ export const IntegrationHealthWorkspace = () => {
           setRetryTarget(null);
           setRetryReason("");
         }}
-        title={retryAction === "recover" ? "Recuperar evento desde DLQ" : "Programar reintento"}
+        title={retryAction === "recover" ? "Recuperar evento derivado" : "Programar reintento"}
         subtitle={retryTarget ? `Evento ${retryTarget.id.slice(0, 8)} · máximo 5 intentos con backoff.` : undefined}
         footer={
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>

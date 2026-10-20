@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Smartphone, Search, Eye, Plus, ShieldCheck, RefreshCw, DollarSign } from "lucide-react";
-import { WorkspaceHeader, Modal, FeedbackAlert, KpiCard } from "../../components/erp/WorkspaceUi";
+import { WorkspaceHeader, Modal, FeedbackAlert, KpiCard, StatePanel } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDateTime } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
 import { useErpAuth } from "../../auth/ErpAuthContext";
@@ -54,6 +54,18 @@ interface TradeInProductOption {
   inventory_tracking: "serial" | "imei";
 }
 
+interface TradeInBranchOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+interface TradeInCustomerOption {
+  id: string;
+  code: string;
+  display_name: string;
+}
+
 const stageOf = (t: TradeInOverview): string => (isTradeInRejected(t) ? "rejected" : t.stage);
 
 const tradeInErrorMessage = (error: unknown): string => {
@@ -89,6 +101,10 @@ export const TradeInsWorkspace = () => {
     hasPermission("costs.manage");
   const [items, setItems] = useState<TradeInOverview[]>([]);
   const [tradeInProducts, setTradeInProducts] = useState<TradeInProductOption[]>([]);
+  const [branches, setBranches] = useState<TradeInBranchOption[]>([]);
+  const [customers, setCustomers] = useState<TradeInCustomerOption[]>([]);
+  const [isLoadingIntakeOptions, setIsLoadingIntakeOptions] = useState(false);
+  const [intakeOptionsError, setIntakeOptionsError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>("all");
@@ -141,29 +157,49 @@ export const TradeInsWorkspace = () => {
     }
   };
 
-  const loadTradeInProducts = async () => {
-    const { data, error: productsError } = await supabase
-      .from("products")
-      .select("id, internal_code, internal_name, inventory_tracking")
-      .eq("item_kind", "product")
-      .eq("is_active", true)
-      .in("inventory_tracking", ["serial", "imei"])
-      .order("internal_name", { ascending: true });
-    if (productsError) throw productsError;
-    setTradeInProducts((data ?? []) as TradeInProductOption[]);
+  const loadIntakeOptions = async () => {
+    const [productsResult, branchesResult, customersResult] = await Promise.all([
+      supabase
+        .from("products")
+        .select("id, internal_code, internal_name, inventory_tracking")
+        .eq("item_kind", "product")
+        .eq("is_active", true)
+        .in("inventory_tracking", ["serial", "imei"])
+        .order("internal_name", { ascending: true }),
+      supabase.from("branches").select("id, code, name").order("name", { ascending: true }),
+      supabase.from("customers").select("id, code, display_name").order("display_name", { ascending: true }),
+    ]);
+    const referenceError = productsResult.error ?? branchesResult.error ?? customersResult.error;
+    if (referenceError) throw referenceError;
+    setTradeInProducts((productsResult.data ?? []) as TradeInProductOption[]);
+    const nextBranches = (branchesResult.data ?? []) as TradeInBranchOption[];
+    setBranches(nextBranches);
+    setCustomers((customersResult.data ?? []) as TradeInCustomerOption[]);
+    if (nextBranches.length === 1) setBranchId((current) => current || nextBranches[0].id);
   };
 
   useEffect(() => {
     void loadTradeIns();
   }, []);
 
+  const refreshIntakeOptions = async () => {
+    setIsLoadingIntakeOptions(true);
+    setIntakeOptionsError(null);
+    try {
+      await loadIntakeOptions();
+    } catch (loadError) {
+      setIntakeOptionsError(
+        loadError instanceof Error ? loadError.message : "No se pudieron cargar los datos necesarios para el canje."
+      );
+    } finally {
+      setIsLoadingIntakeOptions(false);
+    }
+  };
+
   const openIntakeModal = () => {
     if (!canManageTradeIns) return;
     setIsModalOpen(true);
-    if (tradeInProducts.length > 0) return;
-    void loadTradeInProducts().catch((loadError: unknown) => {
-      setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los productos compatibles.");
-    });
+    void refreshIntakeOptions();
   };
 
   const selectedItem = useMemo(
@@ -1091,35 +1127,56 @@ export const TradeInsWorkspace = () => {
         subtitle="Alta formal con declaración de procedencia"
         icon={Smartphone}
         maxWidth="560px"
+        scrollBody
       >
         <form onSubmit={(e) => void handleIntake(e)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">Sucursal (ID) *</label>
-              <input
-                type="text"
+              <label className="erp-form-label">Sucursal *</label>
+              <select
                 required
                 value={branchId}
                 onChange={(e) => setBranchId(e.target.value)}
-                className="erp-form-input"
-                placeholder="UUID de sucursal"
-              />
+                className="erp-form-select"
+              >
+                <option value="">Seleccionar sucursal…</option>
+                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.code} · {branch.name}</option>)}
+              </select>
             </div>
             <div className="erp-form-group">
-              <label className="erp-form-label">Cliente (ID) *</label>
-              <input
-                type="text"
+              <label className="erp-form-label">Cliente *</label>
+              <select
                 required
                 value={customerId}
                 onChange={(e) => setCustomerId(e.target.value)}
-                className="erp-form-input"
-                placeholder="UUID de cliente"
-              />
+                className="erp-form-select"
+              >
+                <option value="">Seleccionar cliente…</option>
+                {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.code} · {customer.display_name}</option>)}
+              </select>
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
               <label className="erp-form-label">Producto compatible *</label>
+              {isLoadingIntakeOptions && (
+                <StatePanel type="loading" title="Buscando productos elegibles" message="Consultando productos activos con seguimiento por serie o IMEI…" />
+              )}
+              {!isLoadingIntakeOptions && intakeOptionsError && (
+                <StatePanel
+                  type="error"
+                  title="No se pudieron cargar los productos"
+                  message={intakeOptionsError}
+                  action={<button type="button" className="pag-btn" onClick={() => void refreshIntakeOptions()}>Reintentar</button>}
+                />
+              )}
+              {!isLoadingIntakeOptions && !intakeOptionsError && tradeInProducts.length === 0 && (
+                <StatePanel
+                  type="empty"
+                  title="No hay productos elegibles"
+                  message="Para recibir un equipo usado, necesitás un producto activo de tipo producto con seguimiento por serie o IMEI. Revisá o configurá el producto en Inventario › Productos."
+                />
+              )}
               <select
                 required
                 value={productId}
@@ -1130,6 +1187,7 @@ export const TradeInsWorkspace = () => {
                   setDeviceImei("");
                 }}
                 className="erp-form-select"
+                disabled={isLoadingIntakeOptions || Boolean(intakeOptionsError) || tradeInProducts.length === 0}
               >
                 <option value="">Seleccionar producto serial/IMEI…</option>
                 {tradeInProducts.map((product) => (
@@ -1235,11 +1293,11 @@ export const TradeInsWorkspace = () => {
               placeholder="Ej: Recepción en mostrador"
             />
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--border-line)", position: "sticky", bottom: 0, zIndex: 2, background: "var(--surface-card)" }}>
             <button type="button" className="pag-btn" onClick={() => setIsModalOpen(false)}>
               Cancelar
             </button>
-            <button type="submit" className="btn-primary" disabled={actionBusy}>
+            <button type="submit" className="btn-primary" disabled={actionBusy || isLoadingIntakeOptions || Boolean(intakeOptionsError) || tradeInProducts.length === 0}>
               Registrar Canje
             </button>
           </div>

@@ -54,6 +54,11 @@ export interface RepairOrderOverview {
   qc_passed: boolean;
 }
 
+export const getRepairStatusLabel = (repair: {
+  delivery_id?: string | null;
+  status_name?: string | null;
+}): string => repair.delivery_id ? "Entregado" : repair.status_name || "Sin estado";
+
 export interface RepairStateEvent {
   id: string;
   repair_order_id: string;

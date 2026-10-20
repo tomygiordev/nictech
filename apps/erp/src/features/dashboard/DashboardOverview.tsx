@@ -28,6 +28,7 @@ import { KpiCard, StatePanel } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatCurrencyCompact, getInitials } from "../../lib/formatters";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import { supabase } from "../../lib/supabase";
+import { getRepairStatusLabel } from "../repairs/api";
 
 export interface DashboardOverviewProps {
   onSelectModule: (moduleId: ErpModuleId) => void;
@@ -327,7 +328,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
       // 1. Productos y existencias desde el esquema ERP.
       const { data: prodData, error: productsError } = await supabase
         .from("products")
-        .select("id, internal_name, base_sale_price");
+        .select("id, internal_name, base_sale_price")
+        .eq("is_active", true);
 
       const { data: balancesData, error: balancesError } = await supabase
         .from("stock_balances")
@@ -363,7 +365,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
       // 2. Reparaciones desde la vista operativa del ERP.
       const { data: repData, error: repairsError } = await supabase
         .from("repair_orders_overview")
-        .select("id, order_code, customer_name, brand_snapshot, model_snapshot, status_name, status_is_terminal, opened_at")
+        .select("id, order_code, customer_name, brand_snapshot, model_snapshot, status_name, status_is_terminal, delivery_id, opened_at")
         .order("opened_at", { ascending: false });
 
       if (repairsError) throw repairsError;
@@ -376,8 +378,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
           client_name: repair.customer_name,
           device_brand: repair.brand_snapshot,
           device_model: repair.model_snapshot,
-          status: repair.status_name || "Sin estado",
-          is_terminal: Boolean(repair.status_is_terminal),
+          status: getRepairStatusLabel(repair),
+          is_terminal: Boolean(repair.status_is_terminal || repair.delivery_id),
           created_at: repair.opened_at,
         });
         return items;

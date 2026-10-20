@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Eye, Plus, Cpu, Sparkles } from "lucide-react";
+import { Search, Eye, Plus, Cpu, Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   WorkspaceHeader,
   Modal,
@@ -9,6 +9,7 @@ import {
 import { formatCurrency, formatDateTime } from "../../lib/formatters";
 import {
   listPcBuildProjects,
+  listLatestPcBuildCompatibilityResults,
   createPcBuildAtomic,
   createPcBuildRevision,
   recordPcCompatibilityRun,
@@ -16,7 +17,10 @@ import {
   recordPcTestRun,
   completePcBuild,
   getPcBuildCosts,
+  listPcBuildFormOptions,
   type PcBuildProjectOverview,
+  type PcBuildCompatibilityResult,
+  type PcBuildFormOptions,
   type PcBuildComponentInput,
   type PcBuildCostLine,
 } from "./api";
@@ -31,6 +35,7 @@ const SLOT_OPTIONS = [
 ] as const;
 
 const SLOT_CODES: ReadonlySet<string> = new Set(SLOT_OPTIONS.map((slot) => slot.code));
+const BUILD_STEPS = ["Nueva revisión", "Compatibilidad", "Reserva", "Testeo final", "Completar"] as const;
 
 interface ComponentDraft {
   slot_code: string;
@@ -47,6 +52,8 @@ const emptyDraft = (): ComponentDraft => ({
   inventory_unit_id: "",
   quantity: "1",
 });
+
+const emptyFormOptions = (): PcBuildFormOptions => ({ branches: [], customers: [], products: [] });
 
 const defaultReserveExpires = (): string => {
   const d = new Date(Date.now() + 48 * 60 * 60 * 1000);
@@ -117,6 +124,15 @@ const compatPill = (o: PcBuildProjectOverview["latest_compatibility_outcome"]): 
 
 const shortId = (id: string): string => (id.length > 8 ? `${id.slice(0, 8)}…` : id);
 
+const nextBuildStep = (project: PcBuildProjectOverview): number => {
+  if (!project.latest_revision_id) return 1;
+  if (!project.latest_compatibility_outcome) return 2;
+  if (project.current_state === "reserved") return 4;
+  if (project.current_state === "tested" || project.current_state === "completed") return 5;
+  // Keep draft projects at revision so their component list can be prepared before reserving.
+  return 1;
+};
+
 const errorMessage = (err: unknown, fallback: string): string => {
   if (err instanceof Error && err.message.trim() !== "") return err.message;
   return fallback;
@@ -128,8 +144,13 @@ export const PcBuildsWorkspace = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeDetailStep, setActiveDetailStep] = useState(1);
+  const [compatibilityResults, setCompatibilityResults] = useState<PcBuildCompatibilityResult[]>([]);
+  const [compatibilityResultsLoading, setCompatibilityResultsLoading] = useState(false);
+  const [compatibilityResultsError, setCompatibilityResultsError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
+  const [formOptions, setFormOptions] = useState<PcBuildFormOptions>(emptyFormOptions);
 
   // Form Nuevo Armado
   const [branchId, setBranchId] = useState("");
@@ -160,8 +181,12 @@ export const PcBuildsWorkspace = () => {
     setLoading(true);
     setError(null);
     try {
-      const rows = await listPcBuildProjects();
+      const [rows, options] = await Promise.all([listPcBuildProjects(), listPcBuildFormOptions()]);
       setProjects(rows);
+      setFormOptions(options);
+      if (options.branches.length === 1) {
+        setBranchId((current) => current || options.branches[0].id);
+      }
     } catch (err) {
       setError(errorMessage(err, "No se pudieron cargar los proyectos de armado."));
     } finally {
@@ -177,6 +202,51 @@ export const PcBuildsWorkspace = () => {
     if (!selectedId) return null;
     return projects.find((p) => p.id === selectedId) ?? null;
   }, [projects, selectedId]);
+  const compatibilityProjectId = selected?.id;
+  const compatibilityRevisionId = selected?.latest_revision_id;
+  const compatibilityOutcome = selected?.latest_compatibility_outcome;
+  const compatibilityCheckedAt = selected?.compatibility_checked_at;
+
+  useEffect(() => {
+    if (
+      !compatibilityProjectId ||
+      !compatibilityRevisionId ||
+      (compatibilityOutcome !== "fail" && compatibilityOutcome !== "warning")
+    ) {
+      setCompatibilityResults([]);
+      setCompatibilityResultsError(null);
+      setCompatibilityResultsLoading(false);
+      return;
+    }
+
+    let isCurrentSelection = true;
+    setCompatibilityResults([]);
+    setCompatibilityResultsError(null);
+    setCompatibilityResultsLoading(true);
+    void listLatestPcBuildCompatibilityResults(compatibilityProjectId, compatibilityRevisionId)
+      .then((results) => {
+        if (isCurrentSelection) setCompatibilityResults(results);
+      })
+      .catch((error: unknown) => {
+        if (isCurrentSelection) {
+          setCompatibilityResultsError(errorMessage(error, "No se pudieron cargar las causas de compatibilidad."));
+        }
+      })
+      .finally(() => {
+        if (isCurrentSelection) setCompatibilityResultsLoading(false);
+      });
+
+    return () => {
+      isCurrentSelection = false;
+    };
+  }, [compatibilityProjectId, compatibilityRevisionId, compatibilityOutcome, compatibilityCheckedAt]);
+
+  const openProjectDetail = (project: PcBuildProjectOverview) => {
+    setSelectedId(project.id);
+    setCosts(null);
+    setDetailError(null);
+    setActiveDetailStep(nextBuildStep(project));
+  };
 
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -258,6 +328,13 @@ export const PcBuildsWorkspace = () => {
       const message = await fn();
       if (message) setFeedback({ type: "success", message });
       await refresh();
+      const nextStepByAction: Record<string, number> = {
+        revision: 2,
+        compatibilidad: 3,
+        reserva: 4,
+        test: 5,
+      };
+      if (nextStepByAction[key]) setActiveDetailStep(nextStepByAction[key]);
     } catch (err) {
       setDetailError(errorMessage(err, "La acción no pudo completarse."));
     } finally {
@@ -446,14 +523,19 @@ export const PcBuildsWorkspace = () => {
           </select>
         </div>
         <div className="erp-form-group">
-          <label className="erp-form-label">Producto ID</label>
-          <input
-            type="text"
+          <label className="erp-form-label">Producto</label>
+          <select
             className="erp-form-input"
-            placeholder="UUID de producto"
             value={d.product_id}
             onChange={(e) => onChange(i, { product_id: e.target.value })}
-          />
+          >
+            <option value="">Seleccionar producto…</option>
+            {formOptions.products.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.internal_code} · {product.internal_name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="erp-form-group">
           <label className="erp-form-label">Cant.</label>
@@ -498,7 +580,7 @@ export const PcBuildsWorkspace = () => {
         <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h2 className="flow-card__title">Proyectos de Armado</h2>
-            <p className="flow-card__subtitle">Vista pc_build_projects_overview ordenada por creación</p>
+            <p className="flow-card__subtitle">Proyectos ordenados desde el más reciente</p>
           </div>
 
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -564,22 +646,25 @@ export const PcBuildsWorkspace = () => {
                       role="button"
                       tabIndex={0}
                       aria-label={`Abrir proyecto ${p.title} de ${p.customer_name}`}
-                      onClick={() => setSelectedId(p.id)}
+                      onClick={() => openProjectDetail(p)}
                       onKeyDown={(event) => {
                         if (event.target !== event.currentTarget) return;
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          setSelectedId(p.id);
+                          openProjectDetail(p);
                         }
                       }}
                     >
                       <td>
-                        <span className="type-badge purple" style={{ fontFamily: "monospace" }} title={p.id}>
-                          {shortId(p.id)}
-                        </span>
+                        <code
+                          style={{ display: "block", maxWidth: "150px", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.4, overflowWrap: "anywhere", whiteSpace: "normal", color: "var(--text-muted)" }}
+                          aria-label={`ID completo: ${p.id}`}
+                        >
+                          {p.id}
+                        </code>
                       </td>
                       <td>
-                        <strong>{p.customer_name}</strong>
+                        <strong style={{ display: "block", lineHeight: 1.35, overflowWrap: "anywhere" }}>{p.customer_name}</strong>
                         {p.customer_code && (
                           <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>
                             {p.customer_code}
@@ -612,9 +697,7 @@ export const PcBuildsWorkspace = () => {
                           style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedId(p.id);
-                            setCosts(null);
-                            setDetailError(null);
+                            openProjectDetail(p);
                           }}
                           title="Ver detalle y acciones"
                         >
@@ -642,6 +725,7 @@ export const PcBuildsWorkspace = () => {
           subtitle={`${shortId(selected.id)} • Cliente: ${selected.customer_name}`}
           icon={Cpu}
           maxWidth="680px"
+          scrollBody
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             {detailError && (
@@ -675,6 +759,33 @@ export const PcBuildsWorkspace = () => {
                     </span>
                   )}
                 </strong>
+                {(selected.latest_compatibility_outcome === "fail" || selected.latest_compatibility_outcome === "warning") && (
+                  <div style={{ marginTop: "7px", fontSize: "11px", fontWeight: 500 }}>
+                    <span className="stat-label">Resultados de la última corrida</span>
+                    {compatibilityResultsLoading && <p role="status" style={{ margin: "3px 0 0", color: "var(--text-muted)" }}>Consultando detalles…</p>}
+                    {compatibilityResultsError && <p role="alert" style={{ margin: "3px 0 0", color: "var(--rose-accent)" }}>{compatibilityResultsError}</p>}
+                    {!compatibilityResultsLoading && !compatibilityResultsError && compatibilityResults.length === 0 && (
+                      <p style={{ margin: "3px 0 0", color: "var(--text-muted)" }}>No hay causas específicas guardadas para esta corrida.</p>
+                    )}
+                    {!compatibilityResultsLoading && !compatibilityResultsError && compatibilityResults.length > 0 && (
+                      <ul style={{ margin: "4px 0 0", paddingLeft: "16px", color: "var(--text-main)" }}>
+                        {compatibilityResults.map((result) => (
+                          <li key={result.result_code} style={{ marginBottom: "4px" }}>
+                            <strong>{result.result_code}:</strong> {result.message}
+                            {typeof result.details === "object" &&
+                              result.details !== null &&
+                              !Array.isArray(result.details) &&
+                              typeof result.details.missing === "string" && (
+                                <span style={{ display: "block", color: "var(--text-muted)" }}>
+                                  Slots faltantes: {result.details.missing}
+                                </span>
+                              )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <span className="stat-label">Revisión actual</span>
@@ -734,7 +845,63 @@ export const PcBuildsWorkspace = () => {
               />
             </div>
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                padding: "10px 0",
+                background: "var(--surface-card)",
+              }}
+            >
+              <div
+                role="tablist"
+                aria-label="Etapas del armado"
+                style={{
+                display: "flex",
+                gap: "8px",
+                overflowX: "auto",
+                }}
+              >
+              {BUILD_STEPS.map((step, index) => (
+                <button
+                  key={step}
+                  id={`pc-build-step-${index + 1}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeDetailStep === index + 1}
+                  aria-current={activeDetailStep === index + 1 ? "step" : undefined}
+                  aria-controls={`pc-build-panel-${index + 1}`}
+                  tabIndex={activeDetailStep === index + 1 ? 0 : -1}
+                  className={activeDetailStep === index + 1 ? "btn-primary" : "pag-btn"}
+                  style={{ flex: "1 0 112px", justifyContent: "center", whiteSpace: "nowrap" }}
+                  onClick={() => setActiveDetailStep(index + 1)}
+                  onKeyDown={(event) => {
+                    const direction = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                    if (event.key === "Home" || event.key === "End" || direction !== 0) {
+                      event.preventDefault();
+                      const nextIndex = event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? BUILD_STEPS.length - 1
+                          : (index + direction + BUILD_STEPS.length) % BUILD_STEPS.length;
+                      setActiveDetailStep(nextIndex + 1);
+                      document.getElementById(`pc-build-step-${nextIndex + 1}`)?.focus();
+                    }
+                  }}
+                  disabled={detailPending !== null}
+                >
+                  {index + 1}. {step}
+                </button>
+              ))}
+              </div>
+            </div>
+            <div aria-live="polite" style={{ fontSize: "12px", fontWeight: 650, color: "var(--brand-primary)" }}>
+              Etapa {activeDetailStep} de {BUILD_STEPS.length}: {BUILD_STEPS[activeDetailStep - 1]}
+            </div>
+
+            {activeDetailStep === 1 && (
+            <div id="pc-build-panel-1" role="tabpanel" aria-labelledby="pc-build-step-1" style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>1. Nueva revisión</strong>
               <p style={{ margin: "4px 0 8px", fontSize: "12px", color: "var(--text-muted)" }}>
                 Crea una versión nueva con los componentes del constructor. La reserva posterior debe
@@ -777,37 +944,25 @@ export const PcBuildsWorkspace = () => {
                 >
                   + Componente
                 </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={handleCreateRevision}
-                  disabled={detailPending !== null}
-                >
-                  {detailPending === "revision" ? "Creando…" : "Crear revisión"}
-                </button>
               </div>
             </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {activeDetailStep === 2 && (
+            <div id="pc-build-panel-2" role="tabpanel" aria-labelledby="pc-build-step-2" style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>2. Compatibilidad</strong>
               <p style={{ margin: "4px 0 8px", fontSize: "12px", color: "var(--text-muted)" }}>
                 Ejecuta el chequeo de compatibilidad sobre la revisión actual.
               </p>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleCompatibility}
-                disabled={detailPending !== null || !selected.latest_revision_id}
-              >
-                {detailPending === "compatibilidad" ? "Registrando…" : "Registrar compatibilidad"}
-              </button>
             </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {activeDetailStep === 3 && (
+            <div id="pc-build-panel-3" role="tabpanel" aria-labelledby="pc-build-step-3" style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>3. Reserva de componentes</strong>
               <p style={{ margin: "4px 0 8px", fontSize: "12px", color: "var(--text-muted)" }}>
-                Reserva el stock de la revisión actual. Las líneas se toman del constructor de la
-                sección 1 y deben coincidir exactamente.
+                Cargá los componentes exactos en “Nueva revisión”, guardala y volvé acá para reservar
+                su stock. Las líneas deben coincidir exactamente con esa revisión.
               </p>
               <div className="erp-form-group" style={{ marginBottom: "8px" }}>
                 <label className="erp-form-label">Vencimiento de reserva</label>
@@ -818,17 +973,11 @@ export const PcBuildsWorkspace = () => {
                   onChange={(e) => setReserveExpires(e.target.value)}
                 />
               </div>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleReserve}
-                disabled={detailPending !== null || !selected.latest_revision_id}
-              >
-                {detailPending === "reserva" ? "Reservando…" : "Reservar componentes"}
-              </button>
             </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {activeDetailStep === 4 && (
+            <div id="pc-build-panel-4" role="tabpanel" aria-labelledby="pc-build-step-4" style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>4. Testeo final</strong>
               <p style={{ margin: "4px 0 8px", fontSize: "12px", color: "var(--text-muted)" }}>
                 Requiere reserva activa. Los resultados deben coincidir con las claves requeridas
@@ -862,17 +1011,11 @@ export const PcBuildsWorkspace = () => {
                   onChange={(e) => setTestNotes(e.target.value)}
                 />
               </div>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleTest}
-                disabled={detailPending !== null || !selected.latest_revision_id}
-              >
-                {detailPending === "test" ? "Registrando…" : "Registrar testeo"}
-              </button>
             </div>
+            )}
 
-            <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
+            {activeDetailStep === 5 && (
+            <div id="pc-build-panel-5" role="tabpanel" aria-labelledby="pc-build-step-5" style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>5. Completar armado</strong>
               <p style={{ margin: "4px 0 8px", fontSize: "12px", color: "var(--text-muted)" }}>
                 Requiere reserva activa y testeo completo aprobado. Genera el equipo y su serie.
@@ -898,26 +1041,6 @@ export const PcBuildsWorkspace = () => {
                   />
                 </div>
               </div>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={handleComplete}
-                  disabled={detailPending !== null}
-                >
-                  {detailPending === "complete" ? "Completando…" : "Completar armado"}
-                </button>
-                {selected.completion_id && (
-                  <button
-                    type="button"
-                    className="pag-btn"
-                    onClick={handleLoadCosts}
-                    disabled={detailPending !== null}
-                  >
-                    {detailPending === "costos" ? "Cargando…" : "Ver costos"}
-                  </button>
-                )}
-              </div>
               {costs && (
                 <div style={{ marginTop: "8px", fontSize: "12px" }}>
                   <strong>Costos registrados ({costs.length}):</strong>
@@ -933,6 +1056,76 @@ export const PcBuildsWorkspace = () => {
                 </div>
               )}
             </div>
+            )}
+
+            <div
+              style={{
+                position: "sticky",
+                bottom: 0,
+                zIndex: 2,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "8px",
+                padding: "12px 0 4px",
+                borderTop: "1px solid var(--border-line)",
+                background: "var(--surface-card)",
+              }}
+            >
+              <button
+                type="button"
+                className="pag-btn"
+                onClick={() => setActiveDetailStep((step) => Math.max(1, step - 1))}
+                disabled={activeDetailStep === 1 || detailPending !== null}
+              >
+                <ChevronLeft size={15} /> Anterior
+              </button>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", flexWrap: "wrap" }}>
+                {activeDetailStep === 1 && (
+                  <button type="button" className="btn-primary" onClick={handleCreateRevision} disabled={detailPending !== null}>
+                    {detailPending === "revision" ? "Creando…" : "Crear revisión"}
+                  </button>
+                )}
+                {activeDetailStep === 2 && (
+                  <button type="button" className="btn-primary" onClick={handleCompatibility} disabled={detailPending !== null || !selected.latest_revision_id}>
+                    {detailPending === "compatibilidad" ? "Registrando…" : "Registrar compatibilidad"}
+                  </button>
+                )}
+                {activeDetailStep === 3 && (
+                  <button type="button" className="btn-primary" onClick={handleReserve} disabled={detailPending !== null || !selected.latest_revision_id}>
+                    {detailPending === "reserva" ? "Reservando…" : "Reservar componentes"}
+                  </button>
+                )}
+                {activeDetailStep === 4 && (
+                  <button type="button" className="btn-primary" onClick={handleTest} disabled={detailPending !== null || !selected.latest_revision_id}>
+                    {detailPending === "test" ? "Registrando…" : "Registrar testeo"}
+                  </button>
+                )}
+                {activeDetailStep === 5 && (
+                  <>
+                    {selected.completion_id && (
+                      <button type="button" className="pag-btn" onClick={handleLoadCosts} disabled={detailPending !== null}>
+                        {detailPending === "costos" ? "Cargando…" : "Ver costos"}
+                      </button>
+                    )}
+                    {!selected.completion_id && (
+                      <button type="button" className="btn-primary" onClick={handleComplete} disabled={detailPending !== null}>
+                        {detailPending === "complete" ? "Completando…" : "Completar armado"}
+                      </button>
+                    )}
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="pag-btn"
+                  onClick={() => setActiveDetailStep((step) => Math.min(BUILD_STEPS.length, step + 1))}
+                  disabled={activeDetailStep === BUILD_STEPS.length || detailPending !== null}
+                >
+                  Siguiente <ChevronRight size={15} />
+                </button>
+              </div>
+            </div>
           </div>
         </Modal>
       )}
@@ -947,6 +1140,7 @@ export const PcBuildsWorkspace = () => {
         subtitle="Crea proyecto + revisión inicial + chequeo de compatibilidad"
         icon={Sparkles}
         maxWidth="600px"
+        scrollBody
       >
         <form onSubmit={(e) => void handleCreateBuild(e)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {createError && (
@@ -955,26 +1149,32 @@ export const PcBuildsWorkspace = () => {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">Sucursal ID *</label>
-              <input
-                type="text"
+              <label className="erp-form-label">Sucursal *</label>
+              <select
                 required
-                placeholder="UUID de sucursal"
                 value={branchId}
                 onChange={(e) => setBranchId(e.target.value)}
                 className="erp-form-input"
-              />
+              >
+                <option value="">Seleccionar sucursal…</option>
+                {formOptions.branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.code} · {branch.name}</option>
+                ))}
+              </select>
             </div>
             <div className="erp-form-group">
-              <label className="erp-form-label">Cliente ID *</label>
-              <input
-                type="text"
+              <label className="erp-form-label">Cliente *</label>
+              <select
                 required
-                placeholder="UUID de cliente"
                 value={customerId}
                 onChange={(e) => setCustomerId(e.target.value)}
                 className="erp-form-input"
-              />
+              >
+                <option value="">Seleccionar cliente…</option>
+                {formOptions.customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>{customer.code} · {customer.display_name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -1039,6 +1239,10 @@ export const PcBuildsWorkspace = () => {
               marginTop: "8px",
               paddingTop: "12px",
               borderTop: "1px solid var(--border-line)",
+              position: "sticky",
+              bottom: 0,
+              zIndex: 2,
+              background: "var(--surface-card)",
             }}
           >
             <button

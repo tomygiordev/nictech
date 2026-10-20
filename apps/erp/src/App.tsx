@@ -36,6 +36,7 @@ import {
 import { ErpAccessGate } from "./auth/ErpAccessGate";
 import { useErpAuth } from "./auth/ErpAuthContext";
 import { Modal, ConfirmDialog } from "./components/erp/WorkspaceUi";
+import { ModuleTutorialModal } from "./features/help/ModuleTutorialModal";
 import { getInitials } from "./lib/formatters";
 import { supabase } from "./lib/supabase";
 import "./styles.css";
@@ -181,6 +182,11 @@ export const App = () => {
   const [navOpen, setNavOpen] = useState<boolean>(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchInputId = useId();
+  const searchShortcutLabel = useMemo(() => {
+    if (typeof navigator === "undefined") return "Ctrl+K";
+    const platform = `${navigator.platform} ${navigator.userAgent}`;
+    return /Mac|iPhone|iPad|iPod/i.test(platform) ? "⌘ K" : "Ctrl+K";
+  }, []);
 
   // Modals & Dialogs
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -392,23 +398,24 @@ export const App = () => {
                 id={searchInputId}
                 ref={searchInputRef}
                 type="text"
-                placeholder="Buscar módulo o workspace..."
+                placeholder="Buscar en ERP..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label="Buscar módulos y funciones (F2 o ⌘K)"
+                aria-label={`Buscar módulos y funciones (F2 o ${searchShortcutLabel})`}
               />
-              <kbd title="Presioná F2 o ⌘K para buscar">⌘ K</kbd>
+              <kbd title={`Presioná F2 o ${searchShortcutLabel} para buscar`}>{searchShortcutLabel}</kbd>
             </div>
 
-            {/* Quick Action Button: POS */}
+            {/* Primary action stays named on desktop so it is not mistaken for a generic add action. */}
             <button
               type="button"
-              className="header-action-btn"
+              className="header-primary-action"
               aria-label="Nueva Venta POS"
               onClick={() => selectModule("pos")}
               title="Nueva Venta POS"
             >
               <Plus size={18} />
+              <span>Nueva venta</span>
             </button>
 
             {/* Notifications Button */}
@@ -425,7 +432,7 @@ export const App = () => {
             {/* WhatsApp / Messaging Button */}
             <button
               type="button"
-              className="header-action-btn"
+              className="header-action-btn topbar-hide-mobile"
               aria-label="Mensajes"
               onClick={() => selectModule("whatsapp")}
               title="WhatsApp & Mensajes"
@@ -462,8 +469,8 @@ export const App = () => {
         <Modal
           isOpen={isNotificationsOpen}
           onClose={() => setIsNotificationsOpen(false)}
-          title="Centro de Notificaciones"
-          subtitle="Alertas operativas de e-commerce, stock y laboratorio"
+          title="Estado de operaciones"
+          subtitle="Consultá el estado actualizado en cada módulo"
           icon={Bell}
           maxWidth="480px"
         >
@@ -472,11 +479,16 @@ export const App = () => {
             style={{ padding: "18px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)" }}
           >
             <strong style={{ fontSize: "13px", display: "block", marginBottom: "4px" }}>
-              No hay notificaciones disponibles
+              Las alertas todavía no se reúnen en una bandeja única
             </strong>
             <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
-              El ERP todavía no tiene una bandeja unificada de alertas. Revisá cada módulo para consultar su estado actual.
+              Abrí el módulo correspondiente para revisar las operaciones y su estado actual.
             </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "14px" }}>
+              <button type="button" className="btn-secondary" onClick={() => { setIsNotificationsOpen(false); selectModule("stock"); }}>Stock</button>
+              <button type="button" className="btn-secondary" onClick={() => { setIsNotificationsOpen(false); selectModule("repairs"); }}>Servicio técnico</button>
+              <button type="button" className="btn-secondary" onClick={() => { setIsNotificationsOpen(false); selectModule("cash"); }}>Caja</button>
+            </div>
           </div>
         </Modal>
 
@@ -542,47 +554,16 @@ export const App = () => {
           </div>
         </Modal>
 
-        {/* Help & Shortcuts Modal */}
-        <Modal
+        {/* Help & Interactive Module Tutorials Modal */}
+        <ModuleTutorialModal
           isOpen={isHelpOpen}
           onClose={() => setIsHelpOpen(false)}
-          title="Guía Rápida & Atajos de Teclado"
-          subtitle="Atajos para operar el sistema rápidamente"
-          icon={HelpCircle}
-          maxWidth="520px"
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "13px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Buscar módulo o workspace</span>
-              <kbd style={{ padding: "3px 8px", background: "var(--surface-white)", borderRadius: "6px", border: "1px solid var(--border-line)", fontSize: "11px", fontWeight: 700 }}>F2 / ⌘ K</kbd>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Cerrar modal o cancelar búsqueda</span>
-              <kbd style={{ padding: "3px 8px", background: "var(--surface-white)", borderRadius: "6px", border: "1px solid var(--border-line)", fontSize: "11px", fontWeight: 700 }}>Escape</kbd>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Punto de Venta (POS) rápido</span>
-              <span style={{ fontWeight: 650, color: "var(--brand-primary)" }}>Botón '+' en barra superior</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Seguimiento de Reparaciones</span>
-              <span style={{ fontWeight: 650 }}>Taller → Ingreso con Tracking</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Soporte Técnico NicTech</span>
-              <span style={{ fontWeight: 650 }}>soporte@nictech.com.ar</span>
-            </div>
-          </div>
-          <div style={{ marginTop: "18px", display: "flex", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => setIsHelpOpen(false)}
-            >
-              Entendido
-            </button>
-          </div>
-        </Modal>
+          currentWorkspaceId={activeWorkspace.id}
+          onNavigateToWorkspace={(id) => {
+            const ws = ERP_WORKSPACES.find((w) => w.id === id);
+            if (ws) selectWorkspace(ws);
+          }}
+        />
 
         {/* Logout Confirmation Dialog */}
         <ConfirmDialog
@@ -653,7 +634,7 @@ const ModuleContent: React.FC<{
       case "documents":
         return <DocumentsWorkspace />;
       case "whatsapp":
-        return <WhatsappWorkspace />;
+        return <WhatsappWorkspace onSelectModule={onSelectModule} />;
       case "integration-health":
         return <IntegrationHealthWorkspace />;
       case "users":

@@ -162,9 +162,21 @@ const ProfitabilitySection = ({ canExport }: { canExport: boolean }) => {
         <KpiCard
           icon={TrendingUp}
           iconVariant="steel"
-          label="Producto de Mayor Margen"
+          label={
+            totals.withCost === 1
+              ? "Único producto evaluado"
+              : totals.best && totals.best.pct < 0
+                ? "Mejor resultado entre márgenes negativos"
+                : "Producto de Mayor Margen"
+          }
           value={totals.best ? `${totals.best.name} (${totals.best.pct.toFixed(1)}%)` : "Sin datos"}
-          sublabel="Sobre costo real de recepciones"
+          sublabel={
+            totals.withCost === 1
+              ? "Solo hay un producto con costo real; no es una comparación"
+              : totals.best && totals.best.pct < 0
+                ? "Es el menos negativo; todos los márgenes evaluados son negativos"
+                : "Comparación sobre costo real de recepciones"
+          }
         />
         <KpiCard
           icon={BarChart3}
@@ -172,7 +184,7 @@ const ProfitabilitySection = ({ canExport }: { canExport: boolean }) => {
           label="Ingresos Brutos Totales"
           value={formatCurrency(totals.revenue, "ARS")}
           trend={{ text: `${totals.withCost}/${rows.length} con costo`, positive: totals.withCost > 0 }}
-          sublabel="Ventas reales de sale_lines"
+          sublabel="Ventas registradas en las líneas de venta"
         />
       </div>
 
@@ -441,7 +453,7 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
         <div className="flow-card__header">
           <div>
             <h2 className="flow-card__title">Libro IVA Ventas por Alícuota</h2>
-            <p className="flow-card__subtitle">Base + IVA reales desde sale_lines, agrupados por alícuota</p>
+            <p className="flow-card__subtitle">Base + IVA reales desde las líneas de venta, agrupados por alícuota</p>
           </div>
           {ventasRows.length > 0 && canExport && (
             <OfficialCsvExportButton
@@ -575,7 +587,7 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
         <div className="flow-card__header">
           <div>
             <h2 className="flow-card__title">Balance de Sumas y Saldos</h2>
-            <p className="flow-card__subtitle">Solo períodos cerrados y asientos posted/reversed (v_trial_balance)</p>
+            <p className="flow-card__subtitle">Solo períodos cerrados y asientos contabilizados o revertidos (balance de comprobación)</p>
           </div>
           {trialRows.length > 0 && canExport && (
             <OfficialCsvExportButton
@@ -1173,7 +1185,9 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
                           </strong>
                         </td>
                         <td>
-                          <span className="flow-status-pill completed">{entry.status}</span>
+                          <span className="flow-status-pill completed">
+                            {entry.status === "draft" ? "Borrador" : entry.status === "posted" ? "Contabilizado" : "Revertido"}
+                          </span>
                         </td>
                         <td className="text-right">
                           {entry.status === "posted" && hasPermission("accounting.post") && (

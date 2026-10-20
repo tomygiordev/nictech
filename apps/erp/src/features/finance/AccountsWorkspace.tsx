@@ -328,27 +328,32 @@ export const AccountsWorkspace = () => {
 
               {contract.financing_installments?.length ? (
                 <ol className="installments-mini-list" style={{ listStyle: "none", padding: 0, margin: "0 0 14px", display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {contract.financing_installments.map((installment) => (
-                    <li
-                      key={installment.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "6px 10px",
-                        background: "var(--surface-subtle)",
-                        borderRadius: "6px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      <span>
-                        <strong>Cuota {installment.installment_number}</strong> — Vence: {formatDate(installment.due_date)}
-                      </span>
-                      <span className={`type-badge ${installment.status === "paid" ? "green" : "orange"}`} style={{ fontSize: "10px" }}>
-                        {installment.status === "paid" ? "Pagada" : "Pendiente"}
-                      </span>
-                    </li>
-                  ))}
+                  {[...contract.financing_installments]
+                    .sort((a, b) => {
+                      const byDueDate = a.due_date.slice(0, 10).localeCompare(b.due_date.slice(0, 10));
+                      return byDueDate || a.installment_number - b.installment_number;
+                    })
+                    .map((installment) => (
+                      <li
+                        key={installment.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "6px 10px",
+                          background: "var(--surface-subtle)",
+                          borderRadius: "6px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <span>
+                          <strong>Cuota {installment.installment_number}</strong> — Vence: {formatDate(installment.due_date)}
+                        </span>
+                        <span className={`type-badge ${installment.status === "paid" ? "green" : "orange"}`} style={{ fontSize: "10px" }}>
+                          {installment.status === "paid" ? "Pagada" : "Pendiente"}
+                        </span>
+                      </li>
+                    ))}
                 </ol>
               ) : null}
 

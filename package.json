@@ -11,6 +11,9 @@
     "dev": "vite",
     "dev:storefront": "vite",
     "dev:erp": "npm run dev --workspace @nictech/erp",
+    "dev:erp:electron": "npm run electron:dev --workspace @nictech/erp",
+    "preview:erp:electron": "npm run electron:preview --workspace @nictech/erp",
+    "build:erp:electron": "npm run electron:dist --workspace @nictech/erp",
     "dev:all": "concurrently -n \"store,erp\" -c \"cyan.bold,magenta.bold\" \"npm run dev:storefront\" \"npm run dev:erp\"",
     "dev:all:db": "npm run db:start && npm run dev:all",
     "start": "powershell -ExecutionPolicy Bypass -File ./start-dev.ps1",
@@ -28,7 +31,9 @@
     "db:start": "supabase start --ignore-health-check",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
-    "db:stop": "supabase stop"
+    "db:stop": "supabase stop",
+    "db:seed:qa-owner": "node scripts/seed-erp-qa-owner.mjs",
+    "db:reset:qa": "supabase db reset && npm run db:seed:qa-owner"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

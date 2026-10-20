@@ -23,7 +23,7 @@ export const ERP_MODULES = [
   { id: "online-orders", area: "operaciones", label: "Pedidos online", description: "Preparacion, entrega y devoluciones", permission: "orders.view", stage: 5 },
   { id: "catalog", area: "inventario", label: "Productos y servicios", description: "Catalogo interno y publicacion web", permission: "catalog.view", stage: 2 },
   { id: "stock", area: "inventario", label: "Existencias", description: "Ubicaciones, reservas y movimientos", permission: "stock.view", stage: 3 },
-  { id: "stock-counts", area: "inventario", label: "Inventarios fisicos", description: "Conteos, diferencias y ajustes", permission: "stock_counts.view", stage: 3 },
+  { id: "stock-counts", area: "inventario", label: "Conteo físico (pendiente)", description: "Conteo físico aún sin backend de captura ni contabilización", permission: "stock_counts.view", stage: 3 },
   { id: "labels", area: "inventario", label: "Codigos y etiquetas", description: "Barras, QR, series e IMEI", permission: "labels.print", stage: 3 },
   { id: "purchases", area: "comercial", label: "Compras", description: "Ordenes, recepciones y costos", permission: "purchases.view", stage: 4 },
   { id: "suppliers", area: "comercial", label: "Proveedores", description: "Condiciones, deuda e historial", permission: "suppliers.view", stage: 4 },
@@ -39,7 +39,7 @@ export const ERP_MODULES = [
   { id: "accounting", area: "finanzas", label: "Contabilidad", description: "Asientos, periodos y conciliacion", permission: "accounting.view", stage: 9 },
   { id: "profitability", area: "finanzas", label: "Rentabilidad", description: "Costos, margenes y resultados", permission: "profitability.view", stage: 10 },
   { id: "reports", area: "finanzas", label: "Reportes", description: "Gestion, exportaciones e inteligencia", permission: "reports.view", stage: 10 },
-  { id: "documents", area: "integraciones", label: "Documentos y ARCA", description: "Comprobantes, CAE y entregas", permission: "documents.view", stage: 8 },
+  { id: "documents", area: "integraciones", label: "Documentos y facturas", description: "Emisión local de facturas; autorización externa futura opcional", permission: "documents.view", stage: 8 },
   { id: "whatsapp", area: "integraciones", label: "WhatsApp", description: "Conversaciones y automatizaciones", permission: "messages.view", stage: 8 },
   { id: "integration-health", area: "integraciones", label: "Integraciones", description: "Intentos, errores y reintentos", permission: "integrations.view", stage: 8 },
   { id: "users", area: "sistema", label: "Usuarios y permisos", description: "Roles, excepciones y alcance", permission: "users.view", stage: 1 },
@@ -181,8 +181,8 @@ export const ERP_WORKSPACES = [
   {
     id: "documents",
     area: "integraciones",
-    label: "Documentos y ARCA",
-    description: "Comprobantes fiscales electrónicos, CAE y entregas",
+    label: "Documentos y facturas",
+    description: "Facturas fiscales y no fiscales emitidas en el ERP; autorización externa futura opcional",
     moduleIds: ["documents"],
   },
   {

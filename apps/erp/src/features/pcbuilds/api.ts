@@ -45,6 +45,12 @@ export interface PcBuildProjectOverview {
   completed_at: string | null;
 }
 
+export interface PcBuildFormOptions {
+  branches: Array<{ id: string; code: string; name: string }>;
+  customers: Array<{ id: string; code: string; display_name: string }>;
+  products: Array<{ id: string; internal_code: string; internal_name: string }>;
+}
+
 export interface PcBuildComponentInput {
   slot_code: string;
   product_id: string;
@@ -113,6 +119,13 @@ export interface PcBuildCostLine {
   component_id: string;
   quantity: number;
   unit_cost_snapshot: number;
+}
+
+export interface PcBuildCompatibilityResult {
+  result_code: string;
+  outcome: Exclude<PcCompatibilityOutcome, null>;
+  message: string;
+  details: Json;
 }
 
 const toJson = (value: unknown): Json => {
@@ -195,6 +208,50 @@ export const listPcBuildProjects = async (): Promise<PcBuildProjectOverview[]> =
     built_serial_number: row.built_serial_number,
     completed_at: row.completed_at,
   })) satisfies Json;
+};
+
+export const listLatestPcBuildCompatibilityResults = async (
+  projectId: string,
+  revisionId: string
+): Promise<PcBuildCompatibilityResult[]> => {
+  const { data: runs, error: runsError } = await client()
+    .from("pc_compatibility_runs")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("revision_id", revisionId)
+    .order("run_sequence", { ascending: false })
+    .limit(1);
+
+  if (runsError) throw runsError;
+  const runId = runs?.[0]?.id;
+  if (!runId) return [];
+
+  const { data, error } = await client()
+    .from("pc_compatibility_results")
+    .select("result_code, outcome, message, details")
+    .eq("run_id", runId)
+    .in("outcome", ["warning", "fail"])
+    .order("result_code", { ascending: true });
+
+  if (error) throw error;
+  return data ?? [];
+};
+
+export const listPcBuildFormOptions = async (): Promise<PcBuildFormOptions> => {
+  const [branchesResult, customersResult, productsResult] = await Promise.all([
+    client().from("branches").select("id,code,name").order("name"),
+    client().from("customers").select("id,code,display_name").order("display_name"),
+    client().from("products").select("id,internal_code,internal_name").eq("is_active", true).order("internal_name"),
+  ]);
+
+  const error = branchesResult.error ?? customersResult.error ?? productsResult.error;
+  if (error) throw error;
+
+  return {
+    branches: branchesResult.data ?? [],
+    customers: customersResult.data ?? [],
+    products: productsResult.data ?? [],
+  };
 };
 
 export const createPcBuildAtomic = async (
