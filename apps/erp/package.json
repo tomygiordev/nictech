@@ -1,7 +1,7 @@
 {
   "name": "@nictech/erp",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sistema de gestión NicTech ERP",
   "author": "NicTech",
   "type": "module",
@@ -11,6 +11,7 @@
     "build": "vite build",
     "preview": "vite preview --port 8081",
     "typecheck": "tsc --noEmit",
+    "test:desktop": "node --test tests/electron-window.node.cjs",
     "electron:dev": "node electron/dev.cjs",
     "electron:start": "electron .",
     "electron:preview": "npm run build && electron .",

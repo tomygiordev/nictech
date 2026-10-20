@@ -4,12 +4,14 @@
 
 La generación deja estos archivos en `apps/erp/release/`:
 
-- `NicTech ERP Setup 0.1.0.exe`: instalador para Windows de 64 bits, con selección de carpeta y acceso directo.
-- `NicTech ERP 0.1.0.exe`: versión portable que se abre sin instalar.
+- `NicTech ERP Setup X.Y.Z.exe`: instalador para Windows de 64 bits, con selección de carpeta y acceso directo.
+- `NicTech ERP X.Y.Z.exe`: versión portable que se abre sin instalar.
 
 Para una entrega habitual, enviar el archivo **Setup**. No necesita Node.js, Docker ni herramientas de desarrollo en la computadora del cliente. Sí requiere Internet para acceder a Supabase.
 
 El ejecutable todavía no tiene certificado de firma digital; Windows puede mostrar una advertencia de editor desconocido. Para distribuir versiones firmadas hace falta configurar el certificado correspondiente.
+
+La ventana usa una barra propia de NicTech con controles de minimizar, maximizar/restaurar y cerrar. El espacio libre de esa barra permite arrastrar la ventana; los botones siguen disponibles al abrir los diálogos de la aplicación.
 
 ## Cuentas de acceso
 

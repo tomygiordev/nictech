@@ -1,0 +1,161 @@
+/* The web app keeps its own viewport. Only the installed app reserves window chrome. */
+html[data-native-shell] {
+  --desktop-titlebar-height: 46px;
+  --desktop-content-height: calc(100dvh - var(--desktop-titlebar-height));
+}
+
+.desktop-app-content {
+  padding-top: var(--desktop-titlebar-height);
+  min-height: 100dvh;
+}
+
+.desktop-titlebar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 11000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--desktop-titlebar-height);
+  padding: 0 7px 0 14px;
+  border-bottom: 1px solid #dce6f6;
+  background: #edf4ff;
+  color: #032068;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.desktop-titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.desktop-titlebar__mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: #032068;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.desktop-titlebar__mark > span {
+  position: absolute;
+  right: 3px;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 2px;
+  background: #00c2ff;
+}
+
+.desktop-titlebar__name {
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.desktop-titlebar__name > span {
+  font-weight: 500;
+}
+
+.desktop-titlebar__version {
+  margin-left: 1px;
+  color: #5b6e93;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.desktop-titlebar__controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-window-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid #dce6f6;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #032068;
+  -webkit-app-region: no-drag;
+}
+
+.desktop-window-button:focus-visible {
+  outline: 2px solid #005bd5;
+  outline-offset: 1px;
+}
+
+.desktop-window-button:active {
+  background: #d6e5fc;
+  transform: scale(0.97);
+  transition: transform 100ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .desktop-window-button:hover { background: #dce8fb; }
+  .desktop-window-button--close:hover { background: #ffe0e7; color: #b91342; }
+}
+
+.desktop-window-button--close { background: #fff2f5; border-color: #f8dae3; color: #a72d52; }
+.desktop-window-button--close:active { background: #ffd0dc; color: #b91342; }
+.desktop-shell[data-focused="false"] .desktop-titlebar { background: #f4f7fc; }
+.desktop-shell[data-focused="false"] .desktop-titlebar__brand { opacity: 0.65; }
+
+html[data-native-shell] .erp-shell,
+html[data-native-shell] .workspace-container,
+html[data-native-shell] .app-error-boundary {
+  min-height: var(--desktop-content-height);
+}
+
+html[data-native-shell] .side-nav {
+  top: var(--desktop-titlebar-height);
+  height: var(--desktop-content-height);
+}
+
+html[data-native-shell] .flow-topbar { top: var(--desktop-titlebar-height); }
+html[data-native-shell] .skip-link { inset-block-start: calc(var(--desktop-titlebar-height) + 10px); }
+
+html[data-native-shell] .erp-modal-overlay,
+html[data-native-shell] .nav-backdrop {
+  top: var(--desktop-titlebar-height);
+}
+
+/* The tutorial uses an inline fixed overlay rather than the shared modal wrapper. */
+html[data-native-shell] [data-erp-modal="true"][style*="fixed"] {
+  top: var(--desktop-titlebar-height) !important;
+}
+
+html[data-native-shell] .erp-modal-content {
+  max-height: min(90dvh, calc(var(--desktop-content-height) - 32px)) !important;
+}
+
+html[data-native-shell] [data-erp-modal="true"][style*="fixed"] > div {
+  max-height: min(750px, calc(var(--desktop-content-height) - 32px)) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-window-button:active { transform: none; transition: none; }
+}
+
+@media print {
+  .desktop-titlebar { display: none; }
+  .desktop-app-content { padding-top: 0; }
+}

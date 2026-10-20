@@ -5,6 +5,8 @@ const { pathToFileURL } = require("url");
 
 const MANUAL_FILENAME = "Manual_Operativo_ERP_NicTech.pdf";
 const bundledManualUrl = pathToFileURL(path.join(__dirname, "../dist", MANUAL_FILENAME)).href;
+const distIndexPath = path.join(__dirname, "../dist/index.html");
+const distIndexUrl = pathToFileURL(distIndexPath).href;
 
 // Set app name and isolated user data directory to avoid generic Electron lock collisions
 app.name = "nictech-erp";
@@ -32,38 +34,125 @@ if (!gotTheLock) {
 
 let mainWindow = null;
 
+function isExternalUrl(url) {
+  if (typeof url !== "string") return false;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isAppUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (isDev && parsed.origin === new URL(DEV_SERVER_URL).origin) return true;
+    parsed.hash = "";
+    parsed.search = "";
+    return parsed.href === distIndexUrl;
+  } catch {
+    return false;
+  }
+}
+
+function getWindowState(window) {
+  return {
+    isMaximized: window.isMaximized(),
+    isFocused: window.isFocused(),
+    isFullScreen: window.isFullScreen(),
+  };
+}
+
+function getTrustedWindow(event) {
+  if (
+    !mainWindow || mainWindow.isDestroyed() ||
+    event.sender !== mainWindow.webContents ||
+    !event.senderFrame || event.senderFrame !== mainWindow.webContents.mainFrame ||
+    !isAppUrl(event.senderFrame.url)
+  ) {
+    throw new Error("Solicitud de ventana no autorizada");
+  }
+  return mainWindow;
+}
+
 function createMainWindow() {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1024,
     minHeight: 700,
     backgroundColor: "#0f172a",
     title: "NicTech ERP — Sistema de Gestión",
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      devTools: isDev,
     },
     show: false,
   });
+  const webContents = window.webContents;
+  mainWindow = window;
+  window.removeMenu();
+  window.setMenuBarVisibility(false);
+
+  const publishWindowState = (eventState) => {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send("window-state-changed", { ...getWindowState(window), ...eventState });
+    }
+  };
+  // On Windows the native event can precede the corresponding getter update.
+  const stateEvents = [
+    ["maximize", { isMaximized: true }],
+    ["unmaximize", { isMaximized: false }],
+    ["focus", { isFocused: true }],
+    ["blur", { isFocused: false }],
+    ["enter-full-screen", { isFullScreen: true }],
+    ["leave-full-screen", { isFullScreen: false }],
+  ];
+  const stateListeners = stateEvents.map(([event, eventState]) => {
+    const listener = () => publishWindowState(eventState);
+    window.on(event, listener);
+    return [event, listener];
+  });
+
+  // Chromium handles editing shortcuts without a menu. Keep developer tools local to development.
+  const handleDeveloperShortcut = (event, input) => {
+    if (!isDev || input.type !== "keyDown" || input.alt) return;
+    if (input.key === "F12") {
+      event.preventDefault();
+      window.webContents.toggleDevTools();
+      return;
+    }
+    const commandModifier = process.platform === "darwin" ? input.meta : input.control;
+    if (commandModifier && input.key.toLowerCase() === "r") {
+      event.preventDefault();
+      if (input.shift) window.webContents.reloadIgnoringCache();
+      else window.webContents.reload();
+    }
+  };
+  window.webContents.on("before-input-event", handleDeveloperShortcut);
 
   // Reveal window smoothly once ready
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
+  window.once("ready-to-show", () => {
+    window.show();
     if (isDev && process.argv.includes("--open-devtools")) {
-      mainWindow.webContents.openDevTools({ mode: "detach" });
+      window.webContents.openDevTools({ mode: "detach" });
     }
   });
 
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  window.on("closed", () => {
+    for (const [event, listener] of stateListeners) window.removeListener(event, listener);
+    webContents.removeListener("before-input-event", handleDeveloperShortcut);
+    if (mainWindow === window) mainWindow = null;
   });
 
   // Security: prevent opening external links in the Electron window
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  window.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const parsed = new URL(url);
       if (parsed.href === bundledManualUrl) {
@@ -85,119 +174,53 @@ function createMainWindow() {
   });
 
   // Security: prevent in-window navigation away from the ERP
-  mainWindow.webContents.on("will-navigate", (event, url) => {
-    const isSameDevServer = isDev && url.startsWith(DEV_SERVER_URL);
-    const isLocalFile = url.startsWith("file://");
-    if (!isSameDevServer && !isLocalFile) {
+  window.webContents.on("will-navigate", (event, url) => {
+    if (!isAppUrl(url)) {
       event.preventDefault();
-      shell.openExternal(url);
+      if (isExternalUrl(url)) void shell.openExternal(url);
     }
   });
 
   // Load either Vite Dev Server or local dist
   if (isDev) {
-    mainWindow.loadURL(DEV_SERVER_URL).catch(() => {
+    window.loadURL(DEV_SERVER_URL).catch(() => {
       // If dev server is not ready or failed, try loading dist fallback
-      const distIndex = path.join(__dirname, "../dist/index.html");
-      if (fs.existsSync(distIndex)) {
-        mainWindow.loadFile(distIndex);
+      if (fs.existsSync(distIndexPath)) {
+        window.loadFile(distIndexPath);
       } else {
-        mainWindow.loadURL(DEV_SERVER_URL);
+        window.loadURL(DEV_SERVER_URL);
       }
     });
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    window.loadFile(distIndexPath);
   }
 }
 
-function buildAppMenu() {
-  const template = [
-    {
-      label: "Archivo",
-      submenu: [
-        {
-          label: "Recargar",
-          accelerator: "CmdOrCtrl+R",
-          click: () => mainWindow?.webContents.reload(),
-        },
-        {
-          label: "Forzar recarga",
-          accelerator: "CmdOrCtrl+Shift+R",
-          click: () => mainWindow?.webContents.reloadIgnoringCache(),
-        },
-        { type: "separator" },
-        {
-          label: "Salir",
-          accelerator: "CmdOrCtrl+Q",
-          click: () => app.quit(),
-        },
-      ],
-    },
-    {
-      label: "Edición",
-      submenu: [
-        { label: "Deshacer", role: "undo" },
-        { label: "Rehacer", role: "redo" },
-        { type: "separator" },
-        { label: "Cortar", role: "cut" },
-        { label: "Copiar", role: "copy" },
-        { label: "Pegar", role: "paste" },
-        { label: "Seleccionar todo", role: "selectAll" },
-      ],
-    },
-    {
-      label: "Ver",
-      submenu: [
-        { label: "Restablecer zoom", role: "resetZoom" },
-        { label: "Acercar", role: "zoomIn" },
-        { label: "Alejar", role: "zoomOut" },
-        { type: "separator" },
-        { label: "Pantalla completa", role: "togglefullscreen" },
-        {
-          label: "Alternar DevTools",
-          accelerator: "F12",
-          click: () => mainWindow?.webContents.toggleDevTools(),
-        },
-      ],
-    },
-    {
-      label: "Ventana",
-      submenu: [
-        { label: "Minimizar", role: "minimize" },
-        { label: "Cerrar", role: "close" },
-      ],
-    },
-    {
-      label: "Ayuda",
-      submenu: [
-        {
-          label: "Acerca de NicTech ERP",
-          click: () => {
-            dialog.showMessageBox(mainWindow, {
-              type: "info",
-              title: "NicTech ERP",
-              message: "NicTech ERP — Sistema de Gestión",
-              detail: `Versión: ${app.getVersion() || "0.1.0"}\nElectron: ${process.versions.electron}\nChromium: ${process.versions.chrome}\nNode.js: ${process.versions.node}\n\nDiseñado para administración de stock, taller técnico, ventas y facturación.`,
-              buttons: ["Aceptar"],
-            });
-          },
-        },
-      ],
-    },
-  ];
-
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
-}
-
 // IPC Handlers
-ipcMain.handle("get-app-version", () => app.getVersion());
-ipcMain.handle("open-external", async (_, url) => {
-  if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"))) {
+ipcMain.handle("get-app-version", (event) => {
+  getTrustedWindow(event);
+  return app.getVersion();
+});
+ipcMain.handle("open-external", async (event, url) => {
+  getTrustedWindow(event);
+  if (isExternalUrl(url)) {
     await shell.openExternal(url);
     return true;
   }
   return false;
+});
+ipcMain.handle("get-window-state", (event) => getWindowState(getTrustedWindow(event)));
+ipcMain.handle("minimize-window", (event) => {
+  getTrustedWindow(event).minimize();
+});
+ipcMain.handle("toggle-maximize-window", (event) => {
+  const window = getTrustedWindow(event);
+  if (window.isFullScreen()) window.setFullScreen(false);
+  else if (window.isMaximized()) window.unmaximize();
+  else window.maximize();
+});
+ipcMain.handle("close-window", (event) => {
+  getTrustedWindow(event).close();
 });
 
 // App lifecycle
@@ -209,7 +232,7 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(() => {
-  buildAppMenu();
+  Menu.setApplicationMenu(null);
   createMainWindow();
 
   app.on("activate", () => {

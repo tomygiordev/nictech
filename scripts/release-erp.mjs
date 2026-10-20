@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const releasePaths = [
-  'apps/erp/src', 'apps/erp/electron', 'apps/erp/public', 'apps/erp/docs',
+  'apps/erp/src', 'apps/erp/electron', 'apps/erp/public', 'apps/erp/docs', 'apps/erp/tests',
   'apps/erp/index.html', 'apps/erp/package.json', 'apps/erp/vite.config.ts',
   'apps/erp/tsconfig.json', 'packages/domain', 'src/test/setup.ts',
   '.github/workflows/erp-release.yml', 'scripts/release-erp.mjs', 'scripts/release-erp.test.mjs',

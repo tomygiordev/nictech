@@ -7,6 +7,7 @@ import App from "./App";
 import { ErpAuthProvider } from "./auth/ErpAuthProvider";
 import { queryClient } from "./lib/queryClient";
 import "./styles.css";
+import { DesktopShell } from "./components/desktop/DesktopShell";
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
@@ -58,12 +59,14 @@ class AppErrorBoundary extends React.Component<
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <AppErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <ErpAuthProvider>
-          <App />
-        </ErpAuthProvider>
-      </QueryClientProvider>
-    </AppErrorBoundary>
+    <DesktopShell>
+      <AppErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <ErpAuthProvider>
+            <App />
+          </ErpAuthProvider>
+        </QueryClientProvider>
+      </AppErrorBoundary>
+    </DesktopShell>
   </React.StrictMode>,
 );

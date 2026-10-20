@@ -86,6 +86,9 @@ jobs:
       - name: Ejecutar pruebas del ERP
         run: npm run test:run -- apps/erp
 
+      - name: Verificar controles de ventana
+        run: npm run test:erp:desktop
+
       - name: Verificar preparación de versiones
         run: node --test scripts/release-erp.test.mjs
 
