@@ -44,8 +44,8 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
   // Variants management
   const [hasVariants, setHasVariants] = useState(false);
   const [variantsList, setVariantsList] = useState<VariantRowInput[]>([
-    { name: "Negro", code: "NEG", barcode: "", sku: "" },
-    { name: "Rosa", code: "ROS", barcode: "", sku: "" },
+    { name: "Negro", code: "NEG", barcode: "", sku: "", price_mode: "inherit", final_price_ars: null },
+    { name: "Rosa", code: "ROS", barcode: "", sku: "", price_mode: "inherit", final_price_ars: null },
   ]);
 
   // Submission states & double submit guard
@@ -72,8 +72,8 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
     setBaseCost("");
     setHasVariants(false);
     setVariantsList([
-      { name: "Negro", code: "NEG", barcode: "", sku: "" },
-      { name: "Rosa", code: "ROS", barcode: "", sku: "" },
+      { name: "Negro", code: "NEG", barcode: "", sku: "", price_mode: "inherit", final_price_ars: null },
+      { name: "Rosa", code: "ROS", barcode: "", sku: "", price_mode: "inherit", final_price_ars: null },
     ]);
     setError(null);
   };
@@ -87,7 +87,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
   const addVariantRow = () => {
     setVariantsList((prev) => [
       ...prev,
-      { name: "", code: "", barcode: "", sku: "" },
+      { name: "", code: "", barcode: "", sku: "", price_mode: "inherit", final_price_ars: null },
     ]);
   };
 
@@ -95,7 +95,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
     setVariantsList((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const updateVariantRow = (index: number, field: keyof VariantRowInput, value: string) => {
+  const updateVariantRow = (index: number, field: keyof VariantRowInput, value: unknown) => {
     setVariantsList((prev) =>
       prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
     );
@@ -403,7 +403,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
           {hasVariants && (
             <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
               <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                Cada variante hereda el precio del artículo y posee código propio y código de barras para escáner:
+                Cada variante puede heredar el precio del artículo o fijar un precio final propio IVA incluido, con código y código de barras propios:
               </span>
 
               {variantsList.map((row, idx) => (
@@ -411,7 +411,10 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                   key={idx}
                   className="erp-form-row"
                   style={{
+                    display: "flex",
+                    flexWrap: "wrap",
                     alignItems: "center",
+                    gap: "6px",
                   }}
                 >
                   <input
@@ -422,7 +425,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                     disabled={submitting}
                     onChange={(e) => updateVariantRow(idx, "name", e.target.value)}
                     className="erp-form-input"
-                    style={{ fontSize: "12px" }}
+                    style={{ fontSize: "12px", flex: "1 1 120px", minWidth: "110px" }}
                     required={hasVariants}
                   />
                   <input
@@ -433,7 +436,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                     disabled={submitting}
                     onChange={(e) => updateVariantRow(idx, "code", e.target.value)}
                     className="erp-form-input"
-                    style={{ fontSize: "12px", fontFamily: "monospace", textTransform: "uppercase" }}
+                    style={{ fontSize: "12px", fontFamily: "monospace", textTransform: "uppercase", width: "75px" }}
                     required={hasVariants}
                   />
                   <input
@@ -444,7 +447,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                     disabled={submitting}
                     onChange={(e) => updateVariantRow(idx, "barcode", e.target.value)}
                     className="erp-form-input"
-                    style={{ fontSize: "12px", fontFamily: "monospace" }}
+                    style={{ fontSize: "12px", fontFamily: "monospace", width: "105px" }}
                   />
                   <input
                     type="text"
@@ -454,8 +457,40 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                     disabled={submitting}
                     onChange={(e) => updateVariantRow(idx, "sku", e.target.value)}
                     className="erp-form-input"
-                    style={{ fontSize: "12px", fontFamily: "monospace" }}
+                    style={{ fontSize: "12px", fontFamily: "monospace", width: "95px" }}
                   />
+                  <select
+                    aria-label={`Modo de precio para variante ${idx + 1}`}
+                    value={row.price_mode}
+                    disabled={submitting}
+                    onChange={(e) => {
+                      const mode = e.target.value as "inherit" | "own";
+                      updateVariantRow(idx, "price_mode", mode);
+                      if (mode === "inherit") {
+                        updateVariantRow(idx, "final_price_ars", null);
+                      }
+                    }}
+                    className="erp-form-select"
+                    style={{ fontSize: "12px", width: "90px", padding: "4px 6px" }}
+                  >
+                    <option value="inherit">Heredar</option>
+                    <option value="own">Propio</option>
+                  </select>
+                  {row.price_mode === "own" && (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      aria-label={`Precio final ARS propio de variante ${idx + 1}`}
+                      placeholder="$ Propio"
+                      value={row.final_price_ars ?? ""}
+                      disabled={submitting}
+                      onChange={(e) => updateVariantRow(idx, "final_price_ars", e.target.value)}
+                      className="erp-form-input"
+                      style={{ fontSize: "12px", width: "95px" }}
+                      required={row.price_mode === "own"}
+                    />
+                  )}
                   <button
                     type="button"
                     className="pag-btn"

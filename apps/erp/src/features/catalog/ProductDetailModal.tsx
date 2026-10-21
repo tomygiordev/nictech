@@ -18,6 +18,7 @@ import {
   calculateFiscalBreakdown,
   getActiveBarcode,
   getActiveSku,
+  getVariantEffectivePrice,
 } from "./schemas";
 
 export interface ProductDetailModalProps {
@@ -307,8 +308,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     const vSummary = calculateStockSummary(product.stock_balances, v.id);
                     const barcode = getActiveBarcode(v.product_identifiers);
                     const sku = getActiveSku(v.product_identifiers);
-                    const hasLegacyDelta = typeof v.price_delta === "number" && v.price_delta !== 0;
-                    const effectivePrice = (product.base_sale_price || 0) + (v.price_delta || 0);
+                    const { price: effectivePrice, isOverride, hasLegacyDelta } = getVariantEffectivePrice(product.base_sale_price || 0, v);
 
                     return (
                       <tr key={v.id}>
@@ -341,13 +341,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                           )}
                         </td>
                         <td>
-                          <span style={{ fontSize: "12px", fontWeight: 600, color: hasLegacyDelta ? "var(--amber-accent)" : "var(--text-main)" }}>
+                          <span style={{ fontSize: "12px", fontWeight: 600, color: isOverride ? "var(--brand-primary)" : hasLegacyDelta ? "var(--amber-accent)" : "var(--text-main)" }}>
                             {formatCurrency(effectivePrice, "ARS")}
-                            {hasLegacyDelta && (
+                            {isOverride ? (
+                              <small style={{ display: "block", fontSize: "10px", color: "var(--brand-primary)" }}>
+                                Precio propio
+                              </small>
+                            ) : hasLegacyDelta ? (
                               <small style={{ display: "block", fontSize: "10px", color: "var(--text-muted)" }}>
                                 Delta legacy: {v.price_delta > 0 ? `+${v.price_delta}` : v.price_delta}
                               </small>
-                            )}
+                            ) : null}
                           </span>
                         </td>
                         <td>

@@ -34,6 +34,8 @@ interface EditableVariantState {
   barcode: string;
   is_active: boolean;
   price_delta?: number;
+  price_mode?: "inherit" | "own";
+  final_price_ars?: number | null;
   availableStock: number;
   onHandStock: number;
 }
@@ -48,6 +50,8 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
   const [newColor, setNewColor] = useState("");
   const [newCode, setNewCode] = useState("");
   const [newBarcode, setNewBarcode] = useState("");
+  const [newPriceMode, setNewPriceMode] = useState<"inherit" | "own">("inherit");
+  const [newPriceArs, setNewPriceArs] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -59,10 +63,14 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
       setNewColor("");
       setNewCode("");
       setNewBarcode("");
+      setNewPriceMode("inherit");
+      setNewPriceArs("");
 
       const initial: EditableVariantState[] = (product.product_variants || []).map((v) => {
         const barcodeVal = getActiveBarcode(v.product_identifiers);
         const summary = calculateStockSummary(product.stock_balances, v.id);
+        const hasExplicitPrice = v.final_price_ars !== undefined;
+        const isOwn = hasExplicitPrice && v.final_price_ars !== null;
 
         return {
           id: v.id,
@@ -71,6 +79,8 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
           barcode: barcodeVal,
           is_active: v.is_active !== false,
           price_delta: v.price_delta,
+          price_mode: hasExplicitPrice ? (isOwn ? "own" : "inherit") : undefined,
+          final_price_ars: isOwn ? v.final_price_ars! : null,
           availableStock: summary.available,
           onHandStock: summary.onHand,
         };
@@ -135,6 +145,20 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
       return;
     }
 
+    let ownPriceNum: number | null = null;
+    if (newPriceMode === "own") {
+      const trimmedPrice = newPriceArs.trim();
+      if (!trimmedPrice) {
+        setError("Debe especificar el precio propio final en ARS de la variante.");
+        return;
+      }
+      ownPriceNum = Number(trimmedPrice);
+      if (isNaN(ownPriceNum) || ownPriceNum < 0) {
+        setError("El precio propio debe ser un número válido mayor o igual a 0.");
+        return;
+      }
+    }
+
     setError(null);
     setVariants((prev) => [
       ...prev,
@@ -145,6 +169,8 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
         barcode: trimmedBarcode,
         is_active: true,
         price_delta: 0,
+        price_mode: newPriceMode === "own" ? "own" : undefined,
+        final_price_ars: ownPriceNum,
         availableStock: 0,
         onHandStock: 0,
       },
@@ -153,6 +179,8 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
     setNewColor("");
     setNewCode("");
     setNewBarcode("");
+    setNewPriceMode("inherit");
+    setNewPriceArs("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -164,13 +192,28 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
     const validation = manageProductVariantsSchema.safeParse({
       productId: product.id,
       expectedUpdatedAt: product.updated_at || null,
-      variants: variants.map((v) => ({
-        id: v.id || null,
-        name: v.name,
-        code: v.code,
-        barcode: v.barcode ? v.barcode.trim() : null,
-        is_active: v.is_active,
-      })),
+      variants: variants.map((v) => {
+        const item: {
+          id: string | null;
+          name: string;
+          code: string;
+          barcode: string | null;
+          is_active: boolean;
+          price_mode?: "inherit" | "own";
+          final_price_ars?: number | null;
+        } = {
+          id: v.id || null,
+          name: v.name,
+          code: v.code,
+          barcode: v.barcode ? v.barcode.trim() : null,
+          is_active: v.is_active,
+        };
+        if (v.price_mode !== undefined) {
+          item.price_mode = v.price_mode;
+          item.final_price_ars = v.price_mode === "own" ? v.final_price_ars : null;
+        }
+        return item;
+      }),
     });
 
     if (!validation.success) {
@@ -231,7 +274,7 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
               Reglas de Inventario e Historial ERP
             </span>
             <span>
-              Las nuevas variantes heredan el precio maestro ({formatCurrency(parentPrice, "ARS")}). Por integridad de saldos contables y trazabilidad de movimientos pasados, las variantes no se eliminan físicamente: utilizá el interruptor para <strong>pausar</strong> variantes sin uso.
+              Las variantes pueden heredar el precio maestro ({formatCurrency(parentPrice, "ARS")}) o definir un precio final propio absoluto (IVA incluido). Por integridad de saldos contables y trazabilidad de movimientos pasados, las variantes no se eliminan físicamente: utilizá el interruptor para <strong>pausar</strong> variantes sin uso.
             </span>
           </div>
         </div>
@@ -274,9 +317,9 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
                   <th style={{ width: "90px" }}>Estado</th>
                   <th>Color / Nombre</th>
                   <th style={{ width: "120px" }}>Código</th>
-                  <th style={{ width: "160px" }}>Código de Barras</th>
-                  <th style={{ width: "110px" }}>Precio</th>
-                  <th style={{ width: "90px" }}>Stock</th>
+                  <th style={{ width: "150px" }}>Código de Barras</th>
+                  <th style={{ width: "170px" }}>Precio / Modo</th>
+                  <th style={{ width: "80px" }}>Stock</th>
                   <th style={{ width: "90px" }} className="text-right">Acción</th>
                 </tr>
               </thead>
@@ -284,7 +327,10 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
                 {variants.length > 0 ? (
                   variants.map((v, idx) => {
                     const hasLegacyDelta = typeof v.price_delta === "number" && v.price_delta !== 0;
-                    const effectivePrice = parentPrice + (v.price_delta || 0);
+                    const effectivePrice =
+                      v.price_mode === "own" && v.final_price_ars !== null
+                        ? v.final_price_ars
+                        : parentPrice + (v.price_delta || 0);
 
                     return (
                       <tr key={v.id || `new-${idx}`} style={{ opacity: v.is_active ? 1 : 0.65 }}>
@@ -363,14 +409,56 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
                           </div>
                         </td>
                         <td>
-                          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-main)" }}>
-                            {formatCurrency(effectivePrice, "ARS")}
-                          </span>
-                          {hasLegacyDelta && (
-                            <small style={{ display: "block", fontSize: "10px", color: "var(--amber-accent)" }}>
-                              Delta legacy: {v.price_delta! > 0 ? `+${v.price_delta}` : v.price_delta}
-                            </small>
-                          )}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                            <select
+                              aria-label={`Modo de precio para variante ${v.name}`}
+                              value={v.price_mode ?? (v.final_price_ars !== null && v.final_price_ars !== undefined ? "own" : "inherit")}
+                              onChange={(e) => {
+                                const mode = e.target.value as "inherit" | "own";
+                                handleUpdateField(idx, "price_mode", mode);
+                                if (mode === "inherit") {
+                                  handleUpdateField(idx, "final_price_ars", null);
+                                } else if (v.final_price_ars === null || v.final_price_ars === undefined) {
+                                  handleUpdateField(idx, "final_price_ars", parentPrice);
+                                }
+                              }}
+                              disabled={submitting}
+                              className="filter-input"
+                              style={{ fontSize: "11px", padding: "2px 4px", width: "100%" }}
+                            >
+                              <option value="inherit">Heredar padre</option>
+                              <option value="own">Precio propio</option>
+                            </select>
+
+                            {v.price_mode === "own" ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  aria-label={`Precio propio para variante ${v.name}`}
+                                  value={v.final_price_ars ?? ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value === "" ? null : Number(e.target.value);
+                                    handleUpdateField(idx, "final_price_ars", isNaN(val as number) ? null : val);
+                                  }}
+                                  disabled={submitting}
+                                  placeholder="$ Propio"
+                                  className="filter-input"
+                                  style={{ width: "100%", padding: "2px 4px", fontSize: "11px", fontWeight: 600 }}
+                                />
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-main)" }}>
+                                {formatCurrency(effectivePrice, "ARS")}
+                                {hasLegacyDelta && (
+                                  <small style={{ display: "block", fontSize: "9px", color: "var(--amber-accent)" }}>
+                                    Delta legacy: {v.price_delta! > 0 ? `+${v.price_delta}` : v.price_delta}
+                                  </small>
+                                )}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td>
                           <strong
@@ -426,7 +514,7 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
             Agregar Nueva Variante de Color
           </span>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1.2fr auto", gap: "8px", alignItems: "center" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.9fr 1.1fr 1.4fr auto", gap: "8px", alignItems: "center" }}>
             <input
               type="text"
               placeholder="Color (ej: Negro Mate)"
@@ -454,6 +542,39 @@ export const ProductVariantsModal: React.FC<ProductVariantsModalProps> = ({
               disabled={submitting}
               style={{ fontSize: "12px", padding: "6px 8px", fontFamily: "monospace" }}
             />
+            <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+              <select
+                aria-label="Modo de precio para nueva variante"
+                value={newPriceMode}
+                onChange={(e) => {
+                  const m = e.target.value as "inherit" | "own";
+                  setNewPriceMode(m);
+                  if (m === "own" && !newPriceArs) {
+                    setNewPriceArs(parentPrice.toString());
+                  }
+                }}
+                disabled={submitting}
+                className="filter-input"
+                style={{ fontSize: "11px", padding: "5px 4px", minWidth: "90px" }}
+              >
+                <option value="inherit">Heredar padre</option>
+                <option value="own">Precio propio</option>
+              </select>
+              {newPriceMode === "own" && (
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  aria-label="Precio final propio ARS de nueva variante"
+                  placeholder="$ Propio"
+                  value={newPriceArs}
+                  onChange={(e) => setNewPriceArs(e.target.value)}
+                  disabled={submitting}
+                  className="filter-input"
+                  style={{ width: "85px", fontSize: "11px", padding: "5px 6px" }}
+                />
+              )}
+            </div>
             <button
               type="button"
               className="pag-btn"

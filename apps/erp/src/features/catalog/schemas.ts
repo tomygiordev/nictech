@@ -41,8 +41,38 @@ export interface DbProductVariant {
   name: string;
   attributes?: Record<string, unknown>;
   price_delta: number;
+  final_price_ars?: number | null;
   is_active: boolean;
   product_identifiers?: DbVariantIdentifier[];
+}
+
+/**
+ * Returns the effective price in ARS for a variant.
+ * Invariant:
+ * - If variant has an own final_price_ars override, that absolute value wins.
+ * - Otherwise, inherits parent base price + legacy price_delta (default 0).
+ */
+export function getVariantEffectivePrice(
+  parentBasePrice: number,
+  variant?: { final_price_ars?: number | null; price_delta?: number | null } | null,
+): {
+  price: number;
+  isOverride: boolean;
+  hasLegacyDelta: boolean;
+} {
+  if (!variant) {
+    return { price: parentBasePrice, isOverride: false, hasLegacyDelta: false };
+  }
+  if (variant.final_price_ars !== null && variant.final_price_ars !== undefined) {
+    return { price: Number(variant.final_price_ars) || 0, isOverride: true, hasLegacyDelta: false };
+  }
+  const delta = typeof variant.price_delta === "number" ? variant.price_delta : 0;
+  const hasLegacyDelta = delta !== 0;
+  return {
+    price: (Number(parentBasePrice) || 0) + delta,
+    isOverride: false,
+    hasLegacyDelta,
+  };
 }
 
 export interface DbStockBalance {
@@ -235,26 +265,59 @@ export const numericIntegerStockQuantity = z.preprocess(
  * Schema for a single variant row in creation/editing forms.
  * Do NOT drop partially-filled variants silently; validate fields strictly.
  */
-export const variantRowSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().trim().min(1, "El color / nombre de la variante es obligatorio"),
-  code: z
-    .string()
-    .trim()
-    .min(1, "El código de la variante es obligatorio")
-    .max(30, "El código no debe superar 30 caracteres")
-    .transform((val) => val.toUpperCase()),
-  barcode: z
-    .string()
-    .trim()
-    .optional()
-    .transform((val) => (val && val.length > 0 ? val : undefined)),
-  sku: z
-    .string()
-    .trim()
-    .optional()
-    .transform((val) => (val && val.length > 0 ? val : undefined)),
-});
+export const variantRowSchema = z
+  .object({
+    id: z.string().optional(),
+    name: z.string().trim().min(1, "El color / nombre de la variante es obligatorio"),
+    code: z
+      .string()
+      .trim()
+      .min(1, "El código de la variante es obligatorio")
+      .max(30, "El código no debe superar 30 caracteres")
+      .transform((val) => val.toUpperCase()),
+    barcode: z
+      .string()
+      .trim()
+      .optional()
+      .transform((val) => (val && val.length > 0 ? val : undefined)),
+    sku: z
+      .string()
+      .trim()
+      .optional()
+      .transform((val) => (val && val.length > 0 ? val : undefined)),
+    price_mode: z.enum(["inherit", "own"]).default("inherit"),
+    final_price_ars: z.preprocess(
+      (val) => {
+        if (val === "" || val === null || val === undefined) return null;
+        if (typeof val === "string") {
+          const trimmed = val.trim();
+          if (trimmed === "") return null;
+          const n = Number(trimmed);
+          return isNaN(n) ? val : n;
+        }
+        return val;
+      },
+      z
+        .number({
+          invalid_type_error: "El precio propio de la variante debe ser un valor numérico",
+        })
+        .finite("El precio propio debe ser un número finito")
+        .min(0, "El precio propio no puede ser menor a 0")
+        .nullable()
+        .optional(),
+    ),
+  })
+  .superRefine((val, ctx) => {
+    if (val.price_mode === "own") {
+      if (val.final_price_ars === null || val.final_price_ars === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["final_price_ars"],
+          message: "Debe ingresar un precio propio válido para la variante.",
+        });
+      }
+    }
+  });
 
 export type VariantRowInput = z.infer<typeof variantRowSchema>;
 
@@ -398,6 +461,8 @@ export function buildCreateCatalogPayload(data: ProductCreateInput) {
         code: v.code.trim().toUpperCase(),
         attributes: { color: v.name.trim() },
         price_delta: 0, // Invariant: inherits parent price
+        final_price_mode: v.price_mode,
+        final_price_ars: v.price_mode === "own" ? v.final_price_ars : null,
         barcode: v.barcode ? v.barcode.trim() : null,
         sku: v.sku ? v.sku.trim() : null,
       }))
@@ -471,23 +536,57 @@ export function calculateStockSummary(
  * Schema for managing a single variant (edit existing or add new).
  * Validates names, codes, optional barcodes, and active/paused state.
  */
-export const manageVariantItemSchema = z.object({
-  id: z.string().uuid("ID de variante inválido").optional().nullable(),
-  name: z.string().trim().min(1, "El color / nombre de la variante es obligatorio"),
-  code: z
-    .string()
-    .trim()
-    .min(1, "El código de la variante es obligatorio")
-    .max(30, "El código no debe superar 30 caracteres")
-    .transform((val) => val.toUpperCase()),
-  barcode: z
-    .string()
-    .trim()
-    .optional()
-    .nullable()
-    .transform((val) => (val && val.length > 0 ? val : null)),
-  is_active: z.boolean().default(true),
-});
+export const manageVariantItemSchema = z
+  .object({
+    id: z.string().uuid("ID de variante inválido").optional().nullable(),
+    name: z.string().trim().min(1, "El color / nombre de la variante es obligatorio"),
+    code: z
+      .string()
+      .trim()
+      .min(1, "El código de la variante es obligatorio")
+      .max(30, "El código no debe superar 30 caracteres")
+      .transform((val) => val.toUpperCase()),
+    barcode: z
+      .string()
+      .trim()
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.length > 0 ? val : null)),
+    is_active: z.boolean().default(true),
+    price_mode: z.enum(["inherit", "own"]).optional(),
+    final_price_ars: z.preprocess(
+      (val) => {
+        if (val === undefined) return undefined;
+        if (val === "" || val === null) return null;
+        if (typeof val === "string") {
+          const trimmed = val.trim();
+          if (trimmed === "") return null;
+          const n = Number(trimmed);
+          return isNaN(n) ? val : n;
+        }
+        return val;
+      },
+      z
+        .number({
+          invalid_type_error: "El precio propio de la variante debe ser un valor numérico",
+        })
+        .finite("El precio propio debe ser un número finito")
+        .min(0, "El precio propio no puede ser menor a 0")
+        .nullable()
+        .optional(),
+    ),
+  })
+  .superRefine((val, ctx) => {
+    if (val.price_mode === "own") {
+      if (val.final_price_ars === null || val.final_price_ars === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["final_price_ars"],
+          message: "Debe ingresar un precio propio válido para la variante.",
+        });
+      }
+    }
+  });
 
 export type ManageVariantItemInput = z.infer<typeof manageVariantItemSchema>;
 
@@ -553,13 +652,32 @@ export type SetProductCompatibleModelsInput = z.infer<typeof setProductCompatibl
 export function buildManageVariantsPayload(data: ManageProductVariantsInput) {
   return {
     p_product_id: data.productId,
-    p_variants: data.variants.map((v) => ({
-      id: v.id || null,
-      name: v.name.trim(),
-      code: v.code.trim().toUpperCase(),
-      barcode: v.barcode ? v.barcode.trim() : null,
-      is_active: v.is_active ?? true,
-    })),
+    p_variants: data.variants.map((v) => {
+      const item: {
+        id: string | null;
+        name: string;
+        code: string;
+        barcode: string | null;
+        is_active: boolean;
+        final_price_mode?: "inherit" | "own";
+        final_price_ars?: number | null;
+      } = {
+        id: v.id || null,
+        name: v.name.trim(),
+        code: v.code.trim().toUpperCase(),
+        barcode: v.barcode ? v.barcode.trim() : null,
+        is_active: v.is_active ?? true,
+      };
+
+      if (v.price_mode !== undefined) {
+        item.final_price_mode = v.price_mode;
+        item.final_price_ars = v.price_mode === "own" ? v.final_price_ars : null;
+      } else if (v.final_price_ars !== undefined) {
+        item.final_price_ars = v.final_price_ars;
+      }
+
+      return item;
+    }),
     p_expected_updated_at: data.expectedUpdatedAt || null,
   };
 }

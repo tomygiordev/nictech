@@ -12,6 +12,7 @@ import {
   calculateFiscalBreakdown,
   getActiveBarcode,
   getErrorMessage,
+  getVariantEffectivePrice,
 } from "./schemas";
 import { formatCurrency } from "../../lib/formatters";
 
@@ -364,8 +365,7 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
               {variants.map((v) => {
                 const summary = calculateStockSummary(product.stock_balances, v.id);
                 const barcode = getActiveBarcode(v.product_identifiers);
-                const hasLegacyDelta = typeof v.price_delta === "number" && v.price_delta !== 0;
-                const effectiveVariantPrice = (product.base_sale_price || 0) + (v.price_delta || 0);
+                const { price: effectiveVariantPrice, isOverride, hasLegacyDelta } = getVariantEffectivePrice(product.base_sale_price || 0, v);
 
                 return (
                   <span
@@ -382,12 +382,16 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
                   >
                     <strong>{v.name}</strong>
                     <span style={{ fontFamily: "monospace", opacity: 0.8 }}>({v.code})</span>
-                    {hasLegacyDelta ? (
+                    {isOverride ? (
+                      <span style={{ color: "var(--brand-primary)", fontWeight: 600 }}>
+                        • {formatCurrency(effectiveVariantPrice, "ARS")} (propio)
+                      </span>
+                    ) : hasLegacyDelta ? (
                       <span style={{ color: "var(--amber-accent)", fontWeight: 600 }}>
                         • {formatCurrency(effectiveVariantPrice, "ARS")} (delta legacy: {v.price_delta > 0 ? `+${v.price_delta}` : v.price_delta})
                       </span>
                     ) : null}
-                    <span style={{ color: "var(--brand-primary)", fontWeight: 600 }}>
+                    <span style={{ color: "var(--emerald-success)", fontWeight: 600 }}>
                       • {summary.available} u.
                     </span>
                   </span>

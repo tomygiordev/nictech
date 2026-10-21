@@ -238,6 +238,73 @@ describe("Catalog Modals Component Behavior", () => {
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveTextContent("violates unique constraint 'products_internal_code_key'");
     });
+
+    it("permite ingresar y enviar SKU en alta de producto con variante de precio propio", async () => {
+      rpcMock.mockResolvedValueOnce({
+        data: { product_id: "prod-sku-1", internal_code: "FUNDA-PRO", internal_name: "Funda Pro" },
+        error: null,
+      });
+
+      const onSuccess = vi.fn();
+      const onClose = vi.fn();
+
+      render(
+        <CreateProductModal
+          isOpen={true}
+          onClose={onClose}
+          categories={mockCategories}
+          brands={mockBrands}
+          models={mockModels}
+          onSuccess={onSuccess}
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText(/Código Interno/i), { target: { value: "FUNDA-PRO" } });
+      fireEvent.change(screen.getByLabelText(/Nombre del Artículo/i), { target: { value: "Funda Pro" } });
+      fireEvent.change(screen.getByLabelText(/Precio Final de Venta/i), { target: { value: "10000" } });
+
+      // Enable variants
+      const checkbox = screen.getByRole("checkbox", { name: /Este artículo tiene variantes/i });
+      fireEvent.click(checkbox);
+
+      // In the first variant row:
+      // Fill SKU
+      const skuInput = screen.getByLabelText("SKU de variante 1");
+      fireEvent.change(skuInput, { target: { value: "SKU-FUNDA-NEG" } });
+
+      // Select price mode 'own'
+      const modeSelect = screen.getByLabelText("Modo de precio para variante 1");
+      fireEvent.change(modeSelect, { target: { value: "own" } });
+
+      // Fill own price
+      const ownPriceInput = screen.getByLabelText("Precio final ARS propio de variante 1");
+      fireEvent.change(ownPriceInput, { target: { value: "14500" } });
+
+      // Submit
+      fireEvent.click(screen.getByRole("button", { name: "Crear Artículo" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith(
+          "create_catalog_product_with_variants",
+          expect.objectContaining({
+            p_internal_code: "FUNDA-PRO",
+            p_internal_name: "Funda Pro",
+            p_base_sale_price: 10000,
+            p_variants: expect.arrayContaining([
+              expect.objectContaining({
+                name: "Negro",
+                code: "NEG",
+                sku: "SKU-FUNDA-NEG",
+                final_price_mode: "own",
+                final_price_ars: 14500,
+              }),
+            ]),
+          }),
+        );
+        expect(onSuccess).toHaveBeenCalled();
+        expect(onClose).toHaveBeenCalled();
+      });
+    });
   });
 
   describe("ProductEditModal", () => {
@@ -918,6 +985,179 @@ describe("Catalog Modals Component Behavior", () => {
 
       // Data is NOT lost on conflict
       expect(screen.getByDisplayValue("77999999")).toBeInTheDocument();
+    });
+
+    it("permite fijar precio propio final ARS para una variante y enviarlo en el payload", async () => {
+      rpcMock.mockResolvedValueOnce({
+        data: {
+          product_id: mockProduct.id,
+          variants: [
+            { id: mockProduct.product_variants![0].id, code: "NEG", name: "Negro", is_active: true, barcode: "77912345", final_price_ars: 16500 },
+          ],
+        },
+        error: null,
+      });
+
+      const onSuccess = vi.fn();
+      const onClose = vi.fn();
+
+      render(
+        <ProductVariantsModal
+          isOpen={true}
+          onClose={onClose}
+          product={mockProduct}
+          onSuccess={onSuccess}
+        />,
+      );
+
+      // Cambiar modo de precio a "own"
+      const priceModeSelect = screen.getByLabelText("Modo de precio para variante Negro");
+      fireEvent.change(priceModeSelect, { target: { value: "own" } });
+
+      // Ingresar precio propio 16500
+      const ownPriceInput = screen.getByLabelText("Precio propio para variante Negro");
+      fireEvent.change(ownPriceInput, { target: { value: "16500" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("manage_product_variants", {
+          p_product_id: mockProduct.id,
+          p_expected_updated_at: null,
+          p_variants: [
+            {
+              id: mockProduct.product_variants![0].id,
+              name: "Negro",
+              code: "NEG",
+              barcode: "77912345",
+              is_active: true,
+              final_price_mode: "own",
+              final_price_ars: 16500,
+            },
+          ],
+        });
+        expect(onSuccess).toHaveBeenCalled();
+        expect(onClose).toHaveBeenCalled();
+      });
+    });
+
+    it("permite cambiar variante de precio propio a heredar y envía final_price_mode: inherit y final_price_ars: null", async () => {
+      const productWithOwnVariant: DbCatalogProduct = {
+        ...mockProduct,
+        product_variants: [
+          {
+            id: "80000000-0000-0000-0000-000000000008",
+            code: "NEG",
+            name: "Negro",
+            price_delta: 0,
+            final_price_ars: 16500,
+            is_active: true,
+            product_identifiers: [{ kind: "barcode", value: "77912345" }],
+          },
+        ],
+      };
+
+      rpcMock.mockResolvedValueOnce({
+        data: {
+          product_id: productWithOwnVariant.id,
+          variants: [
+            { id: "80000000-0000-0000-0000-000000000008", code: "NEG", name: "Negro", is_active: true, barcode: "77912345", final_price_ars: null },
+          ],
+        },
+        error: null,
+      });
+
+      const onSuccess = vi.fn();
+      const onClose = vi.fn();
+
+      render(
+        <ProductVariantsModal
+          isOpen={true}
+          onClose={onClose}
+          product={productWithOwnVariant}
+          onSuccess={onSuccess}
+        />,
+      );
+
+      // Cambiar modo de precio de "own" a "inherit"
+      const priceModeSelect = screen.getByLabelText("Modo de precio para variante Negro");
+      fireEvent.change(priceModeSelect, { target: { value: "inherit" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("manage_product_variants", {
+          p_product_id: productWithOwnVariant.id,
+          p_expected_updated_at: null,
+          p_variants: [
+            {
+              id: "80000000-0000-0000-0000-000000000008",
+              name: "Negro",
+              code: "NEG",
+              barcode: "77912345",
+              is_active: true,
+              final_price_mode: "inherit",
+              final_price_ars: null,
+            },
+          ],
+        });
+        expect(onSuccess).toHaveBeenCalled();
+        expect(onClose).toHaveBeenCalled();
+      });
+    });
+
+    it("valida que precio propio no sea vacío ni negativo y acepta 0 en formulario real", async () => {
+      render(
+        <ProductVariantsModal
+          isOpen={true}
+          onClose={vi.fn()}
+          product={mockProduct}
+          onSuccess={vi.fn()}
+        />,
+      );
+
+      // Cambiar modo a "own"
+      const priceModeSelect = screen.getByLabelText("Modo de precio para variante Negro");
+      fireEvent.change(priceModeSelect, { target: { value: "own" } });
+
+      // Vaciar precio propio
+      const ownPriceInput = screen.getByLabelText("Precio propio para variante Negro");
+      fireEvent.change(ownPriceInput, { target: { value: "" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+
+      // Alert role must show error
+      expect(await screen.findByRole("alert")).toHaveTextContent("Debe ingresar un precio propio válido para la variante.");
+      expect(rpcMock).not.toHaveBeenCalled();
+
+      // Poner negativo
+      fireEvent.change(ownPriceInput, { target: { value: "-50" } });
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("no puede ser menor a 0");
+      expect(rpcMock).not.toHaveBeenCalled();
+
+      // Poner 0 (válido)
+      rpcMock.mockResolvedValueOnce({
+        data: {
+          product_id: mockProduct.id,
+          variants: [{ id: "80000000-0000-0000-0000-000000000008", code: "NEG", name: "Negro", is_active: true, barcode: "77912345", final_price_ars: 0 }],
+        },
+        error: null,
+      });
+
+      fireEvent.change(ownPriceInput, { target: { value: "0" } });
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("manage_product_variants", expect.objectContaining({
+          p_variants: [
+            expect.objectContaining({
+              final_price_mode: "own",
+              final_price_ars: 0,
+            }),
+          ],
+        }));
+      });
     });
   });
 });

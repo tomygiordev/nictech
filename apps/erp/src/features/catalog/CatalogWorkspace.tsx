@@ -129,7 +129,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           product_categories:product_categories!products_category_id_fkey(name),
           brands:brands!products_brand_id_fkey(name),
           product_models:product_models!products_model_id_fkey(name),
-          product_variants(id, code, name, price_delta, is_active, product_identifiers(id, kind, value, is_primary, is_active)),
+          product_variants(id, code, name, price_delta, final_price_ars, is_active, product_identifiers(id, kind, value, is_primary, is_active)),
           stock_balances(quantity_on_hand, quantity_reserved, variant_id, location_id)
         `,
           { count: "exact" },

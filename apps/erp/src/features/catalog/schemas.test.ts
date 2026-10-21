@@ -3,6 +3,7 @@ import {
   productCreateSchema,
   productUpdateSchema,
   stockIntakeSchema,
+  variantRowSchema,
   manageVariantItemSchema,
   manageProductVariantsSchema,
   setProductCompatibleModelsSchema,
@@ -15,6 +16,7 @@ import {
   getActiveBarcode,
   getActiveSku,
   getErrorMessage,
+  getVariantEffectivePrice,
   type DbStockBalance,
 } from "./schemas";
 
@@ -222,9 +224,65 @@ describe("Catalog Zod Schemas & Payloads", () => {
         code: "AZS",
         attributes: { color: "Azul Sierra" },
         price_delta: 0, // Strict invariant: variant price is inherited from parent!
+        final_price_mode: "inherit",
+        final_price_ars: null,
         barcode: "779999",
         sku: "SKU-AZS",
       });
+    });
+
+    it("supports variants with own final ARS price in create catalog payload", () => {
+      const input = productCreateSchema.parse({
+        internal_code: "FUNDA-IP13",
+        internal_name: "Funda Silicona iPhone 13",
+        base_sale_price: 9500,
+        has_variants: true,
+        variants: [
+          { name: "Negro", code: "NEG", price_mode: "inherit" },
+          { name: "Dorado Edición Especial", code: "DOR", price_mode: "own", final_price_ars: 14500.5 },
+        ],
+      });
+
+      const payload = buildCreateCatalogPayload(input);
+      expect(payload.p_variants).toHaveLength(2);
+      expect(payload.p_variants[0].final_price_mode).toBe("inherit");
+      expect(payload.p_variants[0].final_price_ars).toBeNull();
+      expect(payload.p_variants[1].final_price_mode).toBe("own");
+      expect(payload.p_variants[1].final_price_ars).toBe(14500.5);
+    });
+
+    it("rejects empty or negative own prices in variantRowSchema", () => {
+      const resNeg = variantRowSchema.safeParse({
+        name: "Negro",
+        code: "NEG",
+        price_mode: "own",
+        final_price_ars: -100,
+      });
+      expect(resNeg.success).toBe(false);
+
+      const resEmpty = variantRowSchema.safeParse({
+        name: "Negro",
+        code: "NEG",
+        price_mode: "own",
+        final_price_ars: "",
+      });
+      expect(resEmpty.success).toBe(false);
+
+      const resNaN = variantRowSchema.safeParse({
+        name: "Negro",
+        code: "NEG",
+        price_mode: "own",
+        final_price_ars: "abc",
+      });
+      expect(resNaN.success).toBe(false);
+
+      const resZero = variantRowSchema.safeParse({
+        name: "Negro",
+        code: "NEG",
+        price_mode: "own",
+        final_price_ars: 0,
+      });
+      expect(resZero.success).toBe(true);
     });
   });
 
@@ -599,6 +657,173 @@ describe("Catalog Zod Schemas & Payloads", () => {
         { kind: "barcode", value: "7790000099", is_active: true },
       ];
       expect(getActiveBarcode(identifiers)).toBe("7790000099");
+    });
+  });
+
+  describe("manageVariantItemSchema & own final price", () => {
+    it("validates own final price and inherit modes in manageVariantItemSchema", () => {
+      const ownItem = manageVariantItemSchema.parse({
+        name: "Negro Mate",
+        code: "NEG",
+        price_mode: "own",
+        final_price_ars: 18500,
+        is_active: true,
+      });
+      expect(ownItem.price_mode).toBe("own");
+      expect(ownItem.final_price_ars).toBe(18500);
+
+      const inheritItem = manageVariantItemSchema.parse({
+        name: "Negro Mate",
+        code: "NEG",
+        price_mode: "inherit",
+        final_price_ars: null,
+        is_active: true,
+      });
+      expect(inheritItem.price_mode).toBe("inherit");
+      expect(inheritItem.final_price_ars).toBeNull();
+    });
+
+    it("allows omission of price fields to support legacy clients and preserve override without emitting keys", () => {
+      const legacyItem = manageVariantItemSchema.parse({
+        id: "80000000-0000-0000-0000-000000000008",
+        name: "Negro Mate",
+        code: "NEG",
+        is_active: true,
+      });
+      expect(legacyItem.price_mode).toBeUndefined();
+      expect(legacyItem.final_price_ars).toBeUndefined();
+
+      const payload = buildManageVariantsPayload({
+        productId: "90000000-0000-0000-0000-000000000009",
+        variants: [legacyItem],
+      });
+      expect(payload.p_variants[0]).not.toHaveProperty("final_price_mode");
+      expect(payload.p_variants[0]).not.toHaveProperty("final_price_ars");
+
+      // Verify JSON serialization omits BOTH keys completely
+      const serialized = JSON.parse(JSON.stringify(payload.p_variants[0]));
+      expect(serialized).not.toHaveProperty("final_price_mode");
+      expect(serialized).not.toHaveProperty("final_price_ars");
+    });
+
+    it("explicit null final_price_ars preserves inherit semantics and includes key in payload", () => {
+      const explicitNullItem = manageVariantItemSchema.parse({
+        id: "80000000-0000-0000-0000-000000000008",
+        name: "Negro Mate",
+        code: "NEG",
+        is_active: true,
+        final_price_ars: null,
+      });
+      expect(explicitNullItem.price_mode).toBeUndefined();
+      expect(explicitNullItem.final_price_ars).toBeNull();
+
+      const payload = buildManageVariantsPayload({
+        productId: "90000000-0000-0000-0000-000000000009",
+        variants: [explicitNullItem],
+      });
+      expect(payload.p_variants[0]).not.toHaveProperty("final_price_mode");
+      expect(payload.p_variants[0]).toHaveProperty("final_price_ars", null);
+
+      const serialized = JSON.parse(JSON.stringify(payload.p_variants[0]));
+      expect(serialized).not.toHaveProperty("final_price_mode");
+      expect(serialized).toHaveProperty("final_price_ars", null);
+    });
+
+    it("allows 0 as a valid own price (e.g. sample or free variant promo)", () => {
+      const zeroItem = manageVariantItemSchema.parse({
+        name: "Muestra",
+        code: "MUE",
+        price_mode: "own",
+        final_price_ars: 0,
+        is_active: true,
+      });
+      expect(zeroItem.price_mode).toBe("own");
+      expect(zeroItem.final_price_ars).toBe(0);
+
+      const payload = buildManageVariantsPayload({
+        productId: "90000000-0000-0000-0000-000000000009",
+        variants: [zeroItem],
+      });
+      expect(payload.p_variants[0]).toHaveProperty("final_price_mode", "own");
+      expect(payload.p_variants[0]).toHaveProperty("final_price_ars", 0);
+    });
+
+    it("rejects invalid, negative or NaN own prices", () => {
+      const resNeg = manageVariantItemSchema.safeParse({
+        name: "Negro",
+        code: "NEG",
+        price_mode: "own",
+        final_price_ars: -50,
+      });
+      expect(resNeg.success).toBe(false);
+
+      const resNaN = manageVariantItemSchema.safeParse({
+        name: "Negro",
+        code: "NEG",
+        price_mode: "own",
+        final_price_ars: "not-a-number",
+      });
+      expect(resNaN.success).toBe(false);
+
+      const resEmpty = manageVariantItemSchema.safeParse({
+        name: "Negro",
+        code: "NEG",
+        price_mode: "own",
+        final_price_ars: null,
+      });
+      expect(resEmpty.success).toBe(false);
+    });
+  });
+
+  describe("getVariantEffectivePrice helper", () => {
+    it("returns own final price override when final_price_ars is set", () => {
+      const res = getVariantEffectivePrice(10000, {
+        final_price_ars: 15500,
+        price_delta: 0,
+      });
+      expect(res.price).toBe(15500);
+      expect(res.isOverride).toBe(true);
+      expect(res.hasLegacyDelta).toBe(false);
+    });
+
+    it("override wins over legacy price_delta without subtracting from parent", () => {
+      const res = getVariantEffectivePrice(10000, {
+        final_price_ars: 17000,
+        price_delta: 2500, // Legacy delta ignored because override is explicit!
+      });
+      expect(res.price).toBe(17000);
+      expect(res.isOverride).toBe(true);
+      expect(res.hasLegacyDelta).toBe(false);
+    });
+
+    it("inherits parent price when final_price_ars is null and no delta", () => {
+      const res = getVariantEffectivePrice(10000, {
+        final_price_ars: null,
+        price_delta: 0,
+      });
+      expect(res.price).toBe(10000);
+      expect(res.isOverride).toBe(false);
+      expect(res.hasLegacyDelta).toBe(false);
+    });
+
+    it("preserves legacy delta when final_price_ars is null and price_delta is non-zero", () => {
+      const res = getVariantEffectivePrice(10000, {
+        final_price_ars: null,
+        price_delta: 3000,
+      });
+      expect(res.price).toBe(13000);
+      expect(res.isOverride).toBe(false);
+      expect(res.hasLegacyDelta).toBe(true);
+    });
+
+    it("handles null or undefined variant gracefully", () => {
+      const resNull = getVariantEffectivePrice(10000, null);
+      expect(resNull.price).toBe(10000);
+      expect(resNull.isOverride).toBe(false);
+
+      const resUndef = getVariantEffectivePrice(10000, undefined);
+      expect(resUndef.price).toBe(10000);
+      expect(resUndef.isOverride).toBe(false);
     });
   });
 });
