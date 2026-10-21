@@ -35,6 +35,53 @@ type ErpDatabase = Omit<Database, "erp"> & {
           target_repair_order_id: string | null;
         };
       };
+      set_product_compatible_models: {
+        Args: {
+          p_product_id: string;
+          p_model_ids: string[];
+          p_expected_updated_at?: string | null;
+        };
+        Returns: {
+          product_id: string;
+          compatible_model_ids: string[];
+        };
+      };
+      get_product_compatible_models: {
+        Args: {
+          p_product_id: string;
+        };
+        Returns: Array<{
+          id: string;
+          model_id: string;
+          model_code: string;
+          model_name: string;
+          brand_id: string | null;
+          brand_name: string | null;
+        }>;
+      };
+      manage_product_variants: {
+        Args: {
+          p_product_id: string;
+          p_variants: Array<{
+            id?: string | null;
+            name: string;
+            code: string;
+            barcode?: string | null;
+            is_active?: boolean;
+          }>;
+          p_expected_updated_at?: string | null;
+        };
+        Returns: {
+          product_id: string;
+          variants: Array<{
+            id: string;
+            code: string;
+            name: string;
+            is_active: boolean;
+            barcode: string | null;
+          }>;
+        };
+      };
     };
   };
 };

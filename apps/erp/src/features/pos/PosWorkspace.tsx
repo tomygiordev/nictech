@@ -95,7 +95,7 @@ interface RawProductData {
     name: string;
     price_delta: number | null;
     is_active: boolean;
-    product_identifiers?: Array<{ kind: string; value: string }>;
+    product_identifiers?: Array<{ kind: string; value: string; is_active?: boolean }>;
   }> | null;
   stock_balances?: Array<{
     location_id: string;
@@ -248,7 +248,7 @@ export const PosWorkspace: React.FC = () => {
             tax_rate_percent,
             inventory_tracking,
             product_categories:product_categories!products_category_organization_fk(name),
-            product_variants(id, code, name, price_delta, is_active, product_identifiers(kind, value)),
+            product_variants(id, code, name, price_delta, is_active, product_identifiers(kind, value, is_active)),
             stock_balances(location_id, quantity_on_hand, quantity_reserved, variant_id)
           `)
           .eq("organization_id", organizationId)
@@ -327,6 +327,7 @@ export const PosWorkspace: React.FC = () => {
                 0,
               );
           const barcodes = (v.product_identifiers || [])
+            .filter((pi) => pi.kind === "barcode" && pi.is_active !== false)
             .map((pi) => pi.value)
             .filter(Boolean);
 

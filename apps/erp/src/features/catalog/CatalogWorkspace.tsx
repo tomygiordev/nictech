@@ -31,12 +31,15 @@ import {
   type MasterModel,
   type MasterLocation,
   calculateStockSummary,
+  getActiveBarcode,
   getErrorMessage,
 } from "./schemas";
 import { CreateProductModal } from "./CreateProductModal";
 import { ProductEditModal } from "./ProductEditModal";
 import { StockIntakeModal } from "./StockIntakeModal";
 import { ProductDetailModal } from "./ProductDetailModal";
+import { ProductCompatibilityModal } from "./ProductCompatibilityModal";
+import { ProductVariantsModal } from "./ProductVariantsModal";
 
 export interface CatalogWorkspaceProps {
   activeModuleId?: "catalog" | "pricing";
@@ -69,6 +72,8 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
   const [detailProduct, setDetailProduct] = useState<DbCatalogProduct | null>(null);
   const [editingProduct, setEditingProduct] = useState<DbCatalogProduct | null>(null);
+  const [compatibilityProduct, setCompatibilityProduct] = useState<DbCatalogProduct | null>(null);
+  const [variantsProduct, setVariantsProduct] = useState<DbCatalogProduct | null>(null);
   const [stockIntakeTarget, setStockIntakeTarget] = useState<{
     product: DbCatalogProduct;
     variantId?: string | null;
@@ -119,12 +124,12 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
         .select(
           `
           id, internal_code, internal_name, public_name, base_sale_price,
-          tax_rate_percent, is_active, item_kind, inventory_tracking, created_at,
+          tax_rate_percent, is_active, item_kind, inventory_tracking, created_at, updated_at,
           category_id, brand_id, model_id,
           product_categories:product_categories!products_category_id_fkey(name),
           brands:brands!products_brand_id_fkey(name),
           product_models:product_models!products_model_id_fkey(name),
-          product_variants(id, code, name, price_delta, is_active, product_identifiers(kind, value)),
+          product_variants(id, code, name, price_delta, is_active, product_identifiers(id, kind, value, is_primary, is_active)),
           stock_balances(quantity_on_hand, quantity_reserved, variant_id, location_id)
         `,
           { count: "exact" },
@@ -409,7 +414,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
                             {variants.map((v) => {
                               const vSummary = calculateStockSummary(item.stock_balances, v.id);
-                              const barcode = v.product_identifiers?.find((pi) => pi.kind === "barcode")?.value;
+                              const barcode = getActiveBarcode(v.product_identifiers);
 
                               return (
                                 <span
@@ -604,6 +609,44 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
             const current = detailProduct;
             setDetailProduct(null);
             setStockIntakeTarget({ product: current, variantId });
+          }}
+          onOpenCompatibility={() => {
+            const current = detailProduct;
+            setDetailProduct(null);
+            setCompatibilityProduct(current);
+          }}
+          onOpenManageVariants={() => {
+            const current = detailProduct;
+            setDetailProduct(null);
+            setVariantsProduct(current);
+          }}
+        />
+      )}
+
+      {/* Modal: N:M Compatibility Management */}
+      {compatibilityProduct && (
+        <ProductCompatibilityModal
+          isOpen={Boolean(compatibilityProduct)}
+          onClose={() => setCompatibilityProduct(null)}
+          product={compatibilityProduct}
+          brands={brands}
+          models={models}
+          onSuccess={(msg) => {
+            setFeedback({ type: "success", message: msg });
+            fetchProducts();
+          }}
+        />
+      )}
+
+      {/* Modal: Product Variants & States Management */}
+      {variantsProduct && (
+        <ProductVariantsModal
+          isOpen={Boolean(variantsProduct)}
+          onClose={() => setVariantsProduct(null)}
+          product={variantsProduct}
+          onSuccess={(msg) => {
+            setFeedback({ type: "success", message: msg });
+            fetchProducts();
           }}
         />
       )}

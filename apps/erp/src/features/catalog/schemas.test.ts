@@ -3,10 +3,17 @@ import {
   productCreateSchema,
   productUpdateSchema,
   stockIntakeSchema,
+  manageVariantItemSchema,
+  manageProductVariantsSchema,
+  setProductCompatibleModelsSchema,
   buildCreateCatalogPayload,
   buildStockIntakePayload,
+  buildManageVariantsPayload,
+  buildSetProductCompatibleModelsPayload,
   calculateStockSummary,
   calculateFiscalBreakdown,
+  getActiveBarcode,
+  getActiveSku,
   getErrorMessage,
   type DbStockBalance,
 } from "./schemas";
@@ -431,6 +438,167 @@ describe("Catalog Zod Schemas & Payloads", () => {
     it("uses fallback when error is empty or undefined", () => {
       expect(getErrorMessage(null, "Default fallback")).toBe("Default fallback");
       expect(getErrorMessage({}, "Default fallback")).toBe("Default fallback");
+    });
+  });
+
+  describe("manageProductVariantsSchema & Payloads", () => {
+    it("validates editing existing and adding new variants with normalized codes", () => {
+      const input = {
+        productId: "90000000-0000-0000-0000-000000000009",
+        expectedUpdatedAt: "2026-10-20T20:00:00Z",
+        variants: [
+          {
+            id: "80000000-0000-0000-0000-000000000008",
+            name: "Negro Mate",
+            code: "neg",
+            barcode: "77912345",
+            is_active: true,
+          },
+          {
+            id: null,
+            name: "Azul Medianoche",
+            code: "azu",
+            barcode: "77912346",
+            is_active: true,
+          },
+        ],
+      };
+
+      const parsed = manageProductVariantsSchema.parse(input);
+      expect(parsed.variants).toHaveLength(2);
+      expect(parsed.variants[0].code).toBe("NEG");
+      expect(parsed.variants[1].code).toBe("AZU");
+      expect(parsed.variants[0].is_active).toBe(true);
+
+      const payload = buildManageVariantsPayload(parsed);
+      expect(payload.p_product_id).toBe("90000000-0000-0000-0000-000000000009");
+      expect(payload.p_expected_updated_at).toBe("2026-10-20T20:00:00Z");
+      expect(payload.p_variants[0].id).toBe("80000000-0000-0000-0000-000000000008");
+      expect(payload.p_variants[1].id).toBeNull();
+    });
+
+    it("rejects duplicate variant codes within payload", () => {
+      const input = {
+        productId: "90000000-0000-0000-0000-000000000009",
+        variants: [
+          { name: "Negro", code: "NEG", is_active: true },
+          { name: "Negro Brillante", code: "neg", is_active: true },
+        ],
+      };
+
+      const res = manageProductVariantsSchema.safeParse(input);
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error.issues[0]?.message).toContain("Código de variante duplicado");
+      }
+    });
+
+    it("rejects duplicate non-empty barcodes within payload", () => {
+      const input = {
+        productId: "90000000-0000-0000-0000-000000000009",
+        variants: [
+          { name: "Negro", code: "NEG", barcode: "779001", is_active: true },
+          { name: "Rojo", code: "ROJ", barcode: " 779001 ", is_active: true },
+        ],
+      };
+
+      const res = manageProductVariantsSchema.safeParse(input);
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error.issues[0]?.message).toContain("Código de barras duplicado");
+      }
+    });
+
+    it("supports pausing existing variants (is_active = false) without hard delete", () => {
+      const input = {
+        productId: "90000000-0000-0000-0000-000000000009",
+        variants: [
+          {
+            id: "80000000-0000-0000-0000-000000000008",
+            name: "Negro",
+            code: "NEG",
+            is_active: false,
+          },
+        ],
+      };
+
+      const parsed = manageProductVariantsSchema.parse(input);
+      expect(parsed.variants[0].is_active).toBe(false);
+    });
+  });
+
+  describe("setProductCompatibleModelsSchema & Payloads", () => {
+    it("validates product ID and deduplicates model IDs, passing expectedUpdatedAt", () => {
+      const input = {
+        productId: "90000000-0000-0000-0000-000000000009",
+        expectedUpdatedAt: "2026-10-20T12:00:00Z",
+        modelIds: [
+          "30000000-0000-0000-0000-000000000001",
+          "30000000-0000-0000-0000-000000000002",
+          "30000000-0000-0000-0000-000000000001", // duplicate
+        ],
+      };
+
+      const parsed = setProductCompatibleModelsSchema.parse(input);
+      expect(parsed.modelIds).toHaveLength(3);
+      expect(parsed.expectedUpdatedAt).toBe("2026-10-20T12:00:00Z");
+
+      const payload = buildSetProductCompatibleModelsPayload(parsed);
+      expect(payload.p_product_id).toBe("90000000-0000-0000-0000-000000000009");
+      expect(payload.p_expected_updated_at).toBe("2026-10-20T12:00:00Z");
+      expect(payload.p_model_ids).toHaveLength(2);
+      expect(payload.p_model_ids).toEqual([
+        "30000000-0000-0000-0000-000000000001",
+        "30000000-0000-0000-0000-000000000002",
+      ]);
+    });
+
+    it("rejects invalid UUIDs for product or models", () => {
+      const invalidProduct = setProductCompatibleModelsSchema.safeParse({
+        productId: "not-a-uuid",
+        modelIds: ["30000000-0000-0000-0000-000000000001"],
+      });
+      expect(invalidProduct.success).toBe(false);
+
+      const invalidModel = setProductCompatibleModelsSchema.safeParse({
+        productId: "90000000-0000-0000-0000-000000000009",
+        modelIds: ["not-a-uuid"],
+      });
+      expect(invalidModel.success).toBe(false);
+    });
+  });
+
+  describe("getActiveBarcode & getActiveSku identifier helpers", () => {
+    it("returns empty string when identifiers are missing or empty", () => {
+      expect(getActiveBarcode(undefined)).toBe("");
+      expect(getActiveBarcode([])).toBe("");
+      expect(getActiveSku(undefined)).toBe("");
+      expect(getActiveSku([])).toBe("");
+    });
+
+    it("ignores deactivated barcodes and does not revive deleted barcodes", () => {
+      const identifiers = [
+        { kind: "barcode", value: "7790000001", is_active: false, is_primary: true },
+        { kind: "barcode", value: "7790000002", is_active: false, is_primary: false },
+      ];
+      expect(getActiveBarcode(identifiers)).toBe("");
+    });
+
+    it("returns active primary barcode when available", () => {
+      const identifiers = [
+        { kind: "barcode", value: "7790000001", is_active: false, is_primary: false },
+        { kind: "barcode", value: "7790000002", is_active: true, is_primary: true },
+        { kind: "internal", value: "SKU-TEST-01", is_active: true, is_primary: true },
+      ];
+      expect(getActiveBarcode(identifiers)).toBe("7790000002");
+      expect(getActiveSku(identifiers)).toBe("SKU-TEST-01");
+    });
+
+    it("falls back to active barcode when is_primary is not set", () => {
+      const identifiers = [
+        { kind: "barcode", value: "7790000099", is_active: true },
+      ];
+      expect(getActiveBarcode(identifiers)).toBe("7790000099");
     });
   });
 });

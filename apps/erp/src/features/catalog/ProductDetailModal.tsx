@@ -1,17 +1,23 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   Boxes,
   Edit2,
   ArrowDownRight,
   Barcode,
   Layers,
+  Smartphone,
+  Plus,
 } from "lucide-react";
 import { Modal } from "../../components/erp/WorkspaceUi";
 import { formatCurrency } from "../../lib/formatters";
+import { supabase } from "../../lib/supabase";
 import {
   type DbCatalogProduct,
+  type DbProductCompatibleModel,
   calculateStockSummary,
   calculateFiscalBreakdown,
+  getActiveBarcode,
+  getActiveSku,
 } from "./schemas";
 
 export interface ProductDetailModalProps {
@@ -20,6 +26,8 @@ export interface ProductDetailModalProps {
   product: DbCatalogProduct | null;
   onOpenEdit: () => void;
   onOpenStockIntake: (variantId?: string | null) => void;
+  onOpenCompatibility?: () => void;
+  onOpenManageVariants?: () => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -28,7 +36,54 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   product,
   onOpenEdit,
   onOpenStockIntake,
+  onOpenCompatibility,
+  onOpenManageVariants,
 }) => {
+  const [compatibleModels, setCompatibleModels] = useState<DbProductCompatibleModel[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  useEffect(() => {
+    if (product && isOpen) {
+      if (product.product_compatible_models && product.product_compatible_models.length > 0) {
+        setCompatibleModels(product.product_compatible_models);
+      } else {
+        let isMounted = true;
+        setLoadingModels(true);
+        (async () => {
+          try {
+            const { data, error } = await supabase.rpc("get_product_compatible_models", {
+              p_product_id: product.id,
+            });
+            if (!isMounted) return;
+            if (!error && data) {
+              setCompatibleModels(
+                data.map((item) => ({
+                  id: item.id,
+                  model_id: item.model_id,
+                  product_models: {
+                    id: item.model_id,
+                    code: item.model_code,
+                    name: item.model_name,
+                    brand_id: item.brand_id || "",
+                    brands: item.brand_name ? { id: item.brand_id || "", name: item.brand_name } : null,
+                  },
+                })),
+              );
+            }
+          } catch {
+            // Graceful non-blocking fallback
+          } finally {
+            if (isMounted) setLoadingModels(false);
+          }
+        })();
+
+        return () => {
+          isMounted = false;
+        };
+      }
+    }
+  }, [product, isOpen]);
+
   if (!product) return null;
 
   const variants = product.product_variants || [];
@@ -92,9 +147,39 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
             {(product.brands?.name || product.product_models?.name) && (
               <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>
-                Compatibilidad: <strong>{product.brands?.name}</strong> {product.product_models?.name ? `• ${product.product_models.name}` : ""}
+                Modelo maestro: <strong>{product.brands?.name}</strong> {product.product_models?.name ? `• ${product.product_models.name}` : ""}
               </p>
             )}
+
+            <div style={{ marginTop: "6px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-main)" }}>
+                Compatibilidad N:M:
+              </span>
+              {loadingModels ? (
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>cargando...</span>
+              ) : compatibleModels.length > 0 ? (
+                <>
+                  {compatibleModels.slice(0, 5).map((cm, idx) => {
+                    const mName = cm.product_models?.name || "Modelo";
+                    const bName = cm.product_models?.brands?.name || "";
+                    return (
+                      <span key={cm.id || idx} className="module-state-badge" style={{ fontSize: "10px", padding: "1px 6px" }}>
+                        {bName ? `${bName} ${mName}` : mName}
+                      </span>
+                    );
+                  })}
+                  {compatibleModels.length > 5 && (
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                      +{compatibleModels.length - 5} más
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                  Solo modelo maestro (sin compatibilidades accesorias registradas)
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Price Box */}
@@ -185,11 +270,24 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   Variantes de Color & Existencias ({variants.length})
                 </h4>
               </div>
-              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                {hasAnyLegacyDelta
-                  ? "Variantes con precios y deltas legacy registrados"
-                  : `Heredan el precio padre (${formatCurrency(product.base_sale_price || 0, "ARS")})`}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  type="button"
+                  className="pag-btn"
+                  style={{ padding: "4px 8px", fontSize: "11px" }}
+                  onClick={() => {
+                    onClose();
+                    onOpenManageVariants?.();
+                  }}
+                >
+                  <Layers size={12} /> Gestionar Variantes
+                </button>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                  {hasAnyLegacyDelta
+                    ? "Variantes con precios y deltas legacy registrados"
+                    : `Heredan el precio padre (${formatCurrency(product.base_sale_price || 0, "ARS")})`}
+                </span>
+              </div>
             </div>
 
             <div className="flow-table-wrapper" style={{ maxHeight: "220px", overflowY: "auto" }}>
@@ -207,17 +305,24 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <tbody>
                   {variants.map((v) => {
                     const vSummary = calculateStockSummary(product.stock_balances, v.id);
-                    const barcode = v.product_identifiers?.find((pi) => pi.kind === "barcode")?.value;
-                    const sku = v.product_identifiers?.find((pi) => pi.kind === "internal")?.value;
+                    const barcode = getActiveBarcode(v.product_identifiers);
+                    const sku = getActiveSku(v.product_identifiers);
                     const hasLegacyDelta = typeof v.price_delta === "number" && v.price_delta !== 0;
                     const effectivePrice = (product.base_sale_price || 0) + (v.price_delta || 0);
 
                     return (
                       <tr key={v.id}>
                         <td>
-                          <strong style={{ fontSize: "13px", color: "var(--text-main)" }}>
-                            {v.name}
-                          </strong>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <strong style={{ fontSize: "13px", color: "var(--text-main)" }}>
+                              {v.name}
+                            </strong>
+                            {v.is_active === false && (
+                              <span className="flow-status-pill pending" style={{ fontSize: "10px", padding: "1px 5px" }}>
+                                Pausada
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td>
                           <span style={{ fontFamily: "monospace", fontSize: "12px", opacity: 0.85 }}>
@@ -290,9 +395,24 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               textAlign: "center",
               fontSize: "13px",
               color: "var(--text-muted)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "8px",
             }}
           >
-            Este artículo no posee variantes activas. Todo el stock se administra a nivel de producto estándar.
+            <span>Este artículo no posee variantes activas. Todo el stock se administra a nivel de producto estándar.</span>
+            <button
+              type="button"
+              className="pag-btn"
+              style={{ fontSize: "12px", padding: "4px 10px" }}
+              onClick={() => {
+                onClose();
+                onOpenManageVariants?.();
+              }}
+            >
+              <Plus size={12} /> Configurar Variantes de Color
+            </button>
           </div>
         )}
 
@@ -311,6 +431,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           </button>
 
           <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              className="pag-btn"
+              onClick={() => {
+                onClose();
+                onOpenCompatibility?.();
+              }}
+            >
+              <Smartphone size={14} /> Modelos Compatibles
+            </button>
             <button
               type="button"
               className="pag-btn"

@@ -1,8 +1,38 @@
 import { z } from "zod";
 
 export interface DbVariantIdentifier {
+  id?: string;
   kind: string;
   value: string;
+  is_primary?: boolean;
+  is_active?: boolean;
+}
+
+/**
+ * Returns the active primary barcode (or first active barcode) from variant identifiers.
+ * If no active barcode exists, returns empty string.
+ */
+export function getActiveBarcode(identifiers?: DbVariantIdentifier[]): string {
+  if (!identifiers || identifiers.length === 0) return "";
+  const activeBarcodes = identifiers.filter(
+    (pi) => pi.kind === "barcode" && pi.is_active !== false,
+  );
+  if (activeBarcodes.length === 0) return "";
+  const primary = activeBarcodes.find((pi) => pi.is_primary);
+  return (primary || activeBarcodes[0]).value;
+}
+
+/**
+ * Returns the active primary SKU (or first active internal code) from variant identifiers.
+ */
+export function getActiveSku(identifiers?: DbVariantIdentifier[]): string {
+  if (!identifiers || identifiers.length === 0) return "";
+  const activeSkus = identifiers.filter(
+    (pi) => pi.kind === "internal" && pi.is_active !== false,
+  );
+  if (activeSkus.length === 0) return "";
+  const primary = activeSkus.find((pi) => pi.is_primary);
+  return (primary || activeSkus[0]).value;
 }
 
 export interface DbProductVariant {
@@ -23,6 +53,18 @@ export interface DbStockBalance {
   locations?: { name: string; branch_id: string } | null;
 }
 
+export interface DbProductCompatibleModel {
+  id?: string;
+  model_id: string;
+  product_models?: {
+    id: string;
+    code: string;
+    name: string;
+    brand_id: string;
+    brands?: { id: string; name: string } | null;
+  } | null;
+}
+
 export interface DbCatalogProduct {
   id: string;
   internal_code: string;
@@ -35,6 +77,7 @@ export interface DbCatalogProduct {
   item_kind: string;
   inventory_tracking: string;
   created_at: string;
+  updated_at?: string;
   category_id?: string | null;
   brand_id?: string | null;
   model_id?: string | null;
@@ -43,6 +86,7 @@ export interface DbCatalogProduct {
   product_models?: { name: string } | null;
   product_variants?: DbProductVariant[];
   stock_balances?: DbStockBalance[];
+  product_compatible_models?: DbProductCompatibleModel[];
 }
 
 export interface MasterCategory {
@@ -421,6 +465,115 @@ export function calculateStockSummary(
   const available = Math.max(0, onHand - reserved);
 
   return { onHand, reserved, available };
+}
+
+/**
+ * Schema for managing a single variant (edit existing or add new).
+ * Validates names, codes, optional barcodes, and active/paused state.
+ */
+export const manageVariantItemSchema = z.object({
+  id: z.string().uuid("ID de variante inválido").optional().nullable(),
+  name: z.string().trim().min(1, "El color / nombre de la variante es obligatorio"),
+  code: z
+    .string()
+    .trim()
+    .min(1, "El código de la variante es obligatorio")
+    .max(30, "El código no debe superar 30 caracteres")
+    .transform((val) => val.toUpperCase()),
+  barcode: z
+    .string()
+    .trim()
+    .optional()
+    .nullable()
+    .transform((val) => (val && val.length > 0 ? val : null)),
+  is_active: z.boolean().default(true),
+});
+
+export type ManageVariantItemInput = z.infer<typeof manageVariantItemSchema>;
+
+/**
+ * Schema for transactional variant management RPC payload.
+ * Enforces unique normalized variant codes and unique non-empty barcodes.
+ */
+export const manageProductVariantsSchema = z
+  .object({
+    productId: z.string().uuid("ID de producto inválido"),
+    expectedUpdatedAt: z.string().nullable().optional(),
+    variants: z.array(manageVariantItemSchema),
+  })
+  .superRefine((data, ctx) => {
+    // Check duplicate normalized codes
+    const seenCodes = new Set<string>();
+    data.variants.forEach((v, idx) => {
+      const upperCode = v.code.toUpperCase();
+      if (seenCodes.has(upperCode)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["variants", idx, "code"],
+          message: `Código de variante duplicado: '${upperCode}'.`,
+        });
+      }
+      seenCodes.add(upperCode);
+    });
+
+    // Check duplicate non-empty barcodes
+    const seenBarcodes = new Set<string>();
+    data.variants.forEach((v, idx) => {
+      if (v.barcode) {
+        const normBarcode = v.barcode.replace(/\s+/g, "").toUpperCase();
+        if (seenBarcodes.has(normBarcode)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["variants", idx, "barcode"],
+            message: `Código de barras duplicado: '${v.barcode}'.`,
+          });
+        }
+        seenBarcodes.add(normBarcode);
+      }
+    });
+  });
+
+export type ManageProductVariantsInput = z.infer<typeof manageProductVariantsSchema>;
+
+/**
+ * Schema for setting N:M compatible models.
+ */
+export const setProductCompatibleModelsSchema = z.object({
+  productId: z.string().uuid("ID de producto inválido"),
+  expectedUpdatedAt: z.string().nullable().optional(),
+  modelIds: z.array(z.string().uuid("ID de modelo inválido")),
+});
+
+export type SetProductCompatibleModelsInput = z.infer<typeof setProductCompatibleModelsSchema>;
+
+/**
+ * Builds payload for erp.manage_product_variants RPC.
+ * Invariant: New variants inherit parent price (price_delta 0).
+ */
+export function buildManageVariantsPayload(data: ManageProductVariantsInput) {
+  return {
+    p_product_id: data.productId,
+    p_variants: data.variants.map((v) => ({
+      id: v.id || null,
+      name: v.name.trim(),
+      code: v.code.trim().toUpperCase(),
+      barcode: v.barcode ? v.barcode.trim() : null,
+      is_active: v.is_active ?? true,
+    })),
+    p_expected_updated_at: data.expectedUpdatedAt || null,
+  };
+}
+
+/**
+ * Builds payload for erp.set_product_compatible_models RPC.
+ */
+export function buildSetProductCompatibleModelsPayload(data: SetProductCompatibleModelsInput) {
+  const uniqueIds = Array.from(new Set(data.modelIds));
+  return {
+    p_product_id: data.productId,
+    p_model_ids: uniqueIds,
+    p_expected_updated_at: data.expectedUpdatedAt || null,
+  };
 }
 
 /**

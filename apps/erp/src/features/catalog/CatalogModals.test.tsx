@@ -5,6 +5,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { CreateProductModal } from "./CreateProductModal";
 import { ProductEditModal } from "./ProductEditModal";
 import { StockIntakeModal } from "./StockIntakeModal";
+import { ProductCompatibilityModal } from "./ProductCompatibilityModal";
+import { ProductVariantsModal } from "./ProductVariantsModal";
 import { type DbCatalogProduct, type MasterCategory, type MasterBrand, type MasterModel, type MasterLocation } from "./schemas";
 
 const { rpcMock, fromMock, updateMock, eqMock, selectMock, singleMock } = vi.hoisted(() => {
@@ -32,9 +34,11 @@ const mockCategories: MasterCategory[] = [
 ];
 const mockBrands: MasterBrand[] = [
   { id: "20000000-0000-0000-0000-000000000002", code: "APL", name: "Apple" },
+  { id: "20000000-0000-0000-0000-000000000009", code: "SAM", name: "Samsung" },
 ];
 const mockModels: MasterModel[] = [
   { id: "30000000-0000-0000-0000-000000000003", brand_id: "20000000-0000-0000-0000-000000000002", code: "IP13", name: "iPhone 13" },
+  { id: "30000000-0000-0000-0000-000000000004", brand_id: "20000000-0000-0000-0000-000000000009", code: "S22", name: "Galaxy S22" },
 ];
 const mockLocations: MasterLocation[] = [
   { id: "40000000-0000-0000-0000-000000000004", branch_id: "50000000-0000-0000-0000-000000000005", code: "DEP-CEN", name: "Depósito Central", allows_sale: true, is_active: true },
@@ -476,6 +480,444 @@ describe("Catalog Modals Component Behavior", () => {
       fireEvent.click(screen.getByRole("button", { name: /Cancelar \/ Descartar/i }));
       fireEvent.click(screen.getByRole("button", { name: "Descartar de Todas Formas" }));
       expect(onClose).toHaveBeenCalled();
+    });
+  });
+
+  describe("ProductCompatibilityModal", () => {
+    it("carga modelos compatibles existentes desde el servidor al abrir", async () => {
+      rpcMock.mockResolvedValueOnce({
+        data: [
+          {
+            id: "compat-1",
+            model_id: mockModels[0].id,
+            model_code: mockModels[0].code,
+            model_name: mockModels[0].name,
+            brand_id: mockBrands[0].id,
+            brand_name: mockBrands[0].name,
+          },
+        ],
+        error: null,
+      });
+
+      render(
+        <ProductCompatibilityModal
+          isOpen={true}
+          onClose={vi.fn()}
+          product={mockProduct}
+          brands={mockBrands}
+          models={mockModels}
+          onSuccess={vi.fn()}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("get_product_compatible_models", {
+          p_product_id: mockProduct.id,
+        });
+      });
+
+      expect(screen.getAllByText("iPhone 13").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByLabelText("Quitar iPhone 13")).toBeInTheDocument();
+      expect(screen.getByText(/Modelos Compatibles Seleccionados \(1\)/i)).toBeInTheDocument();
+    });
+
+    it("muestra estado de error con botón de reintentar si falla la carga inicial", async () => {
+      rpcMock.mockResolvedValueOnce({
+        data: null,
+        error: { message: "Error al consultar base de datos", code: "PGRST_ERR" },
+      });
+
+      render(
+        <ProductCompatibilityModal
+          isOpen={true}
+          onClose={vi.fn()}
+          product={mockProduct}
+          brands={mockBrands}
+          models={mockModels}
+          onSuccess={vi.fn()}
+        />,
+      );
+
+      await screen.findByRole("alert");
+      expect(screen.getByText(/Error al consultar base de datos/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Reintentar/i })).toBeInTheDocument();
+    });
+
+    it("permite seleccionar modelos y guarda vía set_product_compatible_models", async () => {
+      // 1. Initial get call
+      rpcMock.mockResolvedValueOnce({
+        data: [],
+        error: null,
+      });
+      // 2. Set call
+      rpcMock.mockResolvedValueOnce({
+        data: { product_id: mockProduct.id, compatible_model_ids: [mockModels[0].id] },
+        error: null,
+      });
+
+      const onSuccess = vi.fn();
+      const onClose = vi.fn();
+
+      render(
+        <ProductCompatibilityModal
+          isOpen={true}
+          onClose={onClose}
+          product={mockProduct}
+          brands={mockBrands}
+          models={mockModels}
+          onSuccess={onSuccess}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("get_product_compatible_models", {
+          p_product_id: mockProduct.id,
+        });
+      });
+
+      // Click on model to toggle selection
+      const modelItem = screen.getByText(mockModels[0].name);
+      fireEvent.click(modelItem);
+
+      expect(screen.getByText(/Modelos Compatibles Seleccionados \(1\)/i)).toBeInTheDocument();
+
+      // Submit
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Compatibilidades" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("set_product_compatible_models", {
+          p_product_id: mockProduct.id,
+          p_model_ids: [mockModels[0].id],
+          p_expected_updated_at: null,
+        });
+        expect(onSuccess).toHaveBeenCalled();
+        expect(onClose).toHaveBeenCalled();
+      });
+    });
+
+    it("maneja conflicto de concurrencia enviando snapshot real y ofreciendo recarga sin borrar selección", async () => {
+      const productWithTimestamp: DbCatalogProduct = {
+        ...mockProduct,
+        updated_at: "2026-10-20T15:30:00.000Z",
+      };
+
+      // 1. Initial load
+      rpcMock.mockResolvedValueOnce({
+        data: [],
+        error: null,
+      });
+      // 2. Set call fails with concurrency conflict
+      rpcMock.mockResolvedValueOnce({
+        data: null,
+        error: { message: "concurrency conflict: product was modified by another operation", code: "P0001" },
+      });
+      // 3. Reload after conflict
+      rpcMock.mockResolvedValueOnce({
+        data: [
+          {
+            id: "compat-server",
+            model_id: mockModels[1].id,
+            model_code: mockModels[1].code,
+            model_name: mockModels[1].name,
+            brand_id: mockBrands[0].id,
+            brand_name: mockBrands[0].name,
+          },
+        ],
+        error: null,
+      });
+
+      render(
+        <ProductCompatibilityModal
+          isOpen={true}
+          onClose={vi.fn()}
+          product={productWithTimestamp}
+          brands={mockBrands}
+          models={mockModels}
+          onSuccess={vi.fn()}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("get_product_compatible_models", {
+          p_product_id: productWithTimestamp.id,
+        });
+      });
+
+      // User selects model 0
+      fireEvent.click(screen.getByText(mockModels[0].name));
+      expect(screen.getByText(/Modelos Compatibles Seleccionados \(1\)/i)).toBeInTheDocument();
+
+      // Submit with optimistic concurrency timestamp
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Compatibilidades" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("set_product_compatible_models", {
+          p_product_id: productWithTimestamp.id,
+          p_model_ids: [mockModels[0].id],
+          p_expected_updated_at: "2026-10-20T15:30:00.000Z",
+        });
+      });
+
+      // Error banner is shown with reload button
+      expect(await screen.findByText(/concurrency conflict/i)).toBeInTheDocument();
+      // Selection MUST NOT be wiped on failure
+      expect(screen.getByText(/Modelos Compatibles Seleccionados \(1\)/i)).toBeInTheDocument();
+
+      // Click reload button
+      const reloadBtn = screen.getByRole("button", { name: /Recargar del servidor/i });
+      fireEvent.click(reloadBtn);
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledTimes(3);
+      });
+    });
+  });
+
+  describe("ProductVariantsModal", () => {
+    it("muestra variantes existentes, permite pausar y agregar una nueva variante", async () => {
+      rpcMock.mockResolvedValueOnce({
+        data: {
+          product_id: mockProduct.id,
+          variants: [
+            { id: mockProduct.product_variants![0].id, code: "NEG", name: "Negro", is_active: false, barcode: "77912345" },
+            { id: "new-var-id", code: "BLA", name: "Blanco", is_active: true, barcode: "77999999" },
+          ],
+        },
+        error: null,
+      });
+
+      const onSuccess = vi.fn();
+      const onClose = vi.fn();
+
+      render(
+        <ProductVariantsModal
+          isOpen={true}
+          onClose={onClose}
+          product={mockProduct}
+          onSuccess={onSuccess}
+        />,
+      );
+
+      // Verify existing variant is rendered
+      expect(screen.getByDisplayValue("Negro")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("NEG")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("77912345")).toBeInTheDocument();
+
+      // Toggle pause button
+      const pauseBtn = screen.getByRole("button", { name: /Pausar/i });
+      fireEvent.click(pauseBtn);
+      expect(screen.getByRole("button", { name: /Reactivar/i })).toBeInTheDocument();
+
+      // Add new variant
+      const colorInput = screen.getByPlaceholderText(/Color \(ej: Negro Mate\)/i);
+      const codeInput = screen.getByPlaceholderText(/Código \(ej: NEG\)/i);
+      const barcodeInput = screen.getByPlaceholderText(/Código de barras \(opcional\)/i);
+      const addBtn = screen.getByRole("button", { name: /Añadir/i });
+
+      fireEvent.change(colorInput, { target: { value: "Blanco" } });
+      fireEvent.change(codeInput, { target: { value: "bla" } });
+      fireEvent.change(barcodeInput, { target: { value: "77999999" } });
+      fireEvent.click(addBtn);
+
+      expect(screen.getByDisplayValue("Blanco")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("BLA")).toBeInTheDocument();
+
+      // Submit
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("manage_product_variants", {
+          p_product_id: mockProduct.id,
+          p_expected_updated_at: null,
+          p_variants: [
+            {
+              id: mockProduct.product_variants![0].id,
+              name: "Negro",
+              code: "NEG",
+              barcode: "77912345",
+              is_active: false,
+            },
+            {
+              id: null,
+              name: "Blanco",
+              code: "BLA",
+              barcode: "77999999",
+              is_active: true,
+            },
+          ],
+        });
+        expect(onSuccess).toHaveBeenCalled();
+        expect(onClose).toHaveBeenCalled();
+      });
+    });
+
+    it("rechaza agregar variantes con códigos duplicados en el cliente", () => {
+      render(
+        <ProductVariantsModal
+          isOpen={true}
+          onClose={vi.fn()}
+          product={mockProduct}
+          onSuccess={vi.fn()}
+        />,
+      );
+
+      const colorInput = screen.getByPlaceholderText(/Color \(ej: Negro Mate\)/i);
+      const codeInput = screen.getByPlaceholderText(/Código \(ej: NEG\)/i);
+      const addBtn = screen.getByRole("button", { name: /Añadir/i });
+
+      // Attempt to add duplicate code NEG
+      fireEvent.change(colorInput, { target: { value: "Negro Nuevo" } });
+      fireEvent.change(codeInput, { target: { value: "neg" } });
+      fireEvent.click(addBtn);
+
+      expect(screen.getByText(/El código 'NEG' ya se encuentra asignado en la lista/i)).toBeInTheDocument();
+      expect(rpcMock).not.toHaveBeenCalled();
+    });
+
+    it("clear -> reabrir -> guardar sigue sin barcode y no revive barcode borrado", async () => {
+      // Product where variant had its barcode cleared/deactivated previously
+      const productWithDeactivatedBarcode: DbCatalogProduct = {
+        ...mockProduct,
+        product_variants: [
+          {
+            id: "80000000-0000-0000-0000-000000000008",
+            code: "NEG",
+            name: "Negro",
+            price_delta: 0,
+            is_active: true,
+            product_identifiers: [
+              {
+                id: "70000000-0000-0000-0000-000000000007",
+                kind: "barcode",
+                value: "77912345",
+                is_active: false,
+                is_primary: false,
+              },
+            ],
+          },
+        ],
+      };
+
+      rpcMock.mockResolvedValueOnce({
+        data: {
+          product_id: productWithDeactivatedBarcode.id,
+          variants: [
+            { id: "80000000-0000-0000-0000-000000000008", code: "NEG", name: "Negro", is_active: true, barcode: null },
+          ],
+        },
+        error: null,
+      });
+
+      const onSuccess = vi.fn();
+      const onClose = vi.fn();
+
+      render(
+        <ProductVariantsModal
+          isOpen={true}
+          onClose={onClose}
+          product={productWithDeactivatedBarcode}
+          onSuccess={onSuccess}
+        />,
+      );
+
+      // Verify the input is empty (not showing the deactivated barcode 77912345)
+      expect(screen.queryByDisplayValue("77912345")).not.toBeInTheDocument();
+
+      // Submit without adding a barcode
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("manage_product_variants", {
+          p_product_id: productWithDeactivatedBarcode.id,
+          p_expected_updated_at: null,
+          p_variants: [
+            {
+              id: "80000000-0000-0000-0000-000000000008",
+              name: "Negro",
+              code: "NEG",
+              barcode: null,
+              is_active: true,
+            },
+          ],
+        });
+        expect(onSuccess).toHaveBeenCalled();
+        expect(onClose).toHaveBeenCalled();
+      });
+    });
+
+    it("permite cambiar barcode y envía nuevo valor preservando la variante", async () => {
+      rpcMock.mockResolvedValueOnce({
+        data: {
+          product_id: mockProduct.id,
+          variants: [
+            { id: mockProduct.product_variants![0].id, code: "NEG", name: "Negro", is_active: true, barcode: "77988888" },
+          ],
+        },
+        error: null,
+      });
+
+      const onSuccess = vi.fn();
+      const onClose = vi.fn();
+
+      render(
+        <ProductVariantsModal
+          isOpen={true}
+          onClose={onClose}
+          product={mockProduct}
+          onSuccess={onSuccess}
+        />,
+      );
+
+      const barcodeInput = screen.getByDisplayValue("77912345");
+      fireEvent.change(barcodeInput, { target: { value: "77988888" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+
+      await waitFor(() => {
+        expect(rpcMock).toHaveBeenCalledWith("manage_product_variants", {
+          p_product_id: mockProduct.id,
+          p_expected_updated_at: null,
+          p_variants: [
+            {
+              id: mockProduct.product_variants![0].id,
+              name: "Negro",
+              code: "NEG",
+              barcode: "77988888",
+              is_active: true,
+            },
+          ],
+        });
+        expect(onSuccess).toHaveBeenCalled();
+        expect(onClose).toHaveBeenCalled();
+      });
+    });
+
+    it("maneja error de conflicto global de barcode del servidor mostrando mensaje sin perder edición", async () => {
+      rpcMock.mockResolvedValueOnce({
+        data: null,
+        error: { message: "barcode 77999999 is already assigned to another catalog item", code: "23505" },
+      });
+
+      render(
+        <ProductVariantsModal
+          isOpen={true}
+          onClose={vi.fn()}
+          product={mockProduct}
+          onSuccess={vi.fn()}
+        />,
+      );
+
+      const barcodeInput = screen.getByDisplayValue("77912345");
+      fireEvent.change(barcodeInput, { target: { value: "77999999" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Guardar Variantes y Estados" }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/barcode 77999999 is already assigned to another catalog item/i)).toBeInTheDocument();
+      });
+
+      // Data is NOT lost on conflict
+      expect(screen.getByDisplayValue("77999999")).toBeInTheDocument();
     });
   });
 });

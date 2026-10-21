@@ -10,6 +10,7 @@ import {
   productUpdateSchema,
   calculateStockSummary,
   calculateFiscalBreakdown,
+  getActiveBarcode,
   getErrorMessage,
 } from "./schemas";
 import { formatCurrency } from "../../lib/formatters";
@@ -362,7 +363,7 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
               {variants.map((v) => {
                 const summary = calculateStockSummary(product.stock_balances, v.id);
-                const barcode = v.product_identifiers?.find((pi) => pi.kind === "barcode")?.value;
+                const barcode = getActiveBarcode(v.product_identifiers);
                 const hasLegacyDelta = typeof v.price_delta === "number" && v.price_delta !== 0;
                 const effectiveVariantPrice = (product.base_sale_price || 0) + (v.price_delta || 0);
 
