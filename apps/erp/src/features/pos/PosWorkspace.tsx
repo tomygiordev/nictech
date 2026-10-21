@@ -12,25 +12,26 @@ import {
   CreditCard,
   Banknote,
   QrCode,
-  CheckCircle2,
   Receipt,
   User,
   Barcode,
   Loader2,
   RefreshCw,
-  Printer,
   Layers,
 } from "lucide-react";
 import { WorkspaceHeader, StatePanel, FeedbackAlert } from "../../components/erp/WorkspaceUi";
-import SaleReceipt from "../../components/erp/SaleReceipt";
 import { formatCurrency } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
 import { useErpAuth } from "../../auth/ErpAuthContext";
-import { createSaleWithInvoice } from "./api";
-import { getDocumentSaleReceipt } from "../documents/api";
 import { canSubmitWithExchangeRate, ERP_BASE_CURRENCY } from "./schemas";
+import {
+  executePosSale,
+  recoverConfirmedTicket,
+  type ConfirmedSaleInfo,
+  type ConfirmedTicketState,
+} from "./posReceiptFlow";
+import { PosReceiptPanel } from "./PosReceiptPanel";
 import type { InvoiceKind, PosPaymentLineInput, PosSaleLineInput } from "./types";
-import type { DocumentSaleReceipt } from "../../types/DocumentSaleReceipt";
 
 type PaymentKind = "cash" | "card" | "qr" | "transfer";
 
@@ -182,11 +183,9 @@ export const PosWorkspace: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [submittingSale, setSubmittingSale] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [lastTicket, setLastTicket] = useState<{
-    receipt: DocumentSaleReceipt;
-    paymentMethod: string;
-  } | null>(null);
+  const [lastTicket, setLastTicket] = useState<ConfirmedTicketState | null>(null);
   const operationRef = useRef<{ signature: string; key: string } | null>(null);
+
   const checkoutForm = useForm<PosCheckoutInput, unknown, PosCheckoutValues>({
     resolver: zodResolver(posCheckoutSchema),
     defaultValues: {
@@ -566,6 +565,10 @@ export const PosWorkspace: React.FC = () => {
     return cart.reduce((acc, item) => acc + item.priceUsd * item.quantity, 0);
   }, [cart]);
 
+  const handleRecover = async (targetDocumentId: string): Promise<void> => {
+    await recoverConfirmedTicket(targetDocumentId, setLastTicket);
+  };
+
   const handleCheckout = async (values: PosCheckoutValues) => {
     if (cart.length === 0 || submittingSale) return;
     const exchangeRequirement = {
@@ -667,7 +670,7 @@ export const PosWorkspace: React.FC = () => {
       const opKey = operationRef.current.key;
 
       // 5. Atomic sale and internally numbered invoice; checkout does not call a provider.
-      const saleResult = await createSaleWithInvoice({
+      const execution = await executePosSale({
         branchId: values.branchId,
         customerId: String(custId),
         currency: ERP_BASE_CURRENCY,
@@ -679,67 +682,42 @@ export const PosWorkspace: React.FC = () => {
         paymentLines,
       });
 
-      // Prefer the committed sale and sale_lines read back through the
-      // documents.view receipt RPC. Keep a request-matched fallback if that
-      // read-back fails after the transaction has already committed.
-      const fallbackConfirmedAt = new Date().toISOString();
-      const localReceipt: DocumentSaleReceipt = {
-        sale_id: saleResult.saleId,
-        document_id: saleResult.documentId,
-        document_number: saleResult.documentNumber,
-        branch_name: branches.find((branch) => branch.id === values.branchId)?.name ?? "Sucursal",
-        invoice_kind: saleResult.invoiceKind,
-        customer_display_name: values.customerName,
-        customer_legal_name: values.customerName,
-        currency_code: ERP_BASE_CURRENCY,
-        exchange_rate: 1,
-        subtotal_amount: subtotalNetArs,
-        discount_amount: 0,
-        tax_amount: totalTaxArs,
-        total_amount: subtotalArs,
-        total_ars: subtotalArs,
-        confirmed_at: fallbackConfirmedAt,
-        document_status: "issued",
-        sale_state: null,
-        payment_state: null,
-        lines: lines.map((line) => ({
-          description: line.description,
-          quantity: line.quantity,
-          unit_price: line.unit_price,
-          discount_amount: line.discount_amount,
-          tax_rate_percent: line.tax_rate_percent,
-          tax_amount: line.tax_amount,
-          line_total: line.quantity * line.unit_price - line.discount_amount + line.tax_amount,
-        })),
-        payments: [{
-          method_name: selectedMethod.name,
-          amount: subtotalArs,
-          currency_code: ERP_BASE_CURRENCY,
-          occurred_at: fallbackConfirmedAt,
-          reversed: false,
-        }],
-      };
-      let receipt = localReceipt;
-      try {
-        receipt = await getDocumentSaleReceipt(saleResult.documentId) ?? localReceipt;
-      } catch {
-        // The sale is already committed. Its authoritative receipt is
-        // available from Documents even if this immediate read-back fails.
-      }
-
-      setLastTicket({ receipt, paymentMethod: selectedMethod.name });
       setCart([]);
       operationRef.current = null;
-      setFeedback({
-        type: "success",
-        message: `¡Venta completada! Comprobante ${saleResult.invoiceKind === "fiscal" ? "fiscal" : "no fiscal"} ${saleResult.documentNumber} registrado en el ERP. Stock descontado atómicamente.`,
-      });
-
-      // Reload products to reflect updated variant stock immediately
       fetchProductsAndSettings();
+
+      const saleInfo: ConfirmedSaleInfo = {
+        saleId: execution.saleResult.saleId,
+        documentId: execution.saleResult.documentId,
+        documentNumber: execution.saleResult.documentNumber,
+        invoiceKind: execution.saleResult.invoiceKind,
+      };
+
+      if (execution.status === "completed") {
+        setLastTicket({
+          info: saleInfo,
+          receipt: execution.receipt,
+        });
+        setFeedback({
+          type: "success",
+          message: `¡Venta completada! Comprobante ${execution.saleResult.invoiceKind === "fiscal" ? "fiscal" : "no fiscal"} ${execution.saleResult.documentNumber} registrado en el ERP. Stock descontado atómicamente.`,
+        });
+      } else {
+        setLastTicket({
+          info: saleInfo,
+          receipt: null,
+          recoveryError: execution.error
+            ? `Venta confirmada en ERP (${execution.saleResult.documentNumber}). No se pudo obtener el comprobante para impresión (${execution.error}). Podés recuperarlo ahora.`
+            : `Venta confirmada en ERP (${execution.saleResult.documentNumber}). El comprobante aún no devolvió datos persistidos para imprimir. Podés recuperarlo ahora.`,
+        });
+        setFeedback({
+          type: "success",
+          message: `¡Venta confirmada! Comprobante ${execution.saleResult.invoiceKind === "fiscal" ? "fiscal" : "no fiscal"} ${execution.saleResult.documentNumber} registrado en el ERP. Lectura de comprobante pendiente.`,
+        });
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error al procesar la venta";
-      // Finding 1 fix: Do not clear cart, show error, never report false success
+      // Cart is retained for retry
       setFeedback({ type: "error", message: msg });
     } finally {
       setSubmittingSale(false);
@@ -772,76 +750,13 @@ export const PosWorkspace: React.FC = () => {
       )}
 
       {lastTicket && (
-        <div
-          className="flow-card"
-          style={{
-            border: "2px solid var(--emerald-success)",
-            background: "var(--emerald-soft)",
-            marginBottom: "20px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-              <div
-                style={{
-                  width: "40px",
-                  height: "40px",
-                  borderRadius: "10px",
-                  background: "var(--emerald-success)",
-                  color: "#ffffff",
-                  display: "grid",
-                  placeItems: "center",
-                }}
-              >
-                <CheckCircle2 size={24} />
-              </div>
-              <div>
-                <strong style={{ fontSize: "16px", color: "var(--emerald-success)" }}>
-                  ¡Venta Confirmada! #{lastTicket.receipt.document_number}
-                </strong>
-                <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>
-                  {lastTicket.receipt.customer_display_name} • {lastTicket.paymentMethod} • {formatCurrency(lastTicket.receipt.total_amount, lastTicket.receipt.currency_code)}
-                </p>
-                <span style={{ fontSize: "10px", color: "var(--text-light)", fontFamily: "monospace" }}>
-                  ID Venta ERP: {lastTicket.receipt.sale_id}
-                </span>
-                <span style={{ display: "block", fontSize: "10px", color: "var(--text-light)", fontFamily: "monospace" }}>
-                  {lastTicket.receipt.invoice_kind === "fiscal" ? "Comprobante fiscal" : "Comprobante no fiscal"}: {lastTicket.receipt.document_number} • Documento ERP: {lastTicket.receipt.document_id}
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                type="button"
-                className="pag-btn"
-                onClick={() => window.print()}
-                style={{
-                  background: "#ffffff",
-                  color: "var(--emerald-success)",
-                  borderColor: "var(--emerald-border)",
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <Printer size={14} /> Imprimir comprobante
-              </button>
-              <button
-                type="button"
-                className="pag-btn"
-                onClick={() => setLastTicket(null)}
-                style={{ background: "#ffffff" }}
-              >
-                ✕ Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
+        <PosReceiptPanel
+          key={lastTicket.info.documentId}
+          ticket={lastTicket}
+          onClose={() => setLastTicket(null)}
+          onRecover={handleRecover}
+        />
       )}
-
-      {lastTicket && <SaleReceipt receipt={lastTicket.receipt} />}
 
       <div className="pos-workspace-grid" style={{ gap: "24px" }}>
         {/* Left: Product Catalog & Search */}
@@ -942,7 +857,7 @@ export const PosWorkspace: React.FC = () => {
                       {product.name}
                     </strong>
 
-                    {/* Variants selector buttons for phone cases / multi-variant products */}
+                    {/* Variants selector buttons */}
                     {product.hasVariants && product.variants.length > 0 && (
                       <div style={{ marginTop: "10px" }}>
                         <div style={{ fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", marginBottom: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
