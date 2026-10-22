@@ -58,7 +58,7 @@ import {
 } from "../../components/erp/WorkspaceUi";
 import { OfficialCsvExportButton } from "../../components/erp/OfficialCsvExportButton";
 import { type ErpModuleId } from "@nictech/domain";
-import { formatCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
+import { formatCurrency, formatPosCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
 
 // Los numeric de Postgres pueden llegar como string: normalizar con Number().
 // Devuelve null cuando no hay dato (la vista documenta NULL por falta de fuente).
@@ -636,18 +636,18 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
                       </strong>
                       {row.name}
                     </td>
-                    <td>{formatCurrency(row.debit ?? 0, "ARS")}</td>
-                    <td>{formatCurrency(row.credit ?? 0, "ARS")}</td>
+                    <td>{formatPosCurrency(row.debit ?? 0, "ARS")}</td>
+                    <td>{formatPosCurrency(row.credit ?? 0, "ARS")}</td>
                     <td>
-                      <strong>{formatCurrency(row.balance ?? 0, "ARS")}</strong>
+                      <strong>{formatPosCurrency(row.balance ?? 0, "ARS")}</strong>
                     </td>
                   </tr>
                 ))}
                 <tr>
                   <td><strong>Totales</strong></td>
-                  <td><strong>{formatCurrency(totalDebit, "ARS")}</strong></td>
-                  <td><strong>{formatCurrency(totalCredit, "ARS")}</strong></td>
-                  <td><strong>{formatCurrency(totalDebit - totalCredit, "ARS")}</strong></td>
+                  <td><strong>{formatPosCurrency(totalDebit, "ARS")}</strong></td>
+                  <td><strong>{formatPosCurrency(totalCredit, "ARS")}</strong></td>
+                  <td><strong>{formatPosCurrency(totalDebit - totalCredit, "ARS")}</strong></td>
                 </tr>
               </tbody>
             </table>

@@ -1,4 +1,4 @@
-import { formatCurrency, formatDateTime } from "../../lib/formatters";
+import { formatCurrency, formatPosCurrency, formatDateTime } from "../../lib/formatters";
 import type { DocumentSaleReceipt } from "../../types/DocumentSaleReceipt";
 
 interface SaleReceiptProps {
@@ -29,7 +29,11 @@ const saleStateLabel = (state: string | null): string =>
 const paymentStateLabel = (state: string | null): string =>
   state ? PAYMENT_STATE_LABELS[state] ?? state : "Sin evento de pago";
 
-const SaleReceipt = ({ receipt }: SaleReceiptProps) => (
+const SaleReceipt = ({ receipt }: SaleReceiptProps) => {
+  const isV2 = receipt.pricing_version === "v2";
+  const formatter = isV2 ? formatPosCurrency : formatCurrency;
+
+  return (
   <section
     id="printable-labels-area"
     aria-label="Comprobante local de venta"
@@ -75,7 +79,9 @@ const SaleReceipt = ({ receipt }: SaleReceiptProps) => (
         <tr>
           <th style={{ textAlign: "left", borderBottom: "1px solid #9ca3af", padding: "8px 4px" }}>Detalle</th>
           <th style={{ textAlign: "right", borderBottom: "1px solid #9ca3af", padding: "8px 4px" }}>Cantidad</th>
-          <th style={{ textAlign: "right", borderBottom: "1px solid #9ca3af", padding: "8px 4px" }}>Precio unitario</th>
+          <th style={{ textAlign: "right", borderBottom: "1px solid #9ca3af", padding: "8px 4px" }}>
+            {isV2 ? "Precio unit. (IVA inc.)" : "Precio unitario"}
+          </th>
           <th style={{ textAlign: "right", borderBottom: "1px solid #9ca3af", padding: "8px 4px" }}>Total</th>
         </tr>
       </thead>
@@ -85,10 +91,17 @@ const SaleReceipt = ({ receipt }: SaleReceiptProps) => (
             <td style={{ borderBottom: "1px solid #e5e7eb", padding: "8px 4px" }}>{line.description}</td>
             <td style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px 4px" }}>{line.quantity}</td>
             <td style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px 4px" }}>
-              {formatCurrency(line.unit_price, receipt.currency_code)}
+              {isV2
+                ? formatPosCurrency(line.unit_gross_price ?? 0, receipt.currency_code)
+                : formatCurrency(line.unit_price, receipt.currency_code)}
+              {isV2 && typeof line.gross_discount_amount === "number" && line.gross_discount_amount > 0 ? (
+                <div style={{ fontSize: "10px", color: "#6b7280" }}>
+                  Desc: -{formatPosCurrency(line.gross_discount_amount, receipt.currency_code)}
+                </div>
+              ) : null}
             </td>
             <td style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: "8px 4px" }}>
-              {formatCurrency(line.line_total, receipt.currency_code)}
+              {formatter(line.line_total, receipt.currency_code)}
             </td>
           </tr>
         ))}
@@ -96,11 +109,11 @@ const SaleReceipt = ({ receipt }: SaleReceiptProps) => (
     </table>
 
     <div style={{ display: "grid", justifyContent: "end", gap: "5px", marginTop: "16px", fontSize: "13px" }}>
-      <div>Subtotal: {formatCurrency(receipt.subtotal_amount, receipt.currency_code)}</div>
-      <div>Descuentos: {formatCurrency(receipt.discount_amount, receipt.currency_code)}</div>
-      <div>Impuestos: {formatCurrency(receipt.tax_amount, receipt.currency_code)}</div>
+      <div>{isV2 ? "Subtotal neto" : "Subtotal"}: {formatter(receipt.subtotal_amount, receipt.currency_code)}</div>
+      <div>Descuentos: {formatter(receipt.discount_amount, receipt.currency_code)}</div>
+      <div>{isV2 ? "IVA discriminado" : "Impuestos"}: {formatter(receipt.tax_amount, receipt.currency_code)}</div>
       <strong style={{ borderTop: "1px solid #111827", paddingTop: "8px", fontSize: "17px" }}>
-        Total: {formatCurrency(receipt.total_amount, receipt.currency_code)}
+        Total: {formatter(receipt.total_amount, receipt.currency_code)}
       </strong>
     </div>
     <section style={{ marginTop: "18px", fontSize: "12px" }}>
@@ -111,7 +124,7 @@ const SaleReceipt = ({ receipt }: SaleReceiptProps) => (
         <ul style={{ margin: "6px 0 0", paddingLeft: "18px" }}>
           {receipt.payments.map((payment, index) => (
             <li key={receipt.sale_id + "-payment-" + index}>
-              {payment.method_name} · {formatCurrency(payment.amount, payment.currency_code)}
+              {payment.method_name} · {formatter(payment.amount, payment.currency_code)}
               {payment.reversed ? " · Reverso registrado en ERP" : " · Pago original"}
             </li>
           ))}
@@ -122,6 +135,7 @@ const SaleReceipt = ({ receipt }: SaleReceiptProps) => (
       Venta ERP {receipt.sale_id} · Documento ERP {receipt.document_id}
     </footer>
   </section>
-);
+  );
+};
 
 export default SaleReceipt;

@@ -1,12 +1,16 @@
 import { z } from "zod";
 import type { PosInvoiceSaleInput, PosSaleInput } from "./types";
+import { mul4, round4, POS_MAX_AMOUNT_ARS, calculatePosCartTotals } from "./pricing";
 
 const uuid = z.string().uuid();
 const requiredText = z.string().trim().min(1);
 const currencyCode = requiredText
   .length(3, "La moneda debe tener un código ISO de tres letras.")
   .transform((value) => value.toUpperCase());
-const finiteAmount = z.number().finite();
+const finiteAmount = z
+  .number()
+  .finite()
+  .max(POS_MAX_AMOUNT_ARS, `El importe supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString()} ARS`);
 
 export const ERP_BASE_CURRENCY = "ARS" as const;
 
@@ -19,8 +23,13 @@ export const posSaleLineSchema = z.object({
   description: requiredText.max(500),
   quantity: finiteAmount.positive(),
   unit_price: finiteAmount.nonnegative(),
+  expected_unit_price: finiteAmount.nonnegative().optional(),
+  expected_tax_rate: z.number().finite().min(0).max(100).optional(),
+  unit_gross_price: finiteAmount.nonnegative().optional(),
   discount_amount: finiteAmount.nonnegative(),
-  tax_rate_percent: finiteAmount.min(0).max(100),
+  gross_discount_amount: finiteAmount.nonnegative().optional(),
+  discount_reason: z.string().trim().max(250).nullable().optional(),
+  tax_rate_percent: z.number().finite().min(0).max(100),
   tax_amount: finiteAmount.nonnegative(),
 }).superRefine((line, context) => {
   if (line.kind !== "free_concept" && !line.product_id) {
@@ -37,7 +46,17 @@ export const posSaleLineSchema = z.object({
       message: "Las líneas de producto requieren una ubicación de salida.",
     });
   }
-  if (line.discount_amount > line.quantity * line.unit_price) {
+  const effectiveUnit = line.unit_gross_price ?? line.unit_price;
+  const effectiveSubtotal = mul4(line.quantity, effectiveUnit);
+  if (effectiveSubtotal > POS_MAX_AMOUNT_ARS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["quantity"],
+      message: `El subtotal de la línea supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString()} ARS`,
+    });
+  }
+  const effectiveDiscount = round4(line.gross_discount_amount ?? line.discount_amount);
+  if (effectiveDiscount > effectiveSubtotal) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["discount_amount"],
@@ -62,6 +81,22 @@ export const saleSchema: z.ZodType<PosSaleInput> = z.object({
   reason: requiredText.max(500),
   lines: z.array(posSaleLineSchema).min(1).max(250),
   paymentLines: z.array(posPaymentLineSchema).max(20),
+}).superRefine((sale, context) => {
+  const totals = calculatePosCartTotals(
+    sale.lines.map((l) => ({
+      priceArs: l.unit_gross_price ?? l.unit_price,
+      quantity: l.quantity,
+      taxRatePercent: l.tax_rate_percent,
+      grossDiscount: l.gross_discount_amount ?? l.discount_amount,
+    })),
+  );
+  if (!totals.isValid) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lines"],
+      message: totals.error ?? `El total de la venta supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString()} ARS`,
+    });
+  }
 });
 
 export const invoiceSaleSchema: z.ZodType<PosInvoiceSaleInput> = saleSchema.and(z.object({

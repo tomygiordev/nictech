@@ -6,7 +6,12 @@
  * are presented or printed.
  */
 
-import { createSaleWithInvoice, type CreateSaleWithInvoiceResult } from "./api";
+import {
+  createSaleWithInvoice,
+  submitPreparedSale,
+  type CreateSaleWithInvoiceResult,
+  type CreateSaleWithInvoiceRpcArgs,
+} from "./api";
 import { getDocumentSaleReceipt } from "../documents/api";
 import type { PosInvoiceSaleInput } from "./types";
 import type { DocumentSaleReceipt } from "../../types/DocumentSaleReceipt";
@@ -23,6 +28,7 @@ export interface ConfirmedTicketState {
   receipt: DocumentSaleReceipt | null;
   recoveryLoading?: boolean;
   recoveryError?: string | null;
+  saleOrgId?: string | null;
 }
 
 export type PosSaleExecutionResult =
@@ -40,29 +46,46 @@ export type PosSaleExecutionResult =
 
 export interface ExecutePosSaleDependencies {
   createSaleWithInvoiceFn?: (input: PosInvoiceSaleInput) => Promise<CreateSaleWithInvoiceResult>;
+  submitPreparedSaleFn?: (args: CreateSaleWithInvoiceRpcArgs) => Promise<CreateSaleWithInvoiceResult>;
   getDocumentSaleReceiptFn?: (documentId: string) => Promise<DocumentSaleReceipt | null>;
+  onConfirmed?: (saleResult: CreateSaleWithInvoiceResult) => void;
 }
 
 /**
  * Executes a POS sale with atomic invoice creation.
- * If createSaleWithInvoice succeeds, the sale is committed in the ERP database.
+ * If createSaleWithInvoice/submitPreparedSale succeeds, the sale is committed in the ERP database.
+ * Calls onConfirmed immediately with the authoritative IDs.
  * It then attempts to read the persisted receipt via getDocumentSaleReceipt.
  * If read-back returns null or fails, the sale remains confirmed (never rolled back or re-created)
  * and no fabricated receipt is created.
  */
 export const executePosSale = async (
-  input: PosInvoiceSaleInput,
+  input: PosInvoiceSaleInput | CreateSaleWithInvoiceRpcArgs,
   deps: ExecutePosSaleDependencies = {},
 ): Promise<PosSaleExecutionResult> => {
-  const createSaleFn = deps.createSaleWithInvoiceFn ?? createSaleWithInvoice;
   const getReceiptFn = deps.getDocumentSaleReceiptFn ?? getDocumentSaleReceipt;
 
-  // 1. Commit sale and invoice in ERP database.
-  // If this throws, it bubbles up to the caller so the cart and idempotency key
-  // are retained for safe retry.
-  const saleResult = await createSaleFn(input);
+  let saleResult: CreateSaleWithInvoiceResult;
 
-  // 2. Read-back of persisted facts.
+  // 1. Commit sale and invoice in ERP database.
+  // If this throws, it bubbles up to caller for uncertainty tracking / retry.
+  if ("target_invoice_kind" in input) {
+    const submitFn = deps.submitPreparedSaleFn ?? submitPreparedSale;
+    saleResult = await submitFn(input);
+  } else {
+    const createSaleFn = deps.createSaleWithInvoiceFn ?? createSaleWithInvoice;
+    saleResult = await createSaleFn(input);
+  }
+
+  // Authoritative server IDs returned: confirm immediately before receipt reading!
+  let confirmationError: string | undefined;
+  try {
+    deps.onConfirmed?.(saleResult);
+  } catch (error: unknown) {
+    confirmationError = error instanceof Error ? error.message : "No se pudo actualizar la pantalla del comprobante.";
+  }
+
+  // 2. Read-back of persisted facts (independent step).
   try {
     const receipt = await getReceiptFn(saleResult.documentId);
     if (receipt) {
@@ -76,7 +99,7 @@ export const executePosSale = async (
       status: "pending_receipt",
       saleResult,
       receipt: null,
-      error: "El comprobante no devolvió datos persistidos en el ERP.",
+      error: confirmationError ?? "El comprobante no devolvió datos persistidos en el ERP.",
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Error al recuperar el comprobante persistido.";

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -20,18 +20,28 @@ import {
   Layers,
 } from "lucide-react";
 import { WorkspaceHeader, StatePanel, FeedbackAlert } from "../../components/erp/WorkspaceUi";
-import { formatCurrency } from "../../lib/formatters";
+import { formatCurrency, formatPosCurrency } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import { canSubmitWithExchangeRate, ERP_BASE_CURRENCY } from "./schemas";
 import {
-  executePosSale,
+  calculatePosCartTotals,
+  div4,
+  mul4,
+  round4,
+  POS_MAX_AMOUNT_ARS,
+  parsePriceSafe,
+  resolveVariantPrice,
+} from "./pricing";
+import { PosCoordinator } from "./posCoordinator";
+import { runPosCatalogFetch, type PosCatalogOwner } from "./posCatalogFlow";
+import type { CreateSaleWithInvoiceResult } from "./api";
+import {
   recoverConfirmedTicket,
-  type ConfirmedSaleInfo,
   type ConfirmedTicketState,
 } from "./posReceiptFlow";
 import { PosReceiptPanel } from "./PosReceiptPanel";
-import type { InvoiceKind, PosPaymentLineInput, PosSaleLineInput } from "./types";
+import type { InvoiceKind } from "./types";
 
 type PaymentKind = "cash" | "card" | "qr" | "transfer";
 
@@ -45,9 +55,14 @@ export interface PosVariantItem {
   code: string;
   name: string;
   priceDelta: number;
+  finalPriceArs?: number | null;
+  effectiveGrossPrice: number;
   stock: number;
   barcodes: string[];
   inventoryUnits: PosInventoryUnit[];
+  isPriceOutOfRange?: boolean;
+  priceRangeError?: string | null;
+  hasOverride?: boolean;
 }
 
 export interface PosProductItem {
@@ -64,6 +79,9 @@ export interface PosProductItem {
   variants: PosVariantItem[];
   barcodes: string[];
   inventoryUnits: PosInventoryUnit[];
+  isPriceOutOfRange?: boolean;
+  priceRangeError?: string | null;
+  hasOverride?: boolean;
 }
 
 export interface CartItem {
@@ -95,6 +113,7 @@ interface RawProductData {
     code: string;
     name: string;
     price_delta: number | null;
+    final_price_ars?: number | null;
     is_active: boolean;
     product_identifiers?: Array<{ kind: string; value: string; is_active?: boolean }>;
   }> | null;
@@ -159,18 +178,11 @@ const classifyPaymentMethod = (code: string, settlementKind: string): PaymentKin
   return null;
 };
 
-const calculateLineTax = (unitPrice: number, quantity: number, rate: number): number =>
-  Math.round(unitPrice * quantity * rate * 100) / 10_000;
+export interface PosWorkspaceProps {
+  coordinator?: PosCoordinator;
+}
 
-const resolveOperationKey = (
-  previous: { signature: string; key: string } | null,
-  signature: string,
-): { signature: string; key: string } => {
-  if (previous?.signature === signature) return previous;
-  return { signature, key: `pos-${crypto.randomUUID()}` };
-};
-
-export const PosWorkspace: React.FC = () => {
+export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externalCoordinator }) => {
   const { organizationId } = useErpAuth();
   const [products, setProducts] = useState<PosProductItem[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>([]);
@@ -182,9 +194,18 @@ export const PosWorkspace: React.FC = () => {
   const [search, setSearch] = useState<string>("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [submittingSale, setSubmittingSale] = useState<boolean>(false);
+  const [staleQuoteDetected, setStaleQuoteDetected] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [lastTicket, setLastTicket] = useState<ConfirmedTicketState | null>(null);
-  const operationRef = useRef<{ signature: string; key: string } | null>(null);
+  const coordinatorRef = useRef<PosCoordinator | null>(null);
+  if (!coordinatorRef.current) {
+    coordinatorRef.current = externalCoordinator || new PosCoordinator({
+      organizationId,
+      branchId: "",
+      locationId: "",
+    });
+  }
+  const coordinator = externalCoordinator || coordinatorRef.current;
 
   const checkoutForm = useForm<PosCheckoutInput, unknown, PosCheckoutValues>({
     resolver: zodResolver(posCheckoutSchema),
@@ -200,15 +221,30 @@ export const PosWorkspace: React.FC = () => {
   const selectedLocationId = checkoutForm.watch("locationId");
   const selectedPaymentMethodId = checkoutForm.watch("paymentMethodId");
 
-  const fetchProductsAndSettings = useCallback(async () => {
+  useLayoutEffect(() => {
+    if (organizationId !== coordinator.getCurrentContext().organizationId) {
+      coordinator.notifyContextChanged({
+        organizationId,
+        branchId: "",
+        locationId: "",
+      });
+      coordinator.notifyCartCleared();
+      setCart([]);
+    }
+  }, [coordinator, organizationId]);
+
+  const fetchProductsAndSettings = useCallback(async (owner?: PosCatalogOwner): Promise<PosProductItem[] | null> => {
     if (!organizationId) {
       setLoading(false);
       setFeedback({ type: "error", message: "No hay una organización ERP activa para operar el punto de venta." });
-      return;
+      return null;
     }
 
-    try {
-      setLoading(true);
+    return runPosCatalogFetch(coordinator, {
+      owner,
+      onLoading: setLoading,
+      onError: (message) => setFeedback({ type: "error", message }),
+      load: async () => {
       const [fxResult, branchResult, locationResult, paymentResult, productResult, unitResult] = await Promise.all([
         supabase
           .from("exchange_rate_snapshots")
@@ -247,7 +283,7 @@ export const PosWorkspace: React.FC = () => {
             tax_rate_percent,
             inventory_tracking,
             product_categories:product_categories!products_category_organization_fk(name),
-            product_variants(id, code, name, price_delta, is_active, product_identifiers(kind, value, is_active)),
+            product_variants(id, code, name, price_delta, final_price_ars, is_active, product_identifiers(kind, value, is_active)),
             stock_balances(location_id, quantity_on_hand, quantity_reserved, variant_id)
           `)
           .eq("organization_id", organizationId)
@@ -276,35 +312,43 @@ export const PosWorkspace: React.FC = () => {
         })
         .filter((method): method is PaymentMethodOption => method !== null);
 
-      const resolvedBranchId = branchOptions.some((branch) => branch.id === selectedBranchId)
-        ? selectedBranchId
+      const currentCtx = coordinator.getCurrentContext();
+      const resolvedBranchId = branchOptions.some((branch) => branch.id === currentCtx.branchId)
+        ? currentCtx.branchId
         : branchOptions[0]?.id || "";
       const branchLocations = locationOptions.filter((location) => location.branch_id === resolvedBranchId);
-      const resolvedLocationId = branchLocations.some((location) => location.id === selectedLocationId)
-        ? selectedLocationId
+      const resolvedLocationId = branchLocations.some((location) => location.id === currentCtx.locationId)
+        ? currentCtx.locationId
         : branchLocations[0]?.id || "";
       const resolvedPaymentId = methodOptions.some((method) => method.id === selectedPaymentMethodId)
         ? selectedPaymentMethodId
         : methodOptions[0]?.id || "";
 
-      setBranches(branchOptions);
-      setLocations(locationOptions);
-      setPaymentMethods(methodOptions);
-      checkoutForm.setValue("branchId", resolvedBranchId, { shouldValidate: false });
-      checkoutForm.setValue("locationId", resolvedLocationId, { shouldValidate: false });
-      checkoutForm.setValue("paymentMethodId", resolvedPaymentId, { shouldValidate: false });
-
       const rawRate = Number(fxResult.data?.rate_to_base);
       const currentRate = Number.isFinite(rawRate) && rawRate > 0 ? rawRate : null;
-      setDollarRate(currentRate);
 
       const rawUnits: RawInventoryUnit[] = unitResult.data ?? [];
       const rawProducts: RawProductData[] = productResult.data ?? [];
+
       const mapped: PosProductItem[] = rawProducts.map((p) => {
-        const baseArs = Number(p.base_sale_price || 0);
-        const taxRatePercent = Number(p.tax_rate_percent || 0);
-        const baseGross = baseArs + calculateLineTax(baseArs, 1, taxRatePercent);
-        const baseUsd = currentRate ? baseGross / currentRate : 0;
+        const basePriceCheck = parsePriceSafe(p.base_sale_price);
+        const baseGross = basePriceCheck.price;
+        const productPriceOutOfRange = !basePriceCheck.valid;
+        const productPriceRangeError = basePriceCheck.error;
+
+        let taxRatePercent = 0;
+        const rawTax = Number(p.tax_rate_percent || 0);
+        if (Number.isFinite(rawTax) && rawTax >= 0 && rawTax <= 100) {
+          try {
+            taxRatePercent = round4(rawTax);
+          } catch {
+            taxRatePercent = 0;
+          }
+        }
+
+        const baseUsd = currentRate && currentRate > 0 && !productPriceOutOfRange && baseGross >= 0 && baseGross <= POS_MAX_AMOUNT_ARS
+          ? div4(baseGross, currentRate)
+          : 0;
         const catName = p.product_categories?.name || "General";
 
         const balances = p.stock_balances || [];
@@ -330,17 +374,32 @@ export const PosWorkspace: React.FC = () => {
             .map((pi) => pi.value)
             .filter(Boolean);
 
+          const hasOverride = v.final_price_ars !== null && v.final_price_ars !== undefined;
+          const resolvedPricing = resolveVariantPrice({
+            baseGrossPrice: baseGross,
+            productPriceOutOfRange,
+            productPriceRangeError,
+            hasOverride,
+            finalPriceArs: v.final_price_ars,
+            priceDelta: v.price_delta,
+          });
+
           return {
             id: v.id,
             code: v.code,
             name: v.name,
-            priceDelta: Number(v.price_delta || 0),
+            priceDelta: resolvedPricing.delta,
+            finalPriceArs: resolvedPricing.finalPrice,
+            effectiveGrossPrice: resolvedPricing.effectiveGrossPrice,
             stock: varStock,
             barcodes,
             inventoryUnits: variantUnits.map((unit) => ({
               id: unit.id,
               label: unit.imei || unit.serial_number || unit.id.slice(0, 8).toUpperCase(),
             })),
+            isPriceOutOfRange: resolvedPricing.isPriceOutOfRange,
+            priceRangeError: resolvedPricing.priceRangeError,
+            hasOverride,
           };
         });
 
@@ -364,7 +423,7 @@ export const PosWorkspace: React.FC = () => {
           code: p.internal_code || p.id.slice(0, 8).toUpperCase(),
           name: p.internal_name,
           category: catName,
-          priceArs: baseArs,
+          priceArs: baseGross,
           priceUsd: baseUsd,
           stock: simpleStock,
           taxRatePercent,
@@ -376,10 +435,35 @@ export const PosWorkspace: React.FC = () => {
             id: unit.id,
             label: unit.imei || unit.serial_number || unit.id.slice(0, 8).toUpperCase(),
           })),
+          isPriceOutOfRange: productPriceOutOfRange,
+          priceRangeError: productPriceRangeError,
         };
       });
 
+      return { mapped, branchOptions, locationOptions, methodOptions, currentRate,
+        resolvedBranchId, resolvedLocationId, resolvedPaymentId };
+      },
+      apply: ({ mapped, branchOptions, locationOptions, methodOptions, currentRate,
+        resolvedBranchId, resolvedLocationId, resolvedPaymentId }) => {
+      // Adopt defaults in ONE validated synchronous block:
+      // Update coordinator internal context before form so coordinator authority is updated first
+      coordinator.notifyContextChanged({
+        organizationId,
+        branchId: resolvedBranchId,
+        locationId: resolvedLocationId,
+      });
+      coordinator.markContextLoaded();
+
+      checkoutForm.setValue("branchId", resolvedBranchId, { shouldValidate: false });
+      checkoutForm.setValue("locationId", resolvedLocationId, { shouldValidate: false });
+      checkoutForm.setValue("paymentMethodId", resolvedPaymentId, { shouldValidate: false });
+
+      setBranches(branchOptions);
+      setLocations(locationOptions);
+      setPaymentMethods(methodOptions);
+      setDollarRate(currentRate);
       setProducts(mapped);
+
       if (!resolvedBranchId || !resolvedLocationId) {
         setFeedback({
           type: "error",
@@ -388,18 +472,23 @@ export const PosWorkspace: React.FC = () => {
       } else if (!resolvedPaymentId) {
         setFeedback({ type: "error", message: "No hay medios de pago operativos configurados." });
       }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Error al cargar catálogo ERP para POS";
-      console.error("Error al cargar productos para POS:", e);
-      setFeedback({ type: "error", message: msg });
-    } finally {
-      setLoading(false);
-    }
-  }, [checkoutForm, organizationId, selectedBranchId, selectedLocationId, selectedPaymentMethodId]);
+      return mapped;
+      },
+    });
+  }, [checkoutForm, organizationId, selectedPaymentMethodId, coordinator]);
 
   useEffect(() => {
-    fetchProductsAndSettings();
-  }, [fetchProductsAndSettings]);
+    if (!organizationId) {
+      setLoading(false);
+      return;
+    }
+    if (coordinator.isContextLoaded()) {
+      return;
+    }
+    coordinator.requestAutoFetch(async (token) => {
+      await fetchProductsAndSettings({ kind: "fetch", token });
+    });
+  }, [coordinator, organizationId, fetchProductsAndSettings]);
 
   const categories = useMemo(() => {
     return ["all", ...Array.from(new Set(products.map((p) => p.category)))];
@@ -426,6 +515,7 @@ export const PosWorkspace: React.FC = () => {
     variant?: PosVariantItem,
     inventoryUnit?: PosInventoryUnit,
   ) => {
+    if (coordinator.isCheckoutActive() || submittingSale) return;
     const requiresUnit = product.inventoryTracking === "serial" || product.inventoryTracking === "imei";
     if (requiresUnit && !inventoryUnit) {
       setFeedback({
@@ -437,13 +527,22 @@ export const PosWorkspace: React.FC = () => {
 
     const key = `${product.id}:${variant ? variant.id : "base"}:${inventoryUnit?.id || "quantity"}`;
     const targetStock = variant ? variant.stock : product.stock;
-    const priceArs = product.priceArs + (variant ? variant.priceDelta : 0);
-    const grossPriceArs = priceArs + calculateLineTax(priceArs, 1, product.taxRatePercent);
-    const priceUsd = dollarRate ? grossPriceArs / dollarRate : 0;
+    const priceArs = variant ? variant.effectiveGrossPrice : product.priceArs;
+    const isOutOfRange = variant ? variant.isPriceOutOfRange : product.isPriceOutOfRange;
+    const rangeError = variant ? variant.priceRangeError : product.priceRangeError;
+    if (isOutOfRange || priceArs < 0 || priceArs > POS_MAX_AMOUNT_ARS) {
+      setFeedback({
+        type: "error",
+        message: rangeError || `El artículo ${product.name} tiene un precio fuera de rango permitido.`,
+      });
+      return;
+    }
+    const priceUsd = dollarRate && dollarRate > 0 ? div4(priceArs, dollarRate) : 0;
     const baseDisplayName = variant ? `${product.name} (${variant.name})` : product.name;
     const displayName = inventoryUnit ? `${baseDisplayName} · ${inventoryUnit.label}` : baseDisplayName;
     const displayCode = variant ? variant.code : product.code;
 
+    coordinator.notifyCartModified();
     setCart((prev) => {
       const existing = prev.find((item) => item.key === key);
       const currentQty = existing ? existing.quantity : 0;
@@ -489,6 +588,7 @@ export const PosWorkspace: React.FC = () => {
   };
 
   const handleBarcodeSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (coordinator.isCheckoutActive() || submittingSale) return;
     if (e.key !== "Enter" || !search.trim()) return;
 
     const term = search.trim().toLowerCase();
@@ -516,6 +616,8 @@ export const PosWorkspace: React.FC = () => {
   };
 
   const updateQuantity = (key: string, delta: number) => {
+    if (coordinator.isCheckoutActive() || submittingSale) return;
+    coordinator.notifyCartModified();
     setCart((prev) => {
       return prev
         .map((item) => {
@@ -541,36 +643,80 @@ export const PosWorkspace: React.FC = () => {
   };
 
   const removeFromCart = (key: string) => {
+    if (coordinator.isCheckoutActive() || submittingSale) return;
+    coordinator.notifyCartModified();
     setCart((prev) => prev.filter((item) => item.key !== key));
   };
 
   const clearCart = () => {
+    if (coordinator.isCheckoutActive() || submittingSale) return;
+    coordinator.notifyCartCleared();
     setCart([]);
   };
 
-  const subtotalNetArs = useMemo(() => {
-    return cart.reduce((acc, item) => acc + item.priceArs * item.quantity, 0);
-  }, [cart]);
-
-  const totalTaxArs = useMemo(() => {
-    return cart.reduce(
-      (acc, item) => acc + calculateLineTax(item.priceArs, item.quantity, item.taxRatePercent),
-      0,
+  const cartTotals = useMemo(() => {
+    return calculatePosCartTotals(
+      cart.map((item) => ({
+        priceArs: item.priceArs,
+        quantity: item.quantity,
+        taxRatePercent: item.taxRatePercent,
+        grossDiscount: 0,
+      })),
+      dollarRate,
     );
-  }, [cart]);
+  }, [cart, dollarRate]);
 
-  const subtotalArs = subtotalNetArs + totalTaxArs;
-
-  const subtotalUsd = useMemo(() => {
-    return cart.reduce((acc, item) => acc + item.priceUsd * item.quantity, 0);
-  }, [cart]);
+  const subtotalArs = cartTotals.totalGrossArs;
+  const subtotalNetArs = cartTotals.totalNetArs;
+  const totalTaxArs = cartTotals.totalTaxArs;
+  const subtotalUsd = cartTotals.totalUsd ?? 0;
 
   const handleRecover = async (targetDocumentId: string): Promise<void> => {
     await recoverConfirmedTicket(targetDocumentId, setLastTicket);
   };
 
+  const handleRetryUncertain = async () => {
+    const attempt = coordinator.getFinancialAttempt();
+    if (!attempt || attempt.status !== "uncertain" || attempt.origin.organizationId !== organizationId) return;
+    await coordinator.retryUncertainSale({
+      onConfirmed: (result) => setLastTicket({ info: result, receipt: null,
+        saleOrgId: attempt.origin.organizationId }),
+      onSuccess: (result, receipt) => {
+        setLastTicket({ info: result, receipt, saleOrgId: attempt.origin.organizationId,
+          recoveryError: receipt ? null : "Venta confirmada. Puede recuperar el comprobante sin volver a cobrar." });
+        setFeedback({ type: "success", message: `Venta confirmada: ${result.documentNumber}.` });
+      },
+      onError: (error) => setFeedback({ type: "error", message: error.message }),
+      onClearCart: () => setCart([]),
+      onSetSubmittingSale: setSubmittingSale,
+      onAfterSaleFetch: () => coordinator.requestAutoFetch(async (token) => {
+        await fetchProductsAndSettings({ kind: "fetch", token });
+      }),
+    });
+  };
+
   const handleCheckout = async (values: PosCheckoutValues) => {
-    if (cart.length === 0 || submittingSale) return;
+    if (cart.length === 0) return;
+    if (submittingSale || coordinator.isCheckoutActive() || coordinator.isRequoteActive()) return;
+    const pendingAttempt = coordinator.getFinancialAttempt();
+    if (pendingAttempt && ["uncertain", "dispatched"].includes(pendingAttempt.status)) {
+      setFeedback({ type: "error", message: "Resuelva el cobro pendiente antes de iniciar otra venta." });
+      return;
+    }
+    if (staleQuoteDetected) {
+      setFeedback({ type: "error", message: "Actualice los precios del carrito antes de volver a cobrar." });
+      return;
+    }
+
+    if (!cartTotals.isValid) {
+      setFeedback({
+        type: "error",
+        message:
+          cartTotals.error ||
+          `El importe total supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS.`,
+      });
+      return;
+    }
     const exchangeRequirement = {
       saleCurrency: ERP_BASE_CURRENCY,
       paymentCurrencies: [ERP_BASE_CURRENCY],
@@ -604,126 +750,94 @@ export const PosWorkspace: React.FC = () => {
       }
     }
 
-    try {
-      setSubmittingSale(true);
-      setFeedback(null);
-
-      // 1. Get or create exchange rate snapshot for ARS
-      const { data: snapId, error: snapErr } = await supabase.rpc("get_or_create_exchange_snapshot", {
-        target_quote_currency: ERP_BASE_CURRENCY,
-      });
-      if (snapErr || !snapId) {
-        throw new Error(`Error al obtener snapshot de tipo de cambio: ${snapErr?.message || "Sin snapshot"}`);
-      }
-
-      // 2. Get or create POS customer
-      const { data: custId, error: custErr } = await supabase.rpc("get_or_create_pos_customer", {
-        p_display_name: values.customerName,
-      });
-      if (custErr || !custId) {
-        throw new Error(`Error al identificar cliente POS: ${custErr?.message || "Sin cliente"}`);
-      }
-
-      // 3. Prepare payment lines
-      let cashSessionId: string | null = null;
-      if (selectedMethod.requires_cash_session) {
-        const { data: sessionId, error: cashErr } = await supabase.rpc("get_or_open_pos_cash_session", {
-          target_branch_id: values.branchId,
+    await coordinator.coordinateCheckout({
+      values,
+      cart,
+      subtotalArs,
+      selectedPaymentMethod: selectedMethod,
+      dollarRate,
+      getExchangeSnapshotFn: async (quoteCurrency) => {
+        const { data, error } = await supabase.rpc("get_or_create_exchange_snapshot", {
+          target_quote_currency: quoteCurrency,
         });
-        if (cashErr || !sessionId) {
-          throw new Error(`Error al verificar sesión de caja para cobro en efectivo: ${cashErr?.message || "Sin caja"}`);
-        }
-        cashSessionId = String(sessionId);
-      }
-      const paymentLines = [
-        {
-          payment_method_id: selectedMethod.id,
-          cash_session_id: cashSessionId,
-          amount: subtotalArs,
-          currency_code: ERP_BASE_CURRENCY,
-        },
-      ] satisfies PosPaymentLineInput[];
-
-      // 4. Prepare lines for atomic create_sale
-      const lines = cart.map((item) => ({
-        kind: "product",
-        product_id: item.productId,
-        variant_id: item.variantId || null,
-        inventory_unit_id: item.inventoryUnitId || null,
-        from_location_id: item.locationId,
-        description: item.displayName,
-        quantity: item.quantity,
-        unit_price: item.priceArs,
-        discount_amount: 0,
-        tax_rate_percent: item.taxRatePercent,
-        tax_amount: calculateLineTax(item.priceArs, item.quantity, item.taxRatePercent),
-      })) satisfies PosSaleLineInput[];
-
-      const operationSignature = JSON.stringify({
-        branchId: values.branchId,
-        customerName: values.customerName,
-        paymentMethodId: selectedMethod.id,
-        invoiceKind: values.invoiceKind,
-        lines,
-      });
-      operationRef.current = resolveOperationKey(operationRef.current, operationSignature);
-      const opKey = operationRef.current.key;
-
-      // 5. Atomic sale and internally numbered invoice; checkout does not call a provider.
-      const execution = await executePosSale({
-        branchId: values.branchId,
-        customerId: String(custId),
-        currency: ERP_BASE_CURRENCY,
-        exchangeSnapshotId: String(snapId),
-        operationKey: opKey,
-        reason: `Venta Mostrador POS - ${values.customerName}`,
-        invoiceKind: values.invoiceKind,
-        lines,
-        paymentLines,
-      });
-
-      setCart([]);
-      operationRef.current = null;
-      fetchProductsAndSettings();
-
-      const saleInfo: ConfirmedSaleInfo = {
-        saleId: execution.saleResult.saleId,
-        documentId: execution.saleResult.documentId,
-        documentNumber: execution.saleResult.documentNumber,
-        invoiceKind: execution.saleResult.invoiceKind,
-      };
-
-      if (execution.status === "completed") {
+        if (error || !data) throw new Error(`Error al obtener snapshot de tipo de cambio: ${error?.message || "Sin snapshot"}`);
+        return String(data);
+      },
+      getPosCustomerFn: async (displayName) => {
+        const { data, error } = await supabase.rpc("get_or_create_pos_customer", {
+          p_display_name: displayName,
+        });
+        if (error || !data) throw new Error(`Error al identificar cliente POS: ${error?.message || "Sin cliente"}`);
+        return String(data);
+      },
+      getCashSessionFn: async (branchId) => {
+        const { data, error } = await supabase.rpc("get_or_open_pos_cash_session", {
+          target_branch_id: branchId,
+        });
+        if (error || !data) throw new Error(`Error al verificar sesión de caja para cobro en efectivo: ${error?.message || "Sin caja"}`);
+        return String(data);
+      },
+      onConfirmed: (saleResult) => {
+        const res = saleResult as CreateSaleWithInvoiceResult;
         setLastTicket({
-          info: saleInfo,
-          receipt: execution.receipt,
-        });
-        setFeedback({
-          type: "success",
-          message: `¡Venta completada! Comprobante ${execution.saleResult.invoiceKind === "fiscal" ? "fiscal" : "no fiscal"} ${execution.saleResult.documentNumber} registrado en el ERP. Stock descontado atómicamente.`,
-        });
-      } else {
-        setLastTicket({
-          info: saleInfo,
+          info: {
+            saleId: res.saleId,
+            documentId: res.documentId,
+            documentNumber: res.documentNumber,
+            invoiceKind: res.invoiceKind,
+          },
           receipt: null,
-          recoveryError: execution.error
-            ? `Venta confirmada en ERP (${execution.saleResult.documentNumber}). No se pudo obtener el comprobante para impresión (${execution.error}). Podés recuperarlo ahora.`
-            : `Venta confirmada en ERP (${execution.saleResult.documentNumber}). El comprobante aún no devolvió datos persistidos para imprimir. Podés recuperarlo ahora.`,
+          saleOrgId: organizationId,
+        });
+      },
+      onSuccess: (saleResult, receipt) => {
+        const res = saleResult as CreateSaleWithInvoiceResult;
+        setLastTicket({
+          info: {
+            saleId: res.saleId,
+            documentId: res.documentId,
+            documentNumber: res.documentNumber,
+            invoiceKind: res.invoiceKind,
+          },
+          receipt: receipt || null,
+          saleOrgId: organizationId,
+          recoveryError: receipt
+            ? null
+            : `Venta confirmada en ERP (${res.documentNumber}). No se pudo obtener el comprobante para impresión. Podés recuperarlo ahora.`,
         });
         setFeedback({
           type: "success",
-          message: `¡Venta confirmada! Comprobante ${execution.saleResult.invoiceKind === "fiscal" ? "fiscal" : "no fiscal"} ${execution.saleResult.documentNumber} registrado en el ERP. Lectura de comprobante pendiente.`,
+          message: `¡Venta completada! Comprobante ${res.invoiceKind === "fiscal" ? "fiscal" : "no fiscal"} ${res.documentNumber} registrado en el ERP. Stock descontado atómicamente.`,
         });
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al procesar la venta";
-      // Cart is retained for retry
-      setFeedback({ type: "error", message: msg });
-    } finally {
-      setSubmittingSale(false);
-    }
+      },
+      onError: (err) => {
+        const norm = typeof err === "string" ? { message: err, isStaleQuote: false } : err;
+        if (norm.isStaleQuote) {
+          setStaleQuoteDetected(true);
+        }
+        setFeedback({ type: "error", message: norm.message });
+      },
+      onClearCart: () => setCart([]),
+      onSetStaleQuoteDetected: (stale) => setStaleQuoteDetected(stale),
+      onSetSubmittingSale: (submitting) => setSubmittingSale(submitting),
+      onAfterSaleFetch: () => coordinator.requestAutoFetch(async (token) => { await fetchProductsAndSettings({ kind: "fetch", token }); }),
+    });
   };
 
+  const handleSyncCartWithCatalog = async () => {
+    if (coordinator.isCheckoutActive() || coordinator.isRequoteActive() || coordinator.isFetchActive() || submittingSale) return;
+    await coordinator.coordinateRequote({
+      cart,
+      fetchCatalog: (requoteToken) => fetchProductsAndSettings(requoteToken === undefined ? undefined : { kind: "requote", token: requoteToken }),
+      onApplyCart: (updatedCart) => setCart(updatedCart),
+      onApplyFeedback: (fb) => setFeedback(fb),
+      onSetStaleQuoteDetected: (stale) => setStaleQuoteDetected(stale),
+      onSetLoading: (ld) => setLoading(ld),
+    });
+  };
+
+  const financialAttempt = coordinator.getFinancialAttempt();
+  const hasUnresolvedAttempt = financialAttempt?.status === "uncertain" || financialAttempt?.status === "dispatched";
   const activeBranch = branches.find((branch) => branch.id === selectedBranchId);
   const activeLocation = locations.find((location) => location.id === selectedLocationId);
   const availableLocations = locations.filter((location) => location.branch_id === selectedBranchId);
@@ -749,13 +863,32 @@ export const PosWorkspace: React.FC = () => {
         />
       )}
 
-      {lastTicket && (
+      {hasUnresolvedAttempt && (
+        <div role="status" className="erp-alert erp-alert-warning">
+          <p>Hay un cobro con resultado incierto. No inicie otra venta hasta resolverlo.</p>
+          {financialAttempt?.origin.organizationId !== organizationId ? (
+            <p>Vuelva a la organización de origen para reintentar el mismo cobro.</p>
+          ) : (
+            <button type="button" className="btn-secondary" onClick={() => { void handleRetryUncertain(); }}
+              disabled={loading || submittingSale || !coordinator.isIdle()}>
+              Reintentar cobro pendiente
+            </button>
+          )}
+        </div>
+      )}
+      {lastTicket && (!lastTicket.saleOrgId || lastTicket.saleOrgId === organizationId) && (
         <PosReceiptPanel
           key={lastTicket.info.documentId}
           ticket={lastTicket}
           onClose={() => setLastTicket(null)}
           onRecover={handleRecover}
         />
+      )}
+
+      {lastTicket && lastTicket.saleOrgId && lastTicket.saleOrgId !== organizationId && (
+        <div style={{ padding: "12px 16px", background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: "8px", color: "var(--amber-accent, #f59e0b)", fontSize: "13px", marginBottom: "16px" }}>
+          El comprobante emitido ({lastTicket.info.documentNumber}) corresponde a otra organización. Vuelva a la organización original para consultarlo o imprimirlo.
+        </div>
       )}
 
       <div className="pos-workspace-grid" style={{ gap: "24px" }}>
@@ -767,8 +900,8 @@ export const PosWorkspace: React.FC = () => {
               <button
                 type="button"
                 className="pag-btn"
-                onClick={fetchProductsAndSettings}
-                disabled={loading}
+                onClick={() => { void fetchProductsAndSettings(); }}
+                disabled={loading || coordinator.isCheckoutActive() || coordinator.isRequoteActive() || submittingSale}
                 title="Recargar catálogo"
               >
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
@@ -780,6 +913,7 @@ export const PosWorkspace: React.FC = () => {
                   type="text"
                   placeholder="Escanear código de barras o buscar por nombre (Enter agrega)..."
                   value={search}
+                  disabled={coordinator.isCheckoutActive() || submittingSale}
                   onChange={(e) => setSearch(e.target.value)}
                   onKeyDown={handleBarcodeSubmit}
                 />
@@ -867,38 +1001,74 @@ export const PosWorkspace: React.FC = () => {
                           {product.variants.map((v) => (
                             <React.Fragment key={v.id}>
                               {product.inventoryTracking === "serial" || product.inventoryTracking === "imei" ? (
-                                v.inventoryUnits.map((unit) => (
-                                  <button
-                                    key={unit.id}
-                                    type="button"
-                                    className="pag-btn"
-                                    style={{ fontSize: "11px", padding: "3px 7px" }}
-                                    onClick={() => addToCart(product, v, unit)}
-                                    title={`Agregar ${v.name}, ${unit.label}`}
-                                  >
-                                    {v.name} · {unit.label}
-                                  </button>
-                                ))
+                                v.inventoryUnits.map((unit) => {
+                                  const isInvalidPrice = v.isPriceOutOfRange || v.effectiveGrossPrice < 0;
+                                  return (
+                                    <button
+                                      key={unit.id}
+                                      type="button"
+                                      className="pag-btn"
+                                      style={{
+                                        fontSize: "11px",
+                                        padding: "3px 7px",
+                                        borderColor: isInvalidPrice ? "var(--rose-accent, #f43f5e)" : undefined,
+                                        background: isInvalidPrice ? "var(--rose-soft, #fff1f2)" : undefined,
+                                        color: isInvalidPrice ? "var(--rose-accent, #e11d48)" : undefined,
+                                        cursor: isInvalidPrice ? "not-allowed" : "pointer",
+                                      }}
+                                      disabled={isInvalidPrice || coordinator.isCheckoutActive() || submittingSale}
+                                      onClick={() => addToCart(product, v, unit)}
+                                      title={
+                                        isInvalidPrice
+                                          ? (v.priceRangeError || `Precio fuera de rango (${v.effectiveGrossPrice})`)
+                                          : `Agregar ${v.name}, ${unit.label}`
+                                      }
+                                    >
+                                      {v.name} · {unit.label}
+                                    </button>
+                                  );
+                                })
                               ) : (
-                                <button
-                                  type="button"
-                                  className="pag-btn"
-                                  style={{
-                                    fontSize: "11px",
-                                    padding: "3px 7px",
-                                    borderRadius: "6px",
-                                    borderColor: v.stock > 0 ? "var(--brand-border)" : "var(--border-line)",
-                                    background: v.stock > 0 ? "var(--brand-soft)" : "var(--canvas-bg)",
-                                    color: v.stock > 0 ? "var(--brand-primary)" : "var(--text-light)",
-                                    fontWeight: 700,
-                                    cursor: v.stock > 0 ? "pointer" : "not-allowed",
-                                  }}
-                                  disabled={v.stock <= 0}
-                                  onClick={() => addToCart(product, v)}
-                                  title={`Agregar variante ${v.name} (Stock: ${v.stock})`}
-                                >
-                                  {v.name} ({v.stock})
-                                </button>
+                                (() => {
+                                  const isInvalidPrice = v.isPriceOutOfRange || v.effectiveGrossPrice < 0;
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="pag-btn"
+                                      style={{
+                                        fontSize: "11px",
+                                        padding: "3px 7px",
+                                        borderRadius: "6px",
+                                        borderColor: isInvalidPrice
+                                          ? "var(--rose-accent, #f43f5e)"
+                                          : v.stock > 0
+                                            ? "var(--brand-border)"
+                                            : "var(--border-line)",
+                                        background: isInvalidPrice
+                                          ? "var(--rose-soft, #fff1f2)"
+                                          : v.stock > 0
+                                            ? "var(--brand-soft)"
+                                            : "var(--canvas-bg)",
+                                        color: isInvalidPrice
+                                          ? "var(--rose-accent, #e11d48)"
+                                          : v.stock > 0
+                                            ? "var(--brand-primary)"
+                                            : "var(--text-light)",
+                                        fontWeight: 700,
+                                        cursor: isInvalidPrice || v.stock <= 0 ? "not-allowed" : "pointer",
+                                      }}
+                                      disabled={v.stock <= 0 || isInvalidPrice || coordinator.isCheckoutActive() || submittingSale}
+                                      onClick={() => addToCart(product, v)}
+                                      title={
+                                        isInvalidPrice
+                                          ? (v.priceRangeError || `Precio inválido (${v.effectiveGrossPrice})`)
+                                          : `Agregar variante ${v.name} (Stock: ${v.stock})`
+                                      }
+                                    >
+                                      {v.name} {isInvalidPrice ? `(${v.priceRangeError ? "Fuera de rango" : "Inválido"})` : `(${v.stock})`}
+                                    </button>
+                                  );
+                                })()
                               )}
                             </React.Fragment>
                           ))}
@@ -913,6 +1083,7 @@ export const PosWorkspace: React.FC = () => {
                             key={unit.id}
                             type="button"
                             className="pag-btn"
+                            disabled={coordinator.isCheckoutActive() || submittingSale}
                             style={{ fontSize: "11px", padding: "3px 7px" }}
                             onClick={() => addToCart(product, undefined, unit)}
                           >
@@ -934,11 +1105,23 @@ export const PosWorkspace: React.FC = () => {
                     }}
                   >
                     <div>
-                      <div style={{ fontSize: "16px", fontWeight: 850, color: "var(--brand-primary)" }}>
-                        {formatCurrency(product.priceArs + calculateLineTax(product.priceArs, 1, product.taxRatePercent), "ARS")}
+                      <div
+                        style={{
+                          fontSize: "16px",
+                          fontWeight: 850,
+                          color: product.isPriceOutOfRange ? "var(--rose-accent, #e11d48)" : "var(--brand-primary)",
+                        }}
+                      >
+                        {product.isPriceOutOfRange
+                          ? (product.priceRangeError || "Precio fuera de rango")
+                          : formatPosCurrency(product.priceArs, "ARS")}
                       </div>
                       <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>
-                        {dollarRate ? formatCurrency(product.priceUsd, "USD") : "Cotización pendiente"}
+                        {product.isPriceOutOfRange
+                          ? "Artículo bloqueado en POS"
+                          : dollarRate
+                            ? formatCurrency(product.priceUsd, "USD")
+                            : "Cotización pendiente"}
                       </div>
                     </div>
 
@@ -949,14 +1132,22 @@ export const PosWorkspace: React.FC = () => {
                         style={{
                           width: "32px",
                           height: "32px",
-                          background: "var(--brand-soft)",
-                          color: "var(--brand-primary)",
-                          border: "1px solid var(--brand-border)",
+                          background: product.isPriceOutOfRange ? "var(--rose-soft, #fff1f2)" : "var(--brand-soft)",
+                          color: product.isPriceOutOfRange ? "var(--rose-accent, #e11d48)" : "var(--brand-primary)",
+                          border: product.isPriceOutOfRange ? "1px solid var(--rose-accent, #f43f5e)" : "1px solid var(--brand-border)",
                         }}
-                        disabled={product.stock <= 0}
+                        disabled={product.stock <= 0 || product.priceArs < 0 || product.isPriceOutOfRange || coordinator.isCheckoutActive() || submittingSale}
                         onClick={() => addToCart(product)}
                         aria-label={`Agregar ${product.name} al carrito`}
-                        title={product.stock <= 0 ? "Sin stock" : "Agregar al carrito"}
+                        title={
+                          product.isPriceOutOfRange
+                            ? (product.priceRangeError || "Precio fuera de rango")
+                            : product.priceArs < 0
+                              ? "Precio negativo inválido"
+                              : product.stock <= 0
+                                ? "Sin stock"
+                                : "Agregar al carrito"
+                        }
                       >
                         <Plus size={16} />
                       </button>
@@ -1002,6 +1193,7 @@ export const PosWorkspace: React.FC = () => {
                 type="button"
                 className="flow-link-btn"
                 style={{ color: "var(--rose-accent)", fontSize: "11px" }}
+                disabled={coordinator.isCheckoutActive() || submittingSale}
                 onClick={clearCart}
               >
                 Vaciar
@@ -1015,13 +1207,24 @@ export const PosWorkspace: React.FC = () => {
               <select
                 id="pos-branch"
                 className="erp-form-input"
+                disabled={coordinator.isCheckoutActive() || submittingSale}
                 {...checkoutForm.register("branchId", {
                   onChange: (event) => {
+                    if (coordinator.isCheckoutActive() || submittingSale) return;
                     const branchId = String(event.target.value);
                     const nextLocation = locations.find((location) => location.branch_id === branchId);
-                    checkoutForm.setValue("locationId", nextLocation?.id || "", { shouldValidate: true });
+                    const nextLocationId = nextLocation?.id || "";
+                    checkoutForm.setValue("locationId", nextLocationId, { shouldValidate: true });
+                    coordinator.notifyContextChanged({
+                      organizationId,
+                      branchId,
+                      locationId: nextLocationId,
+                    });
+                    coordinator.notifyCartCleared();
                     setCart([]);
-                    operationRef.current = null;
+                    coordinator.requestAutoFetch(async (token) => {
+                      await fetchProductsAndSettings({ kind: "fetch", token });
+                    });
                   },
                 })}
               >
@@ -1036,10 +1239,21 @@ export const PosWorkspace: React.FC = () => {
               <select
                 id="pos-location"
                 className="erp-form-input"
+                disabled={coordinator.isCheckoutActive() || submittingSale}
                 {...checkoutForm.register("locationId", {
-                  onChange: () => {
+                  onChange: (event) => {
+                    if (coordinator.isCheckoutActive() || submittingSale) return;
+                    const locationId = String(event.target.value);
+                    coordinator.notifyContextChanged({
+                      organizationId,
+                      branchId: selectedBranchId,
+                      locationId,
+                    });
+                    coordinator.notifyCartCleared();
                     setCart([]);
-                    operationRef.current = null;
+                    coordinator.requestAutoFetch(async (token) => {
+                      await fetchProductsAndSettings({ kind: "fetch", token });
+                    });
                   },
                 })}
               >
@@ -1075,7 +1289,10 @@ export const PosWorkspace: React.FC = () => {
               type="text"
               placeholder="Nombre del cliente (Consumidor Final)"
               aria-label="Nombre del cliente"
-              {...checkoutForm.register("customerName")}
+              disabled={coordinator.isCheckoutActive() || submittingSale}
+              {...checkoutForm.register("customerName", {
+                onChange: () => { if (!coordinator.isCheckoutActive()) coordinator.notifyCartModified(); },
+              })}
               style={{
                 border: 0,
                 outline: 0,
@@ -1097,10 +1314,9 @@ export const PosWorkspace: React.FC = () => {
             <select
               id="pos-invoice-kind"
               className="erp-form-input"
+              disabled={coordinator.isCheckoutActive() || submittingSale}
               {...checkoutForm.register("invoiceKind", {
-                onChange: () => {
-                  operationRef.current = null;
-                },
+                onChange: () => { if (!coordinator.isCheckoutActive()) coordinator.notifyCartModified(); },
               })}
             >
               <option value="">Seleccioná el tipo</option>
@@ -1138,7 +1354,7 @@ export const PosWorkspace: React.FC = () => {
                 <p style={{ fontSize: "11px", margin: "4px 0 0" }}>Seleccioná un producto o variante para agregarlo</p>
               </div>
             ) : (
-              cart.map((item) => (
+              cart.map((item, index) => (
                 <div
                   key={item.key}
                   style={{
@@ -1167,7 +1383,7 @@ export const PosWorkspace: React.FC = () => {
                     </strong>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                       <span style={{ fontSize: "11px", color: "var(--brand-primary)", fontWeight: 800 }}>
-                        {formatCurrency(item.priceArs * item.quantity, "ARS")}
+                        {formatPosCurrency(cartTotals.lines[index]?.lineTotal ?? mul4(item.priceArs, item.quantity), "ARS")}
                       </span>
                       <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
                         (disp: {item.availableStock})
@@ -1187,6 +1403,7 @@ export const PosWorkspace: React.FC = () => {
                         display: "grid",
                         placeItems: "center",
                       }}
+                      disabled={coordinator.isCheckoutActive() || submittingSale}
                       onClick={() => updateQuantity(item.key, -1)}
                       aria-label="Restar 1"
                     >
@@ -1206,7 +1423,7 @@ export const PosWorkspace: React.FC = () => {
                         display: "grid",
                         placeItems: "center",
                       }}
-                      disabled={item.quantity >= item.availableStock}
+                      disabled={item.quantity >= item.availableStock || coordinator.isCheckoutActive() || submittingSale}
                       onClick={() => updateQuantity(item.key, 1)}
                       aria-label="Sumar 1"
                     >
@@ -1220,6 +1437,7 @@ export const PosWorkspace: React.FC = () => {
                         color: "var(--rose-accent)",
                         marginLeft: "4px",
                       }}
+                      disabled={coordinator.isCheckoutActive() || submittingSale}
                       onClick={() => removeFromCart(item.key)}
                       aria-label="Eliminar del carrito"
                     >
@@ -1269,7 +1487,12 @@ export const PosWorkspace: React.FC = () => {
                       color: isSel ? "var(--brand-primary)" : "var(--text-muted)",
                       borderRadius: "10px",
                     }}
-                    onClick={() => checkoutForm.setValue("paymentMethodId", method.id, { shouldValidate: true })}
+                    disabled={coordinator.isCheckoutActive() || submittingSale}
+                    onClick={() => {
+                      if (coordinator.isCheckoutActive() || submittingSale) return;
+                      if (selectedPaymentMethodId !== method.id) coordinator.notifyCartModified();
+                      checkoutForm.setValue("paymentMethodId", method.id, { shouldValidate: true });
+                    }}
                   >
                     <Icon size={14} />
                     <span style={{ fontSize: "11px", fontWeight: 700 }}>{method.name}</span>
@@ -1308,13 +1531,13 @@ export const PosWorkspace: React.FC = () => {
             >
               <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 600 }}>Total en Pesos:</span>
               <strong style={{ fontSize: "20px", fontWeight: 900, color: "var(--text-main)" }}>
-                {formatCurrency(subtotalArs, "ARS")}
+                {formatPosCurrency(subtotalArs, "ARS")}
               </strong>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span style={{ fontSize: "11px", color: "var(--text-light)", fontWeight: 600 }}>Neto / IVA:</span>
               <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)" }}>
-                {formatCurrency(subtotalNetArs, "ARS")} / {formatCurrency(totalTaxArs, "ARS")}
+                {formatPosCurrency(subtotalNetArs, "ARS")} / {formatPosCurrency(totalTaxArs, "ARS")}
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -1325,11 +1548,74 @@ export const PosWorkspace: React.FC = () => {
             </div>
           </div>
 
+          {cartTotals.error && (
+            <div
+              style={{
+                marginTop: "12px",
+                padding: "10px",
+                borderRadius: "8px",
+                background: "var(--rose-soft, #fff1f2)",
+                border: "1px solid var(--rose-accent, #f43f5e)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+              }}
+            >
+              <span style={{ fontSize: "12px", color: "var(--rose-accent, #e11d48)", fontWeight: 700 }}>
+                {cartTotals.error}
+              </span>
+            </div>
+          )}
+
+          {staleQuoteDetected && (
+            <div
+              style={{
+                marginTop: "12px",
+                padding: "10px",
+                borderRadius: "8px",
+                background: "var(--rose-soft, #fff1f2)",
+                border: "1px solid var(--rose-accent, #f43f5e)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <span style={{ fontSize: "12px", color: "var(--rose-accent, #e11d48)", fontWeight: 700 }}>
+                El catálogo cambió mientras armaba el carrito. Actualice los precios antes de confirmar.
+              </span>
+              <button
+                type="button"
+                onClick={handleSyncCartWithCatalog}
+                className="btn-secondary btn-block"
+                style={{
+                  height: "36px",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  borderColor: "var(--brand-primary)",
+                  color: "var(--brand-primary)",
+                }}
+                disabled={loading || submittingSale || coordinator.isCheckoutActive() || coordinator.isRequoteActive()}
+              >
+                <RefreshCw size={14} className={loading || coordinator.isRequoteActive() ? "animate-spin" : ""} /> Actualizar precios del carrito
+              </button>
+            </div>
+          )}
+
           <button
             type="submit"
             className="btn-primary btn-block"
             style={{ marginTop: "14px", height: "46px", fontSize: "14px", fontWeight: 850 }}
-            disabled={cart.length === 0 || submittingSale || !activeLocation}
+            disabled={
+              cart.length === 0 ||
+              hasUnresolvedAttempt ||
+              staleQuoteDetected ||
+              submittingSale ||
+              loading ||
+              coordinator.isCheckoutActive() ||
+              coordinator.isRequoteActive() ||
+              !activeLocation ||
+              !cartTotals.isValid
+            }
           >
             {submittingSale ? (
               <>

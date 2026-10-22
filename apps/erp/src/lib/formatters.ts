@@ -17,6 +17,33 @@ export function formatCurrency(amount: number | null | undefined, currency: stri
   }).format(amount);
 }
 
+/**
+ * POS v2 currency formatter: preserves fractional precision up to 4 decimal places
+ * (minimum 2 decimals, maximum 4 decimals), avoiding hiding real cents in fractional ARS prices.
+ * e.g. 100.005 -> "ARS 100,005", 300.015 -> "ARS 300,015", 0.0001 -> "ARS 0,0001", 100 -> "ARS 100,00".
+ */
+export function formatPosCurrency(
+  amount: number | string | null | undefined,
+  currency: string = "ARS",
+): string {
+  if (amount === null || amount === undefined) {
+    return "—";
+  }
+  const numericAmount = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(numericAmount)) {
+    return "—";
+  }
+
+  if (!/^[A-Z]{3}$/.test(currency)) return "—";
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency,
+    currencyDisplay: "code",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(numericAmount);
+}
+
 export function formatCurrencyCompact(amount: number | null | undefined, currency: "ARS" | "USD" = "ARS"): string {
   if (amount === null || amount === undefined || !Number.isFinite(amount)) {
     return "—";

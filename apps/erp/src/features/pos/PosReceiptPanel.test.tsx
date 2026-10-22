@@ -8,6 +8,7 @@ import {
   type PosReceiptRecoveryResult,
 } from "./posReceiptFlow";
 import * as posApi from "./api";
+import { parseDocumentSaleReceipt } from "../documents/api";
 import type { DocumentSaleReceipt } from "../../types/DocumentSaleReceipt";
 
 describe("PosReceiptPanel UI component", () => {
@@ -376,5 +377,117 @@ describe("PosReceiptPanel UI component", () => {
     );
     expect(screen.queryByTestId("print-receipt-btn")).toBeNull();
     expect(createSaleWithInvoiceSpy).not.toHaveBeenCalled();
+  });
+
+  it("formats v2 ticket amounts with up to 4 decimals in PosReceiptPanel header", () => {
+    const v2Receipt: DocumentSaleReceipt = {
+      ...dummyPersistedReceipt,
+      pricing_version: "v2",
+      total_amount: 300.015,
+      total_ars: 300.015,
+      lines: [
+        {
+          description: "Pieza v2",
+          quantity: 3,
+          unit_price: 82.6488,
+          discount_amount: 0,
+          tax_rate_percent: 21,
+          tax_amount: 52.0687,
+          line_total: 300.015,
+          pricing_version: "v2",
+          unit_gross_price: 100.005,
+          net_subtotal_amount: 247.9463,
+          gross_discount_amount: 0,
+        },
+      ],
+    };
+
+    const ticket: ConfirmedTicketState = {
+      info: dummyConfirmedInfo,
+      receipt: v2Receipt,
+    };
+
+    render(
+      <PosReceiptPanel
+        ticket={ticket}
+        onClose={vi.fn()}
+        onRecover={vi.fn()}
+      />,
+    );
+
+    const amountEl = screen.getByTestId("receipt-amount");
+    expect(amountEl.textContent?.replace(/\u00a0/g, " ")).toBe("ARS 300,015");
+  });
+
+  it("handles malformed v2 readback failing closed with real parseDocumentSaleReceipt: no receipt rendered, no print button", () => {
+    // Malformed v2 row from DB missing required unit_gross_price
+    const malformedV2Row = {
+      sale_id: "sale-uuid-001",
+      document_id: "doc-uuid-001",
+      document_number: "F-0001-00000001",
+      invoice_kind: "fiscal",
+      pricing_version: "v2",
+      branch_name: "Sucursal Central",
+      customer_display_name: "Cliente Real",
+      customer_legal_name: "Cliente Real",
+      currency_code: "ARS",
+      exchange_rate: 1,
+      subtotal_amount: 100,
+      discount_amount: 0,
+      tax_amount: 21,
+      total_amount: 121,
+      total_ars: 121,
+      confirmed_at: "2026-10-21T01:00:00Z",
+      document_status: "issued",
+      payments: [],
+      lines: [
+        {
+          description: "Item malformed",
+          quantity: 1,
+          unit_price: 100,
+          discount_amount: 0,
+          tax_rate_percent: 21,
+          tax_amount: 21,
+          line_total: 121,
+          pricing_version: "v2",
+          // unit_gross_price is missing!
+          net_subtotal_amount: 100,
+          gross_discount_amount: 0,
+        },
+      ],
+    };
+
+    let parseErrMessage = "";
+    try {
+      // Use real parser from documents/api
+      parseDocumentSaleReceipt(malformedV2Row);
+    } catch (err: unknown) {
+      parseErrMessage = err instanceof Error ? err.message : String(err);
+    }
+
+    expect(parseErrMessage).toContain("unit_gross_price es obligatorio");
+
+    // In posReceiptFlow, this error causes ticket.receipt to remain null and recoveryError to be set
+    const ticket: ConfirmedTicketState = {
+      info: dummyConfirmedInfo,
+      receipt: null,
+      recoveryError: `Error al leer comprobante: ${parseErrMessage}`,
+    };
+
+    render(
+      <PosReceiptPanel
+        ticket={ticket}
+        onClose={vi.fn()}
+        onRecover={vi.fn()}
+      />,
+    );
+
+    // Assert fail-closed: NO print button, NO fabricated customer/amount, message displayed
+    expect(screen.queryByTestId("print-receipt-btn")).toBeNull();
+    expect(screen.queryByTestId("receipt-amount")).toBeNull();
+    expect(screen.queryByLabelText("Comprobante local de venta")).toBeNull();
+    expect(screen.getByTestId("pending-receipt-message")).toHaveTextContent(
+      "unit_gross_price es obligatorio en la línea 1 para liquidación v2",
+    );
   });
 });

@@ -78,6 +78,30 @@ const parseReceiptNumber = (value: unknown, label: string): number => {
   return parsed;
 };
 
+const parseOptionalReceiptNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+};
+
+const parsePricingVersion = (value: unknown, label: string): "v1" | "v2" | undefined => {
+  if (value === null || value === undefined) return undefined;
+  if (value === "v1" || value === "v2") return value;
+  throw new Error(`Versión de liquidación desconocida en ${label}: ${String(value)}.`);
+};
+
+const parseRequiredV2Number = (val: unknown, fieldName: string, lineIndex: number): number => {
+  if (val === null || val === undefined) {
+    throw new Error(`El campo ${fieldName} es obligatorio en la línea ${lineIndex} para liquidación v2.`);
+  }
+  const parsed = typeof val === "number" ? val : typeof val === "string" ? Number(val) : NaN;
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`El campo ${fieldName} en la línea ${lineIndex} debe ser un número finito no negativo en liquidación v2.`);
+  }
+  return parsed;
+};
+
 export const parseDocumentSaleReceipt = (value: unknown): DocumentSaleReceipt => {
   const row = parseRecord(value, "el comprobante de venta");
   const invoiceKind = row["invoice_kind"];
@@ -88,17 +112,49 @@ export const parseDocumentSaleReceipt = (value: unknown): DocumentSaleReceipt =>
   if (documentStatus !== "issued" && documentStatus !== "voided") {
     throw new Error("El comprobante no tiene un estado documental válido.");
   }
+  const pricingVersion = parsePricingVersion(row["pricing_version"], "el comprobante");
+  const isV2 = pricingVersion === "v2";
+
   if (!Array.isArray(row["lines"])) throw new Error("El comprobante no contiene líneas válidas.");
   const lines = row["lines"].map((line, index): DocumentSaleReceiptLine => {
-    const values = parseRecord(line, "la línea " + (index + 1));
+    const lineIndex = index + 1;
+    const values = parseRecord(line, "la línea " + lineIndex);
+    const linePricingVersion = parsePricingVersion(values["pricing_version"], "la línea " + lineIndex);
+
+    let unitGrossPrice: number | null = null;
+    let netSubtotalAmount: number | null = null;
+    let grossDiscountAmount: number | null = null;
+
+    if (isV2) {
+      if (linePricingVersion !== "v2") {
+        throw new Error(
+          `La línea ${lineIndex} tiene una versión de liquidación discordante (${linePricingVersion ?? "sin versión"}) con el comprobante v2.`,
+        );
+      }
+      unitGrossPrice = parseRequiredV2Number(values["unit_gross_price"], "unit_gross_price", lineIndex);
+      netSubtotalAmount = parseRequiredV2Number(values["net_subtotal_amount"], "net_subtotal_amount", lineIndex);
+      grossDiscountAmount = parseRequiredV2Number(values["gross_discount_amount"], "gross_discount_amount", lineIndex);
+    } else {
+      if (linePricingVersion === "v2") {
+        throw new Error(`La línea ${lineIndex} indica versión v2 en un comprobante ${pricingVersion ?? "v1 legado"}.`);
+      }
+      unitGrossPrice = parseOptionalReceiptNumber(values["unit_gross_price"]);
+      netSubtotalAmount = parseOptionalReceiptNumber(values["net_subtotal_amount"]);
+      grossDiscountAmount = parseOptionalReceiptNumber(values["gross_discount_amount"]);
+    }
+
     return {
-      description: parseReceiptText(values["description"], "la descripción de línea " + (index + 1)),
-      quantity: parseReceiptNumber(values["quantity"], "la cantidad de línea " + (index + 1)),
-      unit_price: parseReceiptNumber(values["unit_price"], "el precio de línea " + (index + 1)),
-      discount_amount: parseReceiptNumber(values["discount_amount"], "el descuento de línea " + (index + 1)),
-      tax_rate_percent: parseReceiptNumber(values["tax_rate_percent"], "el impuesto de línea " + (index + 1)),
-      tax_amount: parseReceiptNumber(values["tax_amount"], "el importe de impuesto de línea " + (index + 1)),
-      line_total: parseReceiptNumber(values["line_total"], "el total de línea " + (index + 1)),
+      description: parseReceiptText(values["description"], "la descripción de línea " + lineIndex),
+      quantity: parseReceiptNumber(values["quantity"], "la cantidad de línea " + lineIndex),
+      unit_price: parseReceiptNumber(values["unit_price"], "el precio de línea " + lineIndex),
+      discount_amount: parseReceiptNumber(values["discount_amount"], "el descuento de línea " + lineIndex),
+      tax_rate_percent: parseReceiptNumber(values["tax_rate_percent"], "el impuesto de línea " + lineIndex),
+      tax_amount: parseReceiptNumber(values["tax_amount"], "el importe de impuesto de línea " + lineIndex),
+      line_total: parseReceiptNumber(values["line_total"], "el total de línea " + lineIndex),
+      pricing_version: linePricingVersion,
+      unit_gross_price: unitGrossPrice,
+      net_subtotal_amount: netSubtotalAmount,
+      gross_discount_amount: grossDiscountAmount,
     };
   });
   if (!Array.isArray(row["payments"])) throw new Error("El comprobante no contiene un historial de pagos válido.");
@@ -123,6 +179,7 @@ export const parseDocumentSaleReceipt = (value: unknown): DocumentSaleReceipt =>
     document_id: parseReceiptText(row["document_id"], "el ID de documento"),
     document_number: parseReceiptText(row["document_number"], "el número de documento"),
     invoice_kind: invoiceKind,
+    pricing_version: pricingVersion,
     branch_name: parseReceiptText(row["branch_name"], "la sucursal"),
     customer_display_name: parseReceiptText(row["customer_display_name"], "el nombre del cliente"),
     customer_legal_name: parseReceiptText(row["customer_legal_name"], "la razón social"),

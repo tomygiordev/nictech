@@ -1,7 +1,7 @@
 import React from "react";
 import { CheckCircle2, Printer, RefreshCw, Loader2 } from "lucide-react";
 import SaleReceipt from "../../components/erp/SaleReceipt";
-import { formatCurrency } from "../../lib/formatters";
+import { formatCurrency, formatPosCurrency } from "../../lib/formatters";
 import type { ConfirmedTicketState } from "./posReceiptFlow";
 
 export interface PosReceiptPanelProps {
@@ -71,7 +71,9 @@ export const PosReceiptPanel: React.FC<PosReceiptPanelProps> = ({
                   <span data-testid="receipt-payment">{paymentMethodsSummary}</span>
                   {" • "}
                   <span data-testid="receipt-amount">
-                    {formatCurrency(receipt.total_amount, receipt.currency_code)}
+                    {receipt.pricing_version === "v2"
+                      ? formatPosCurrency(receipt.total_amount, receipt.currency_code)
+                      : formatCurrency(receipt.total_amount, receipt.currency_code)}
                   </span>
                 </p>
               ) : (

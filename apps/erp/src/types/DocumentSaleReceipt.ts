@@ -6,6 +6,10 @@ export interface DocumentSaleReceiptLine {
   tax_rate_percent: number;
   tax_amount: number;
   line_total: number;
+  pricing_version?: "v1" | "v2";
+  unit_gross_price?: number | null;
+  net_subtotal_amount?: number | null;
+  gross_discount_amount?: number | null;
 }
 
 export interface DocumentSaleReceiptPayment {
@@ -22,6 +26,7 @@ export interface DocumentSaleReceipt {
   document_number: string;
   branch_name: string;
   invoice_kind: "fiscal" | "non_fiscal";
+  pricing_version?: "v1" | "v2";
   customer_display_name: string;
   customer_legal_name: string;
   currency_code: string;

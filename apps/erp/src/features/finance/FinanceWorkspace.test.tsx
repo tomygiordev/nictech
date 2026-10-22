@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountsWorkspace } from "./AccountsWorkspace";
 import { AccountingWorkspace } from "./AccountingWorkspace";
-import { parseRpcId, postErpSourceEvent } from "./api";
+import { listTrialBalance, parseRpcId, postErpSourceEvent } from "./api";
 import { receivablePaymentSchema } from "./schemas";
 import { parseErpContext } from "../../auth/ErpContextValidation";
 
@@ -29,6 +29,9 @@ vi.mock("./api", async () => {
     listChartOfAccounts: vi.fn().mockResolvedValue([]),
     listAccountingPeriods: vi.fn().mockResolvedValue([]),
     listJournalEntries: vi.fn().mockResolvedValue([]),
+    listIvaVentas: vi.fn().mockResolvedValue([]),
+    listIvaCompras: vi.fn().mockResolvedValue([]),
+    listTrialBalance: vi.fn().mockResolvedValue([]),
     postJournalEntry: vi.fn().mockResolvedValue("550e8400-e29b-41d4-a716-446655440000"),
     reverseJournalEntry: vi.fn().mockResolvedValue("550e8400-e29b-41d4-a716-446655440000"),
     reconcileAccountBalance: vi.fn().mockResolvedValue("550e8400-e29b-41d4-a716-446655440000"),
@@ -46,6 +49,7 @@ const renderWorkspace = (children: React.ReactNode) =>
 describe("finance workspaces", () => {
   beforeEach(() => {
     authState.hasPermission = () => true;
+    vi.mocked(listTrialBalance).mockResolvedValue([]);
   });
 
   it("shows an empty state for accounts without network data", async () => {
@@ -56,6 +60,39 @@ describe("finance workspaces", () => {
   it("shows accounting empty state when ledgers are empty", async () => {
     renderWorkspace(<AccountingWorkspace />);
     expect(await screen.findByText("No hay asientos publicados todavía.")).toBeInTheDocument();
+  });
+
+  it("preserves exact4 trial balance amounts in rows and totals without changing legacy cents", async () => {
+    const shared = {
+      organization_id: "org-id",
+      period_id: "closed-period-id",
+      period_start: "2026-10-01",
+      period_end: "2026-10-31",
+    };
+    vi.mocked(listTrialBalance).mockResolvedValue([
+      { ...shared, account_id: "exact4", account_code: "1.1", account_name: "Cuenta exact4",
+        total_debit: 300.015, total_credit: 0.0001, balance: 300.0149 },
+      { ...shared, account_id: "legacy", account_code: "2.1", account_name: "Cuenta legacy",
+        total_debit: 0, total_credit: 100.56, balance: -100.56 },
+      { ...shared, account_id: "zero", account_code: "3.1", account_name: "Cuenta cero",
+        total_debit: 0, total_credit: 0, balance: 0 },
+    ]);
+
+    renderWorkspace(<AccountingWorkspace activeModuleId="reports" />);
+    const exactRow = (await screen.findByText("Cuenta exact4")).closest("tr");
+    const legacyRow = screen.getByText("Cuenta legacy").closest("tr");
+    const zeroRow = screen.getByText("Cuenta cero").closest("tr");
+    const totalRow = screen.getByText("Totales").closest("tr");
+    const amountCells = (row: HTMLTableRowElement | null) => {
+      if (!row) throw new Error("Expected a trial balance table row");
+      return within(row).getAllByRole("cell").slice(1)
+        .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim());
+    };
+
+    expect(amountCells(exactRow)).toEqual(["ARS 300,015", "ARS 0,0001", "ARS 300,0149"]);
+    expect(amountCells(legacyRow)).toEqual(["ARS 0,00", "ARS 100,56", "-ARS 100,56"]);
+    expect(amountCells(zeroRow)).toEqual(["ARS 0,00", "ARS 0,00", "ARS 0,00"]);
+    expect(amountCells(totalRow)).toEqual(["ARS 300,015", "ARS 100,5601", "ARS 199,4549"]);
   });
 
   it("shows access denied when the user lacks the workspace permission", () => {

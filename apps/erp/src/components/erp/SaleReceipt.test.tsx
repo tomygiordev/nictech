@@ -97,4 +97,92 @@ describe("SaleReceipt", () => {
 
     expect(screen.getByLabelText("Comprobante local de venta")).toHaveTextContent(`Estado de pago: ${label}`);
   });
+
+  it("renders v2 receipt preserving up to 4 decimal places without hiding fractional cents", () => {
+    const v2Receipt: DocumentSaleReceipt = {
+      ...receipt,
+      pricing_version: "v2",
+      total_amount: 300.015,
+      total_ars: 300.015,
+      subtotal_amount: 247.9463,
+      tax_amount: 52.0687,
+      lines: [
+        {
+          description: "Pieza de precisión",
+          quantity: 3,
+          unit_price: 82.6488,
+          discount_amount: 0,
+          tax_rate_percent: 21,
+          tax_amount: 52.0687,
+          line_total: 300.015,
+          pricing_version: "v2",
+          unit_gross_price: 100.005,
+          net_subtotal_amount: 247.9463,
+          gross_discount_amount: 0,
+        },
+      ],
+      payments: [
+        {
+          method_name: "Efectivo",
+          amount: 300.015,
+          currency_code: "ARS",
+          occurred_at: "2026-10-21T01:00:00Z",
+          reversed: false,
+        },
+      ],
+    };
+
+    render(<SaleReceipt receipt={v2Receipt} />);
+
+    const receiptArea = screen.getByLabelText("Comprobante local de venta");
+    const normalized = receiptArea.textContent?.replace(/\u00a0/g, " ") || "";
+
+    // Header labels for v2
+    expect(screen.getByText("Precio unit. (IVA inc.)")).toBeInTheDocument();
+    expect(screen.getByText(/Subtotal neto:/)).toBeInTheDocument();
+    expect(screen.getByText(/IVA discriminado:/)).toBeInTheDocument();
+
+    // 4-decimal exact amounts formatted with formatPosCurrency
+    expect(normalized).toContain("ARS 100,005");
+    expect(normalized).toContain("ARS 300,015");
+    expect(normalized).toContain("ARS 247,9463");
+    expect(normalized).toContain("ARS 52,0687");
+  });
+
+  it("renders legacy v1 receipt with standard fixed 2-decimal formatting and legacy headers", () => {
+    const v1Receipt: DocumentSaleReceipt = {
+      ...receipt,
+      pricing_version: "v1",
+      total_amount: 100.005,
+      total_ars: 100.005,
+      subtotal_amount: 82.6488,
+      tax_amount: 17.3562,
+      lines: [
+        {
+          description: "Legacy Item",
+          quantity: 1,
+          unit_price: 82.65,
+          discount_amount: 0,
+          tax_rate_percent: 21,
+          tax_amount: 17.36,
+          line_total: 100.005,
+          pricing_version: "v1",
+        },
+      ],
+    };
+
+    render(<SaleReceipt receipt={v1Receipt} />);
+
+    const receiptArea = screen.getByLabelText("Comprobante local de venta");
+    const normalized = receiptArea.textContent?.replace(/\u00a0/g, " ") || "";
+
+    // Legacy headers
+    expect(screen.getByText("Precio unitario")).toBeInTheDocument();
+    expect(screen.queryByText("Precio unit. (IVA inc.)")).not.toBeInTheDocument();
+    expect(screen.getByText(/Subtotal:/)).toBeInTheDocument();
+    expect(screen.getByText(/Impuestos:/)).toBeInTheDocument();
+
+    // Legacy formats with fixed 2 decimals (100.005 rounds to 100,01 in legacy formatCurrency)
+    expect(normalized).toContain("ARS 100,01");
+  });
 });

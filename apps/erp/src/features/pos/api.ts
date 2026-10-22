@@ -2,6 +2,7 @@ import { supabase } from "../../lib/supabase";
 import type { Database, Json } from "../../types/supabase";
 import { invoiceSaleSchema, saleSchema } from "./schemas";
 import type { InvoiceKind, PosInvoiceSaleInput, PosRegister, PosSaleInput } from "./types";
+import { z } from "zod";
 
 export type CreateSaleRpcArgs = Database["erp"]["Functions"]["create_sale"]["Args"];
 export type CreateSaleWithInvoiceRpcArgs = Database["erp"]["Functions"]["create_sale_with_invoice"]["Args"];
@@ -9,6 +10,19 @@ export type CreateSaleWithInvoiceRpcArgs = Database["erp"]["Functions"]["create_
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
   return supabase;
+};
+
+const deepCloneAndFreeze = <T>(val: T): T => {
+  if (val === null || typeof val !== "object") return val;
+  if (Array.isArray(val)) {
+    const arr = val.map(deepCloneAndFreeze);
+    return Object.freeze(arr) as unknown as T;
+  }
+  const cloned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(val)) {
+    cloned[k] = deepCloneAndFreeze(v);
+  }
+  return Object.freeze(cloned) as unknown as T;
 };
 
 const toJson = (value: unknown): Json => {
@@ -38,7 +52,7 @@ export const listRegisters = async (): Promise<PosRegister[]> => {
 
 export const buildCreateSaleRpcArgs = (input: PosSaleInput): CreateSaleRpcArgs => {
   const parsedInput = saleSchema.parse(input);
-  return {
+  return deepCloneAndFreeze({
     target_branch_id: parsedInput.branchId,
     target_customer_id: parsedInput.customerId,
     sale_currency: parsedInput.currency,
@@ -47,7 +61,7 @@ export const buildCreateSaleRpcArgs = (input: PosSaleInput): CreateSaleRpcArgs =
     operation_reason: parsedInput.reason,
     lines: toJson(parsedInput.lines),
     payment_lines: toJson(parsedInput.paymentLines),
-  };
+  });
 };
 
 export const createSale = async (input: PosSaleInput): Promise<string> => {
@@ -66,30 +80,26 @@ export interface CreateSaleWithInvoiceResult {
 
 export const buildCreateSaleWithInvoiceRpcArgs = (input: PosInvoiceSaleInput): CreateSaleWithInvoiceRpcArgs => {
   const parsedInput = invoiceSaleSchema.parse(input);
-  return {
-    ...buildCreateSaleRpcArgs(parsedInput),
+  const base = buildCreateSaleRpcArgs(parsedInput);
+  return deepCloneAndFreeze({
+    ...base,
     target_invoice_kind: parsedInput.invoiceKind,
-  };
+  });
 };
 
+const saleResultSchema = z.object({
+  sale_id: z.string().uuid(),
+  document_id: z.string().uuid(),
+  document_number: z.string().trim().min(1),
+  invoice_kind: z.enum(["fiscal", "non_fiscal"]),
+});
+
 const parseSaleWithInvoiceResult = (value: Json): CreateSaleWithInvoiceResult => {
-  if (value === null || Array.isArray(value) || typeof value !== "object") {
-    throw new Error("Respuesta inválida al emitir la factura de la venta.");
-  }
-  const result = value as {
-    sale_id?: unknown;
-    document_id?: unknown;
-    document_number?: unknown;
-    invoice_kind?: unknown;
-  };
-  if (
-    typeof result.sale_id !== "string" ||
-    typeof result.document_id !== "string" ||
-    typeof result.document_number !== "string" ||
-    (result.invoice_kind !== "fiscal" && result.invoice_kind !== "non_fiscal")
-  ) {
+  const parsed = saleResultSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error("Respuesta incompleta al emitir la factura de la venta.");
   }
+  const result = parsed.data;
   return {
     saleId: result.sale_id,
     documentId: result.document_id,
@@ -98,8 +108,15 @@ const parseSaleWithInvoiceResult = (value: Json): CreateSaleWithInvoiceResult =>
   };
 };
 
-export const createSaleWithInvoice = async (input: PosInvoiceSaleInput): Promise<CreateSaleWithInvoiceResult> => {
-  const { data, error } = await client().rpc("create_sale_with_invoice", buildCreateSaleWithInvoiceRpcArgs(input));
+export const submitPreparedSale = async (
+  args: CreateSaleWithInvoiceRpcArgs,
+): Promise<CreateSaleWithInvoiceResult> => {
+  const { data, error } = await client().rpc("create_sale_with_invoice", args);
   if (error) throw error;
   return parseSaleWithInvoiceResult(data);
+};
+
+export const createSaleWithInvoice = async (input: PosInvoiceSaleInput): Promise<CreateSaleWithInvoiceResult> => {
+  const args = buildCreateSaleWithInvoiceRpcArgs(input);
+  return submitPreparedSale(args);
 };

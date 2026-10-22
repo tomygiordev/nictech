@@ -15,7 +15,12 @@ export type PosSaleLineInput = {
   description: string;
   quantity: number;
   unit_price: number;
+  expected_unit_price?: number;
+  expected_tax_rate?: number;
+  unit_gross_price?: number;
   discount_amount: number;
+  gross_discount_amount?: number;
+  discount_reason?: string | null;
   tax_rate_percent: number;
   tax_amount: number;
 };
