@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- legacy product payload shape. */
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { optimizeImage, fileExtension, IMAGE_UPLOAD_OPTIONS } from '@/lib/image-upload';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -205,9 +206,10 @@ export function SmartphoneManagement() {
 
             // Upload Main Image
             if (imageFile) {
-                const fileExt = imageFile.name.split('.').pop();
+                const optimized = await optimizeImage(imageFile);
+                const fileExt = fileExtension(optimized);
                 const fileName = `${Math.random()}.${fileExt}`;
-                const { error: uploadError } = await supabase.storage.from('product_images').upload(fileName, imageFile);
+                const { error: uploadError } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
                 if (uploadError) throw uploadError;
                 const { data } = supabase.storage.from('product_images').getPublicUrl(fileName);
                 finalImageUrl = data.publicUrl;
@@ -216,9 +218,10 @@ export function SmartphoneManagement() {
             // Upload Additional Images
             if (additionalFiles.length > 0) {
                 const newUrls = await Promise.all(additionalFiles.map(async (file) => {
-                    const fileExt = file.name.split('.').pop();
+                    const optimized = await optimizeImage(file);
+                    const fileExt = fileExtension(optimized);
                     const fileName = `${Math.random()}.${fileExt}`;
-                    const { error: uploadError } = await supabase.storage.from('product_images').upload(fileName, file);
+                    const { error: uploadError } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
                     if (uploadError) throw uploadError;
                     const { data } = supabase.storage.from('product_images').getPublicUrl(fileName);
                     return data.publicUrl;

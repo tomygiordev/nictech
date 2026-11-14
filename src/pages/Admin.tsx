@@ -14,6 +14,7 @@ import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as Imag
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
 import { supabase } from '@/integrations/supabase/client';
+import { optimizeImage, fileExtension, IMAGE_UPLOAD_OPTIONS } from '@/lib/image-upload';
 import { toast } from '@/hooks/use-toast';
 import { generateTrackingCode } from '@/utils/generateTrackingCode';
 import { CaseManagement } from '@/components/admin/CaseManagement';
@@ -716,12 +717,13 @@ const Admin = () => {
       throw new Error('Extensión de archivo no permitida.');
     }
 
-    const fileName = `${crypto.randomUUID()}.${fileExt}`;
+    const optimized = await optimizeImage(file);
+    const fileName = `${crypto.randomUUID()}.${fileExtension(optimized)}`;
     const filePath = `${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from('product_images')
-      .upload(filePath, file);
+      .upload(filePath, optimized, IMAGE_UPLOAD_OPTIONS);
 
     if (uploadError) {
       throw uploadError;

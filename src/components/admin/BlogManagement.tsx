@@ -21,6 +21,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { optimizeImage, fileExtension, IMAGE_UPLOAD_OPTIONS } from "@/lib/image-upload";
 import { toast } from "@/hooks/use-toast";
 
 interface BlogPost {
@@ -89,9 +90,9 @@ export const BlogManagement = () => {
         }
     };
 
-    const uploadImage = async (file: File) => {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+    const uploadImage = async (originalFile: File) => {
+        const file = await optimizeImage(originalFile, 1600);
+        const fileName = `${Math.random()}.${fileExtension(file)}`;
         const filePath = `${fileName}`;
 
         // Try uploading to 'blog_images', fallback to 'product_images' if it doesn't exist
@@ -100,7 +101,7 @@ export const BlogManagement = () => {
         // Check if bucket exists/upload
         const { error: uploadError } = await supabase.storage
             .from(bucketName)
-            .upload(filePath, file);
+            .upload(filePath, file, IMAGE_UPLOAD_OPTIONS);
 
         if (uploadError) {
             // If bucket doesn't exist or other error, try generic bucket or handle creation
@@ -108,7 +109,7 @@ export const BlogManagement = () => {
             bucketName = "product_images";
             const { error: retryError } = await supabase.storage
                 .from(bucketName)
-                .upload(filePath, file);
+                .upload(filePath, file, IMAGE_UPLOAD_OPTIONS);
 
             if (retryError) throw retryError;
         }

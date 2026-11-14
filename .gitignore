@@ -30,3 +30,5 @@ supabase/.temp/cli-latest
 
 # Supabase local temp/secrets (nunca commitear)
 supabase/.temp/
+
+image-backup/

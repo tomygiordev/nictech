@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- legacy inventory payload shape. */
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { optimizeImage, fileExtension, IMAGE_UPLOAD_OPTIONS } from '@/lib/image-upload';
 import { toast } from '@/hooks/use-toast';
 import {
   Loader2, Plus, Save, Upload, X, Search, Filter,
@@ -67,9 +68,9 @@ async function uploadImageFile(file: File): Promise<string> {
   const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
   if (!ALLOWED.includes(file.type)) throw new Error('Tipo de archivo no permitido.');
   if (file.size > 5 * 1024 * 1024) throw new Error('Archivo demasiado grande (máx 5MB).');
-  const ext = file.name.split('.').pop()?.toLowerCase();
-  const fileName = `${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from('product_images').upload(fileName, file);
+  const optimized = await optimizeImage(file);
+  const fileName = `${crypto.randomUUID()}.${fileExtension(optimized)}`;
+  const { error } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
   if (error) throw error;
   return supabase.storage.from('product_images').getPublicUrl(fileName).data.publicUrl;
 }
