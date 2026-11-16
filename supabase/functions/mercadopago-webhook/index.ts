@@ -108,7 +108,7 @@ function buildOrderEmail(payer: any, items: any[], total: number, paymentId: str
           <tr>
             <td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:32px 40px;text-align:center;">
               <img
-                src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/resources/Copia%20de%20path5.png"
+                src="https://qatkzvlomuaoaxlfgjfa.supabase.co/storage/v1/object/public/resources/Copia%20de%20path5.png"
                 alt="Nictech"
                 style="height:48px;object-fit:contain;"
               />
@@ -207,7 +207,7 @@ function buildAdminEmail(payer: any, items: any[], total: number, paymentId: str
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:32px 0;"><tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
   <tr><td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:28px 40px;text-align:center;">
-    <img src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/resources/Copia%20de%20path5.png" alt="Nictech" style="height:44px;object-fit:contain;"/>
+    <img src="https://qatkzvlomuaoaxlfgjfa.supabase.co/storage/v1/object/public/resources/Copia%20de%20path5.png" alt="Nictech" style="height:44px;object-fit:contain;"/>
     <p style="color:rgba(255,255,255,0.5);font-size:12px;margin:10px 0 0;">Panel de ventas</p>
   </td></tr>
   <tr><td style="padding:32px 40px 16px;text-align:center;">
