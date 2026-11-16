@@ -65,4 +65,23 @@ describe('precio en la tarjeta', () => {
     expect(priceEl.className).not.toContain('truncate');
     expect(priceEl.className).toContain('whitespace-nowrap');
   });
+
+  it('permite seleccionar texto en la tarjeta manteniendo select-none solo en el boton de carrito', () => {
+    const { container } = render(<ProductCard {...base} />);
+    const rootCard = container.firstElementChild as HTMLElement;
+    const addToCartBtn = screen.getByTitle('Añadir a carrito');
+    expect(rootCard.className).not.toContain('select-none');
+    expect(addToCartBtn.className).toContain('select-none');
+  });
+
+  it('muestra badge de garantia para usados y beneficio por transferencia en ARS', () => {
+    render(<ProductCard {...base} name="iPhone 13 (Usado)" condition="Usado" price={520000} />);
+    expect(screen.getByText('Usado seleccionado · Garantía 90 días')).toBeInTheDocument();
+    expect(screen.getByText('10% OFF por transferencia')).toBeInTheDocument();
+  });
+
+  it('no muestra badge de usado cuando el producto es nuevo', () => {
+    render(<ProductCard {...base} condition="Nuevo" />);
+    expect(screen.queryByText('Usado seleccionado · Garantía 90 días')).not.toBeInTheDocument();
+  });
 });

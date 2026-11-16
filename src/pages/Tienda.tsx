@@ -40,7 +40,7 @@ interface Product {
   tags: string[] | null;
   model_id?: string;
   brand_id?: string;
-  condition?: string;
+  condition?: string | null;
   price_usd?: number | null;
   hasVariants?: boolean;
   variantPrices?: number[];
@@ -661,6 +661,7 @@ const Tienda = () => {
                             description={product.description || undefined}
                             category={product.category?.name || 'Varios'}
                             tags={product.tags}
+                            condition={product.condition}
                             hasVariants={product.hasVariants}
                             onSelectVariant={() => setSelectedProduct(product)}
                           />

@@ -16,6 +16,7 @@ interface ProductCardProps {
   description?: string;
   category: string;
   tags?: string[] | null;
+  condition?: string | null;
   hasVariants?: boolean;
   variantPrices?: number[];
   onSelectVariant?: () => void;
@@ -42,6 +43,7 @@ export const ProductCard = React.memo(({
   description,
   category,
   tags,
+  condition,
   hasVariants = false,
   variantPrices = [],
   onSelectVariant,
@@ -66,6 +68,11 @@ export const ProductCard = React.memo(({
   const visibleTags = (tags ?? []).filter(
     (tag) => showDiscount || tag.trim().toUpperCase() !== 'CYBERMONDAY'
   );
+  const isUsedProduct = Boolean(
+    condition?.toLowerCase().includes('usado') ||
+    condition?.toLowerCase().includes('reacondicionado') ||
+    /\(usado\)/i.test(name)
+  );
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -84,7 +91,7 @@ export const ProductCard = React.memo(({
   };
 
   return (
-    <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover h-full flex flex-col transition-all duration-300 ease-out-default select-none">
+    <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover h-full flex flex-col transition-all duration-300 ease-out-default">
       {/* Image */}
       <div className="relative aspect-square bg-white overflow-hidden p-1.5 sm:p-2">
         {image_url ? (
@@ -128,6 +135,11 @@ export const ProductCard = React.memo(({
         <h3 className="font-semibold text-foreground text-sm sm:text-lg mb-1 line-clamp-2 group-hover:text-primary transition-colors duration-200">
           {name}
         </h3>
+        {isUsedProduct && (
+          <span className="inline-flex items-center w-fit px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25 text-[10px] sm:text-xs font-medium mb-1.5">
+            Usado seleccionado · Garantía 90 días
+          </span>
+        )}
         <div className="mb-3 hidden h-10 sm:block">
           {description ? (
             <p className="h-full overflow-hidden text-sm leading-5 text-muted-foreground line-clamp-2">
@@ -180,6 +192,9 @@ export const ProductCard = React.memo(({
                 <span className="text-sm sm:text-lg xl:text-xl font-bold text-primary block whitespace-nowrap tracking-tight">
                   {hasPriceRange ? 'Desde ' : ''}$ {displayPrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
                 </span>
+                <p className="text-[10px] sm:text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-0.5">
+                  10% OFF por transferencia
+                </p>
               </>
             )}
             <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">

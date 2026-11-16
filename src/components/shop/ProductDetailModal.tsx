@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ShoppingCart, ChevronLeft, ChevronRight, X, MessageCircle, ShieldCheck, Truck } from 'lucide-react';
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from '@/components/ui/carousel';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
@@ -24,6 +24,7 @@ interface Product {
     description: string | null;
     category?: { name: string };
     tags?: string[] | null;
+    condition?: string | null;
     hasVariants?: boolean;
 }
 
@@ -203,13 +204,24 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
     const visibleTags = (product.tags ?? []).filter(
         (tag) => showDiscount || tag.trim().toUpperCase() !== 'CYBERMONDAY'
     );
+    const isUsedProduct = Boolean(
+        product.condition?.toLowerCase().includes('usado') ||
+        product.condition?.toLowerCase().includes('reacondicionado') ||
+        /\(usado\)/i.test(product.name) ||
+        /reacondicionado|usado seleccionado/i.test(product.description ?? '')
+    );
+    const productNameForWhatsapp = selectedVariant
+        ? `${product.name} (${selectedVariant.color})`
+        : product.name;
+    const whatsappMessage = `Hola Nictech! Quiero consultar por ${productNameForWhatsapp} ($ ${effectivePrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}). ¿Está disponible?`;
+    const whatsappUrl = `https://wa.me/5493446353769?text=${encodeURIComponent(whatsappMessage)}`;
 
     const renderAddToCartFooter = (isMobile: boolean) => (
         <div className={cn(
-            "pt-4 md:pt-6 border-t border-border/50 bg-background shrink-0 shadow-[0_-10px_20px_-15px_rgba(0,0,0,0.1)]",
-            isMobile ? "md:hidden p-4 pb-6 w-full z-20 sticky bottom-0" : "hidden md:block p-6 md:p-8"
+            "pt-4 md:pt-5 border-t border-border/50 bg-background shrink-0 shadow-[0_-10px_20px_-15px_rgba(0,0,0,0.1)]",
+            isMobile ? "md:hidden p-4 pb-6 w-full z-20 sticky bottom-0" : "hidden md:block p-6"
         )}>
-            <div className="flex items-center justify-between text-sm mb-4">
+            <div className="flex items-center justify-between text-sm mb-3">
                 <span className="text-muted-foreground">Disponibilidad:</span>
                 {variants.length > 0 ? (
                     <span className={cn(
@@ -233,7 +245,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
             </div>
 
             <Button
-                className="w-full h-12 text-lg rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90"
+                className="w-full h-11 md:h-12 text-base md:text-lg rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90"
                 size="lg"
                 disabled={product.hasVariants ? (!selectedVariant || selectedVariant.stock === 0) : product.stock === 0}
                 onClick={handleAddToCart}
@@ -243,6 +255,17 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                     ? (!selectedVariant ? 'Seleccionar Color' : selectedVariant.stock > 0 ? 'Añadir a carrito' : 'Sin Stock')
                     : (product.stock > 0 ? 'Añadir a carrito' : 'Sin Stock')
                 }
+            </Button>
+
+            <Button
+                variant="outline"
+                asChild
+                className="w-full h-11 rounded-xl gap-2 mt-2.5 text-sm font-medium"
+            >
+                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+                    <MessageCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    Consultar por este producto en WhatsApp
+                </a>
             </Button>
         </div>
     );
@@ -345,10 +368,32 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                             </span>
                                         </>
                                     )}
+                                    <p className="inline-flex items-center mt-2 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 text-xs font-medium">
+                                        10% OFF abonando por transferencia bancaria
+                                    </p>
                                 </div>
 
-                                <div className="prose prose-sm text-muted-foreground mb-8">
+                                <div className="prose prose-sm text-muted-foreground mb-6">
                                     <p className="whitespace-pre-line">{product.description || 'Sin descripción disponible.'}</p>
+                                </div>
+
+                                <div className="rounded-xl border border-border/70 bg-muted/40 p-3.5 space-y-2.5 mb-6 text-xs text-muted-foreground">
+                                    <div className="flex items-start gap-2.5">
+                                        <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                                        <p>
+                                            <strong className="text-foreground font-semibold">Garantía escrita: </strong>
+                                            {isUsedProduct
+                                                ? 'Usado seleccionado: revisado en laboratorio técnico con 90 días (3 meses) de garantía escrita NicTech.'
+                                                : 'Garantía oficial escrita y respaldo técnico en nuestras sucursales.'}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-start gap-2.5">
+                                        <Truck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                                        <p>
+                                            <strong className="text-foreground font-semibold">Envíos y retiro: </strong>
+                                            Retiro gratis en sucursales Urdinarrain (Héroes de Malvinas 08) y Gilbert (C.5 y C.19) · Envíos a todo el país (despacho en 24 a 48 hs hábiles).
+                                        </p>
+                                    </div>
                                 </div>
 
                                 {visibleTags.length > 0 && (

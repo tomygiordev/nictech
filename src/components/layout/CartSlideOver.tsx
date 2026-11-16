@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Plus, Minus, Trash2, ShoppingBag, Loader2, AlertTriangle } from 'lucide-react';
+import { X, Plus, Minus, Trash2, ShoppingBag, Loader2, AlertTriangle, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -163,6 +163,12 @@ export const CartSlideOver = () => {
           {/* Footer */}
           {items.length > 0 && (
             <div className="p-4 border-t border-border space-y-3">
+              <div className="flex items-start gap-2 rounded-lg bg-muted/60 border border-border/60 px-3 py-2 text-xs text-muted-foreground">
+                <Truck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <p>
+                  Retiro sin cargo en sucursales Urdinarrain y Gilbert · Envíos a todo el país (coordinamos el correo al finalizar).
+                </p>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Subtotal:</span>
                 <span className="text-xl font-bold text-primary">

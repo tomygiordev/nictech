@@ -26,6 +26,7 @@ interface Product {
   description: string | null;
   category?: Category;
   tags: string[] | null;
+  condition?: string | null;
   price_usd?: number | null;
   hasVariants?: boolean;
   variantPrices?: number[];
@@ -40,7 +41,7 @@ export const Promos = () => {
     const fetchPromos = async () => {
       const { data, error } = await storefrontSupabase
         .from('products')
-        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, original_price, sale_expires_at, category:categories(id, name), product_variants(*)')
+        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(*)')
         .eq('is_active', true)
         .gt('stock', 0)
         .order('created_at', { ascending: false });
@@ -57,6 +58,7 @@ export const Promos = () => {
           description: item.description,
           category: item.category,
           tags: item.tags || [],
+          condition: item.condition,
           original_price: item.original_price ?? null,
           sale_expires_at: item.sale_expires_at ?? null,
           price_usd: item.price_usd ?? null,
@@ -183,6 +185,7 @@ export const Promos = () => {
                       description={product.description || undefined}
                       category={product.category?.name || 'Varios'}
                       tags={product.tags}
+                      condition={product.condition}
                       hasVariants={product.hasVariants}
                       onSelectVariant={() => setSelectedProduct(product)}
                     />
