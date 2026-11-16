@@ -213,7 +213,9 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
     const productNameForWhatsapp = selectedVariant
         ? `${product.name} (${selectedVariant.color})`
         : product.name;
-    const whatsappMessage = `Hola Nictech! Quiero consultar por ${productNameForWhatsapp} ($ ${effectivePrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}). ¿Está disponible?`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nictech.com.ar';
+    const productUrl = `${origin}/producto/${product.id}`;
+    const whatsappMessage = `Hola Nictech! Quiero consultar por ${productNameForWhatsapp} ($ ${effectivePrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}). ¿Está disponible? ${productUrl}`;
     const whatsappUrl = `https://wa.me/5493446353769?text=${encodeURIComponent(whatsappMessage)}`;
 
     const renderAddToCartFooter = (isMobile: boolean) => (

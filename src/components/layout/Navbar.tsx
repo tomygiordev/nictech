@@ -10,7 +10,6 @@ const navLinks = [
   { href: '/tienda', label: 'Tienda' },
   { href: '/servicios', label: 'Servicios' },
   { href: '/seguimiento', label: 'Seguimiento' },
-  { href: '/blog', label: 'Blog' },
   { href: '/contacto', label: 'Contacto' },
 ];
 
@@ -45,7 +44,7 @@ export const Navbar = ({ onSearchOpen }: NavbarProps) => {
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 group">
             <img
-              src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo_color.png"
+              src="https://qatkzvlomuaoaxlfgjfa.supabase.co/storage/v1/object/public/product_images/Logotipo_color.png"
               alt="Nictech Logo"
               className="h-10 w-auto object-contain"
             />
