@@ -163,7 +163,7 @@ serve(async (req) => {
       auto_return: validOrigin.includes("localhost") ? undefined : "approved",
       statement_descriptor: "NICTECH",
       external_reference: `order-${Date.now()}`,
-      notification_url: "https://tuzpcofywkhglkqplhnn.supabase.co/functions/v1/mercadopago-webhook",
+      notification_url: "https://qatkzvlomuaoaxlfgjfa.supabase.co/functions/v1/mercadopago-webhook",
       metadata: {
         // redundant but useful for easy access in webhook without parsing description
         items: JSON.stringify(body.items.map(i => ({ id: i.id, quantity: i.quantity }))),

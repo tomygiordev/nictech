@@ -844,7 +844,7 @@ const Admin = () => {
           <div className="container-main flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img
-                src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/product_images/Logotipo%20solo%20isotipo%20(solo%20icono%20sin%20texto).png"
+                src="https://qatkzvlomuaoaxlfgjfa.supabase.co/storage/v1/object/public/product_images/Logotipo%20solo%20isotipo%20(solo%20icono%20sin%20texto).png"
                 alt="Nictech Logo"
                 className="h-10 w-10 object-contain"
               />
