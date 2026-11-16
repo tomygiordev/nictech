@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from '@/integrations/supabase/client';
+import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
+import { hasValidDiscount } from '@/lib/pricing';
 
 interface Category {
   id: string;
@@ -40,6 +42,8 @@ interface Product {
   brand_id?: string;
   condition?: string;
   price_usd?: number | null;
+  hasVariants?: boolean;
+  variantPrices?: number[];
 }
 
 interface SmartphoneModel {
@@ -131,8 +135,9 @@ const Tienda = () => {
 
   const fetchProducts = async () => {
     const [productsRes, categoriesRes, modelsRes, brandsRes] = await Promise.all([
-      supabase.from('products')
-        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, model_id, brand_id, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(image_url)')
+      storefrontSupabase.from('products')
+        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, model_id, brand_id, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(*)')
+        .eq('is_active', true)
         .gt('stock', 0)
         .order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('id, name').order('name', { ascending: true }),
@@ -147,7 +152,7 @@ const Tienda = () => {
         category_id: item.category_id,
         price: item.price,
         stock: item.stock,
-        image_url: item.image_url || (item.product_variants as any[])?.[0]?.image_url || null,
+        image_url: item.image_url || item.product_variants?.[0]?.image_url || null,
         additional_images: item.additional_images || [],
         description: item.description,
         category: item.category,
@@ -158,6 +163,8 @@ const Tienda = () => {
         original_price: item.original_price ?? null,
         sale_expires_at: item.sale_expires_at ?? null,
         price_usd: item.price_usd ?? null,
+        hasVariants: (item.product_variants?.length ?? 0) > 0,
+        variantPrices: item.product_variants?.filter(v => v.is_active).map(v => v.price ?? item.price) ?? [],
       }));
       setProducts(formattedProducts);
 
@@ -199,7 +206,17 @@ const Tienda = () => {
 
   const maxPrice = useMemo(() => {
     if (products.length === 0) return 0;
-    return Math.max(...products.map(p => p.original_price ?? p.price));
+    return Math.max(
+      ...products.map((p) =>
+        hasValidDiscount({
+          price: p.price,
+          originalPrice: p.original_price,
+          saleExpiresAt: p.sale_expires_at,
+        })
+          ? (p.original_price ?? p.price)
+          : p.price
+      )
+    );
   }, [products]);
 
   const normalizeText = (text: string) => {
@@ -224,8 +241,11 @@ const Tienda = () => {
       let score = clickCounts.get(product.id) || 0;
 
       // 1. Promo boost: offers have higher sales propensity (boost by 5 points)
-      const hasActivePromo = product.original_price != null &&
-        (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date());
+      const hasActivePromo = hasValidDiscount({
+        price: product.price,
+        originalPrice: product.original_price,
+        saleExpiresAt: product.sale_expires_at,
+      });
       if (hasActivePromo) {
         score += 5;
       }
@@ -274,9 +294,11 @@ const Tienda = () => {
           categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'combos';
 
         if (isPromos) {
-          const hasActivePromo = product.original_price != null &&
-            (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date());
-          matchesCategory = hasActivePromo;
+          matchesCategory = hasValidDiscount({
+            price: product.price,
+            originalPrice: product.original_price,
+            saleExpiresAt: product.sale_expires_at,
+          });
         } else if (isCombos) {
           matchesCategory = product.category?.name.toLowerCase() === 'combos';
         } else {
@@ -333,9 +355,11 @@ const Tienda = () => {
 
         let matchesCategory = true;
         if (isPromos) {
-          const hasActivePromo = p.original_price != null &&
-            (!p.sale_expires_at || new Date(p.sale_expires_at) > new Date());
-          matchesCategory = hasActivePromo;
+          matchesCategory = hasValidDiscount({
+            price: p.price,
+            originalPrice: p.original_price,
+            saleExpiresAt: p.sale_expires_at,
+          });
         } else if (isCombos) {
           matchesCategory = p.category?.name.toLowerCase() === 'combos';
         } else {
@@ -369,9 +393,11 @@ const Tienda = () => {
 
         let matchesCategory = true;
         if (isPromos) {
-          const hasActivePromo = p.original_price != null &&
-            (!p.sale_expires_at || new Date(p.sale_expires_at) > new Date());
-          matchesCategory = hasActivePromo;
+          matchesCategory = hasValidDiscount({
+            price: p.price,
+            originalPrice: p.original_price,
+            saleExpiresAt: p.sale_expires_at,
+          });
         } else if (isCombos) {
           matchesCategory = p.category?.name.toLowerCase() === 'combos';
         } else {
@@ -619,10 +645,14 @@ const Tienda = () => {
                             id={product.id}
                             name={product.name}
                             price={product.price}
+                            variantPrices={product.variantPrices}
                             price_usd={product.price_usd}
                             original_price={
-                              product.original_price != null &&
-                              (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date())
+                              hasValidDiscount({
+                                price: product.price,
+                                originalPrice: product.original_price,
+                                saleExpiresAt: product.sale_expires_at,
+                              })
                                 ? product.original_price
                                 : null
                             }
@@ -631,6 +661,8 @@ const Tienda = () => {
                             description={product.description || undefined}
                             category={product.category?.name || 'Varios'}
                             tags={product.tags}
+                            hasVariants={product.hasVariants}
+                            onSelectVariant={() => setSelectedProduct(product)}
                           />
                         </div>
                       ))}

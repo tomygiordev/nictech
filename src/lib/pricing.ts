@@ -6,6 +6,21 @@ export const hasActiveSale = (saleExpiresAt?: string | null) => {
   return new Date(saleExpiresAt) > new Date();
 };
 
+export const hasValidDiscount = ({
+  price,
+  originalPrice,
+  saleExpiresAt,
+}: {
+  price: number;
+  originalPrice?: number | null;
+  saleExpiresAt?: string | null;
+}): boolean => {
+  if (originalPrice == null || originalPrice <= 0 || price <= 0 || originalPrice <= price) {
+    return false;
+  }
+  return hasActiveSale(saleExpiresAt);
+};
+
 export const calculateOriginalUsdPrice = ({
   price,
   priceUsd,
@@ -15,7 +30,7 @@ export const calculateOriginalUsdPrice = ({
   priceUsd?: number | null;
   originalPrice?: number | null;
 }) => {
-  if (priceUsd == null || originalPrice == null || price <= 0) {
+  if (priceUsd == null || originalPrice == null || price <= 0 || originalPrice <= price) {
     return null;
   }
 

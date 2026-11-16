@@ -5,6 +5,8 @@ import { Layout } from '@/components/layout/Layout';
 import { ProductCard } from '@/components/shop/ProductCard';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { supabase } from '@/integrations/supabase/client';
+import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
+import { hasValidDiscount } from '@/lib/pricing';
 
 interface Category {
   id: string;
@@ -25,6 +27,8 @@ interface Product {
   category?: Category;
   tags: string[] | null;
   price_usd?: number | null;
+  hasVariants?: boolean;
+  variantPrices?: number[];
 }
 
 export const Combos = () => {
@@ -34,9 +38,10 @@ export const Combos = () => {
 
   useEffect(() => {
     const fetchCombos = async () => {
-      const { data, error } = await supabase
+      const { data, error } = await storefrontSupabase
         .from('products')
-        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, original_price, sale_expires_at, category:categories(id, name), product_variants(image_url)')
+        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, original_price, sale_expires_at, category:categories(id, name), product_variants(*)')
+        .eq('is_active', true)
         .gt('stock', 0)
         .order('created_at', { ascending: false });
 
@@ -55,6 +60,8 @@ export const Combos = () => {
           original_price: item.original_price ?? null,
           sale_expires_at: item.sale_expires_at ?? null,
           price_usd: item.price_usd ?? null,
+          hasVariants: (item.product_variants?.length ?? 0) > 0,
+          variantPrices: item.product_variants?.filter(v => v.is_active).map(v => v.price ?? item.price) ?? [],
         }));
 
         // Filter only items in the "combos" category
@@ -156,13 +163,24 @@ export const Combos = () => {
                       id={product.id}
                       name={product.name}
                       price={product.price}
+                      variantPrices={product.variantPrices}
                       price_usd={product.price_usd}
-                      original_price={product.original_price}
+                      original_price={
+                        hasValidDiscount({
+                          price: product.price,
+                          originalPrice: product.original_price,
+                          saleExpiresAt: product.sale_expires_at,
+                        })
+                          ? product.original_price
+                          : null
+                      }
                       stock={product.stock}
                       image_url={product.image_url || undefined}
                       description={product.description || undefined}
                       category={product.category?.name || 'Varios'}
                       tags={product.tags}
+                      hasVariants={product.hasVariants}
+                      onSelectVariant={() => setSelectedProduct(product)}
                     />
                   </div>
                 ))}

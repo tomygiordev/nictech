@@ -7,9 +7,9 @@ import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
 import { getVariantColor, isLightColor } from '@/lib/colors';
-import { calculateOriginalUsdPrice, hasActiveSale } from '@/lib/pricing';
+import { calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
 
 interface Product {
     id: string;
@@ -24,6 +24,7 @@ interface Product {
     description: string | null;
     category?: { name: string };
     tags?: string[] | null;
+    hasVariants?: boolean;
 }
 
 interface ProductDetailModalProps {
@@ -36,8 +37,8 @@ interface ProductDetailModalProps {
 export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailModalProps) => {
     const { addToCart } = useCart();
 
-    const [variants, setVariants] = useState<{ id: string, color: string, stock: number, image_url: string | null }[]>([]);
-    const [selectedVariant, setSelectedVariant] = useState<{ id: string, color: string, stock: number, image_url: string | null } | null>(null);
+    const [variants, setVariants] = useState<{ id: string, color: string, stock: number, image_url: string | null, price?: number | null }[]>([]);
+    const [selectedVariant, setSelectedVariant] = useState<{ id: string, color: string, stock: number, image_url: string | null, price?: number | null } | null>(null);
 
     const [images, setImages] = useState<string[]>([]);
 
@@ -53,13 +54,14 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         setImages(initialImages);
 
         const fetchVariants = async () => {
-            const { data } = await supabase
+            const { data } = await storefrontSupabase
                 .from('product_variants')
                 .select('*')
+                .eq('is_active', true)
                 .eq('product_id', product.id);
 
             if (data && data.length > 0) {
-                const typedData = data as unknown as { id: string, color: string, stock: number, image_url: string | null }[];
+                const typedData = data as unknown as { id: string, color: string, stock: number, image_url: string | null, price?: number | null }[];
                 setVariants(typedData);
                 const firstAvailable = typedData.find(v => v.stock > 0);
                 if (firstAvailable) setSelectedVariant(firstAvailable);
@@ -157,7 +159,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
     }, [lightboxOpen]);
 
     const handleAddToCart = () => {
-        if (variants.length > 0 && !selectedVariant) {
+        if (product.hasVariants && !selectedVariant) {
             toast.error('Por favor elige un color antes de agregar al carrito', { duration: 3000 });
             return;
         }
@@ -168,9 +170,14 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         addToCart({
             id: product.id,
             name: productName,
-            price: product.price,
+            price: selectedVariant?.price ?? product.price,
             maxStock: selectedVariant ? selectedVariant.stock : product.stock,
             image_url: mappedImageUrl,
+            variant: selectedVariant ? {
+                id: selectedVariant.id,
+                color: selectedVariant.color,
+                image_url: selectedVariant.image_url ?? undefined,
+            } : undefined,
         });
 
         toast.success(`${productName} se agregó a tu carrito`, { duration: 3500 });
@@ -180,13 +187,22 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
     if (!product) return null;
 
-    const originalUsdPrice = hasActiveSale(product.sale_expires_at)
+    const effectivePrice = selectedVariant?.price ?? product.price;
+    const showDiscount = hasValidDiscount({
+        price: effectivePrice,
+        originalPrice: product.original_price,
+        saleExpiresAt: product.sale_expires_at,
+    });
+    const originalUsdPrice = showDiscount
         ? calculateOriginalUsdPrice({
-            price: product.price,
+            price: effectivePrice,
             priceUsd: product.price_usd,
             originalPrice: product.original_price,
         })
         : null;
+    const visibleTags = (product.tags ?? []).filter(
+        (tag) => showDiscount || tag.trim().toUpperCase() !== 'CYBERMONDAY'
+    );
 
     const renderAddToCartFooter = (isMobile: boolean) => (
         <div className={cn(
@@ -219,7 +235,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
             <Button
                 className="w-full h-12 text-lg rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90"
                 size="lg"
-                disabled={variants.length > 0 ? (!selectedVariant || selectedVariant.stock === 0) : product.stock === 0}
+                disabled={product.hasVariants ? (!selectedVariant || selectedVariant.stock === 0) : product.stock === 0}
                 onClick={handleAddToCart}
             >
                 <ShoppingCart className="h-5 w-5 mr-2" />
@@ -305,9 +321,9 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                 </div>
 
                                 <div className="mb-6">
-                                    {product.price_usd != null ? (
+                                    {product.price_usd != null && selectedVariant?.price == null ? (
                                         <>
-                                            {originalUsdPrice != null && (
+                                            {showDiscount && originalUsdPrice != null && (
                                                 <p className="text-base text-muted-foreground line-through">
                                                     USD {originalUsdPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                                                 </p>
@@ -319,14 +335,13 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                         </>
                                     ) : (
                                         <>
-                                            {product.original_price != null &&
-                                             hasActiveSale(product.sale_expires_at) && (
+                                            {showDiscount && product.original_price != null && (
                                                 <p className="text-base text-muted-foreground line-through">
                                                     $ {product.original_price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                                                 </p>
                                             )}
                                             <span className="text-2xl md:text-3xl font-bold text-primary">
-                                                $ {product.price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+                                                $ {effectivePrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
                                             </span>
                                         </>
                                     )}
@@ -336,9 +351,9 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                     <p className="whitespace-pre-line">{product.description || 'Sin descripción disponible.'}</p>
                                 </div>
 
-                                {product.tags && product.tags.length > 0 && (
+                                {visibleTags.length > 0 && (
                                     <div className="flex flex-wrap gap-2 mb-6">
-                                        {product.tags.map((tag, index) => (
+                                        {visibleTags.map((tag, index) => (
                                             <span key={index} className="px-2 py-1 rounded-md bg-secondary text-secondary-foreground text-xs font-medium">
                                                 {tag}
                                             </span>

@@ -1,4 +1,5 @@
  
+import { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -168,6 +169,19 @@ describe('CartContext', () => {
       await userEvent.click(screen.getByTestId('remove'));
       expect(totalItems()).toBe('0');
     });
+
+    it('elimina solo la variante indicada cuando se pasa variantId', async () => {
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-variant-red'));
+      await userEvent.click(screen.getByTestId('add-variant-blue'));
+
+      act(() => {
+        cart().removeFromCart('prod-1', 'var-red');
+      });
+
+      expect(items()).toHaveLength(1);
+      expect(items()[0].variant?.id).toBe('var-blue');
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -195,6 +209,21 @@ describe('CartContext', () => {
       await userEvent.click(screen.getByTestId('add-default'));
       await userEvent.click(screen.getByTestId('update-qty-99'));
       expect(items()[0].quantity).toBe(5);
+    });
+
+    it('actualiza solo la variante indicada cuando se pasa variantId', async () => {
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-variant-red'));
+      await userEvent.click(screen.getByTestId('add-variant-blue'));
+
+      act(() => {
+        cart().updateQuantity('prod-1', 3, 'var-red');
+      });
+
+      const red = items().find((i: CartItem) => i.variant?.id === 'var-red');
+      const blue = items().find((i: CartItem) => i.variant?.id === 'var-blue');
+      expect(red.quantity).toBe(3);
+      expect(blue.quantity).toBe(1);
     });
   });
 
@@ -272,10 +301,36 @@ describe('CartContext', () => {
     const mockFrom = (productData: { id: string; stock: number; name: string }[]) => {
       vi.mocked(supabase.from).mockReturnValue({
         select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            in: vi.fn().mockResolvedValue({ data: productData, error: null }),
+          }),
           in: vi.fn().mockResolvedValue({ data: productData, error: null }),
         }),
-      } as ReturnType<typeof vi.fn>);
+      } as unknown as ReturnType<typeof vi.fn>);
     };
+
+    it.each([
+      { variantPrice: 3499.99, expected: 3499.99 },
+      { variantPrice: null, expected: 1000 },
+      { variantPrice: undefined, expected: 1000 },
+    ])('revalida precio de variante o usa el padre: $variantPrice', async ({ variantPrice, expected }) => {
+      vi.mocked(supabase.from).mockImplementation((table) => ({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            in: vi.fn().mockResolvedValue({ data: table === 'products'
+              ? [{ id: 'prod-1', stock: 5, name: 'iPhone 14', price: 1000 }]
+              : [{ id: 'var-red', stock: 5, price: variantPrice }], error: null }),
+          }),
+        }),
+      } as ReturnType<typeof supabase.from>));
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-variant-red'));
+      let result: Awaited<ReturnType<ReturnType<typeof useCart>['validateCart']>> | undefined;
+      await act(async () => { result = await cart().validateCart(); });
+      expect(result?.adjustedItems).toEqual(['iPhone 14']);
+      expect(items()[0].price).toBe(expected);
+      expect(Number(totalPrice())).toBe(expected);
+    });
 
     it('no hace nada cuando el carrito está vacío', async () => {
       const { cart } = renderCart();
@@ -331,6 +386,67 @@ describe('CartContext', () => {
         expect(items()[0].quantity).toBe(2);
         expect(items()).toHaveLength(1);
       });
+    });
+
+    it.each([
+      {
+        label: 'datos iguales',
+        productData: [{ id: 'prod-1', stock: 5, name: 'iPhone 14', price: 500 }],
+        expectedQty: 1,
+        expectedPrice: 500,
+      },
+      {
+        label: 'datos ajustados',
+        productData: [{ id: 'prod-1', stock: 3, name: 'iPhone 14', price: 750 }],
+        expectedQty: 1,
+        expectedPrice: 750,
+      },
+    ])('llama a supabase.from una sola vez al abrir el carrito con useEffect ($label)', async ({ productData, expectedQty, expectedPrice }) => {
+      vi.mocked(supabase.from).mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            in: vi.fn().mockResolvedValue({ data: productData, error: null }),
+          }),
+        }),
+      } as unknown as ReturnType<typeof supabase.from>);
+
+      const AutoValidateObserver = () => {
+        const { isOpen, validateCart, addToCart, openCart, items: cartItems } = useCart();
+
+        useEffect(() => {
+          if (isOpen) {
+            void validateCart();
+          }
+        }, [isOpen, validateCart]);
+
+        return (
+          <div>
+            <span data-testid="observer-items">{JSON.stringify(cartItems)}</span>
+            <button data-testid="observer-add" onClick={() => addToCart(makeItem())} />
+            <button data-testid="observer-open" onClick={() => openCart()} />
+          </div>
+        );
+      };
+
+      render(
+        <CartProvider>
+          <AutoValidateObserver />
+        </CartProvider>
+      );
+
+      await userEvent.click(screen.getByTestId('observer-add'));
+      await userEvent.click(screen.getByTestId('observer-open'));
+
+      await waitFor(() => {
+        const parsed = JSON.parse(screen.getByTestId('observer-items').textContent ?? '[]') as CartItem[];
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].quantity).toBe(expectedQty);
+        expect(parsed[0].price).toBe(expectedPrice);
+      });
+
+      // Give React a chance to run any extra effects if validateCart had an unstable reference
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(supabase.from).toHaveBeenCalledTimes(1);
     });
   });
 });
