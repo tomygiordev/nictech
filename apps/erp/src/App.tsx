@@ -40,6 +40,7 @@ import { ModuleTutorialModal } from "./features/help/ModuleTutorialModal";
 import { NicTechBrand } from "./components/brand/NicTechBrand";
 import { getInitials } from "./lib/formatters";
 import { supabase } from "./lib/supabase";
+import { NavigationVisibilityContext, useNavigationSetting, visibleFromSetting } from "./features/system/navigation";
 import "./styles.css";
 
 const DashboardOverview = React.lazy(async () => {
@@ -178,6 +179,8 @@ const groupedWorkspaces = ERP_WORKSPACES.reduce<Record<ErpArea, ErpWorkspaceDefi
 
 export const App = () => {
   const { session, organizationId, branchIds, permissions, hasPermission } = useErpAuth();
+  const navigation = useNavigationSetting();
+  const visibleModules = useMemo(() => navigation.data && !navigation.isError ? visibleFromSetting(navigation.data) : ERP_MODULES.map((module) => module.id), [navigation.data, navigation.isError]);
   const [activeModuleId, setActiveModuleId] = useState<ErpModuleId>("dashboard");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [navOpen, setNavOpen] = useState<boolean>(false);
@@ -236,27 +239,22 @@ export const App = () => {
     const result: Partial<Record<ErpArea, ErpWorkspaceDefinition[]>> = {};
 
     for (const [area, workspaces] of Object.entries(groupedWorkspaces)) {
-      const visibleInArea = workspaces.filter((ws) => {
-        const hasAnyPermission = ws.moduleIds.some((id) => {
+      const visibleInArea = workspaces.flatMap((ws) => {
+        const moduleIds = ws.moduleIds.filter((id) => {
           const mod = getErpModuleById(id);
-          return mod && hasPermission(mod.permission);
+          return visibleModules.includes(id) && mod && hasPermission(mod.permission);
         });
-        if (!hasAnyPermission) return false;
-
-        if (!query) return true;
-
-        const matchWs =
-          ws.label.toLowerCase().includes(query) ||
-          ws.description.toLowerCase().includes(query);
-        const matchModule = ws.moduleIds.some((id) => {
+        if (moduleIds.length === 0) return [];
+        const label = moduleIds.length === 1 && ws.moduleIds.some((id) => !visibleModules.includes(id))
+          ? getErpModuleById(moduleIds[0])?.label ?? ws.label
+          : ws.label;
+        const matchWorkspace = label.toLowerCase().includes(query);
+        const matchModule = moduleIds.some((id) => {
           const mod = getErpModuleById(id);
-          return (
-            mod &&
-            (mod.label.toLowerCase().includes(query) ||
-              mod.description.toLowerCase().includes(query))
-          );
+          return mod && (mod.label.toLowerCase().includes(query) || mod.description.toLowerCase().includes(query));
         });
-        return matchWs || matchModule;
+        if (query && !matchWorkspace && !matchModule) return [];
+        return [{ ...ws, label, moduleIds }];
       });
 
       if (visibleInArea.length > 0) {
@@ -264,7 +262,7 @@ export const App = () => {
       }
     }
     return result;
-  }, [searchQuery, hasPermission]);
+  }, [searchQuery, hasPermission, visibleModules]);
 
   const selectModule = (id: ErpModuleId) => {
     setActiveModuleId(id);
@@ -272,13 +270,13 @@ export const App = () => {
   };
 
   const selectWorkspace = (ws: ErpWorkspaceDefinition) => {
-    if (ws.moduleIds.includes(activeModuleId) && hasPermission(getErpModuleById(activeModuleId)?.permission ?? "")) {
+    if (ws.moduleIds.includes(activeModuleId) && visibleModules.includes(activeModuleId) && hasPermission(getErpModuleById(activeModuleId)?.permission ?? "")) {
       setNavOpen(false);
       return;
     }
     const firstAuthorized = ws.moduleIds.find((id) => {
       const mod = getErpModuleById(id);
-      return mod && hasPermission(mod.permission);
+      return visibleModules.includes(id) && mod && hasPermission(mod.permission);
     });
     if (firstAuthorized) {
       setActiveModuleId(firstAuthorized);
@@ -299,10 +297,12 @@ export const App = () => {
   };
 
   return (
+    <NavigationVisibilityContext.Provider value={visibleModules}>
     <div className="erp-shell">
       <a className="skip-link" href="#erp-main-content">
         Saltar al contenido principal
       </a>
+      {navigation.isError && <div role="status">No se pudo leer el perfil de módulos; se muestran todos los módulos permitidos.</div>}
       {/* Mobile Backdrop */}
       {navOpen && (
         <button
@@ -426,7 +426,7 @@ export const App = () => {
             </button>
 
             {/* WhatsApp / Messaging Button */}
-            <button
+            {visibleModules.includes("whatsapp") && <button
               type="button"
               className="header-action-btn topbar-hide-mobile"
               aria-label="Mensajes"
@@ -434,7 +434,7 @@ export const App = () => {
               title="WhatsApp & Mensajes"
             >
               <MessageSquare size={18} />
-            </button>
+            </button>}
 
             {/* User Profile Avatar */}
             <button
@@ -579,6 +579,7 @@ export const App = () => {
         </main>
       </div>
     </div>
+    </NavigationVisibilityContext.Provider>
   );
 };
 

@@ -226,3 +226,26 @@ export const getErpWorkspaceById = (id: string): ErpWorkspaceDefinition | undefi
 export const getErpWorkspaceByModuleId = (moduleId: string): ErpWorkspaceDefinition | undefined => {
   return ERP_WORKSPACES.find((w) => (w.moduleIds as readonly string[]).includes(moduleId));
 };
+
+export type ErpModuleProfile = "salida" | "completo";
+
+export interface ErpModuleVisibility {
+  profile: ErpModuleProfile;
+  visible?: readonly ErpModuleId[];
+}
+
+export const ERP_SALIDA_MODULES: readonly ErpModuleId[] = [
+  "dashboard", "pos", "cash", "online-orders", "catalog", "pricing", "stock",
+  "customers", "repairs", "users", "locations", "settings", "audit",
+];
+
+/** Controls presentation only; authorization remains the responsibility of permissions. */
+export const getVisibleErpModules = (setting?: ErpModuleVisibility): readonly ErpModuleId[] => {
+  if (setting?.visible !== undefined) {
+    const selected = new Set(setting.visible);
+    return ERP_MODULES.map((module) => module.id).filter((id) => selected.has(id));
+  }
+  return setting?.profile === "completo"
+    ? ERP_MODULES.map((module) => module.id)
+    : ERP_SALIDA_MODULES;
+};

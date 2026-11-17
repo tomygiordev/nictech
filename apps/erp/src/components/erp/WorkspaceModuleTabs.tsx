@@ -4,6 +4,7 @@ import {
   type ErpModuleId,
   getErpModuleById,
 } from "@nictech/domain";
+import { useNavigationVisibility } from "../../features/system/navigation";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 
 export interface WorkspaceModuleTabsProps {
@@ -20,12 +21,13 @@ export const WorkspaceModuleTabs: React.FC<WorkspaceModuleTabsProps> = ({
   className = "",
 }) => {
   const { hasPermission } = useErpAuth();
+  const visibleModules = useNavigationVisibility();
 
   const authorizedModules = React.useMemo(() => {
     return moduleIds
       .map((id) => getErpModuleById(id))
-      .filter((m): m is ErpModuleDefinition => Boolean(m && hasPermission(m.permission)));
-  }, [moduleIds, hasPermission]);
+      .filter((m): m is ErpModuleDefinition => Boolean(m && visibleModules.includes(m.id as ErpModuleId) && hasPermission(m.permission)));
+  }, [moduleIds, hasPermission, visibleModules]);
 
   if (authorizedModules.length <= 1) {
     return null;

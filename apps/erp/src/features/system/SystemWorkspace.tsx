@@ -1,3 +1,5 @@
+import { RoleAssignment } from "./RoleAssignment";
+import { NavigationSettings } from "./NavigationSettings";
 import { useState, useEffect } from "react";
 import { Building2, Save } from "lucide-react";
 import {
@@ -140,6 +142,7 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
         />
       )}
 
+      {activeModuleId === "users" && !loading && !loadError && <RoleAssignment users={users} />}
       {activeModuleId === "users" && (
         <div className="flow-card">
           <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
@@ -232,6 +235,7 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
         </div>
       )}
 
+      {activeModuleId === "settings" && <NavigationSettings />}
       {activeModuleId === "settings" && (
         <div className="flow-card" style={{ maxWidth: "650px" }}>
           <h2 className="flow-card__title">Políticas de Seguridad & Operación</h2>

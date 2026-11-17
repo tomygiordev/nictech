@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ERP_MODULES,
+  ERP_SALIDA_MODULES,
+  getVisibleErpModules,
   ERP_WORKSPACES,
   getErpModuleById,
   getErpWorkspaceById,
@@ -60,5 +62,24 @@ describe("ERP Modules & Workspaces Taxonomy", () => {
     expect(getErpWorkspaceByModuleId("profitability")?.id).toBe("accounting");
     expect(getErpWorkspaceByModuleId("settings")?.id).toBe("system");
     expect(getErpWorkspaceByModuleId("unknown")).toBeUndefined();
+  });
+});
+
+describe("ERP module visibility", () => {
+  it("defaults to the launch profile including pricing, users and settings", () => {
+    expect(getVisibleErpModules()).toEqual(ERP_SALIDA_MODULES);
+    expect(getVisibleErpModules()).toContain("pricing");
+    expect(getVisibleErpModules()).toContain("users");
+    expect(getVisibleErpModules()).toContain("settings");
+    expect(getVisibleErpModules()).not.toContain("purchases");
+  });
+
+  it("shows all modules for completo", () => {
+    expect(getVisibleErpModules({ profile: "completo" })).toEqual(ERP_MODULES.map((m) => m.id));
+  });
+
+  it("uses the optional custom selection in canonical order", () => {
+    expect(getVisibleErpModules({ profile: "salida", visible: ["settings", "pos", "pos"] })).toEqual(["pos", "settings"]);
+    expect(getVisibleErpModules({ profile: "completo", visible: [] })).toEqual([]);
   });
 });

@@ -148,3 +148,21 @@ export const guardarAjuste = async (
     );
   if (error) throw new Error(mensajeError(`No se pudo guardar el ajuste ${key}`, error.message));
 };
+
+export interface SystemRole { id: string; code: string; name: string }
+export interface SystemRoleAssignment { profile_id: string; role_id: string; branch_id: string | null; valid_from: string; valid_until: string | null }
+
+export const listRolesAndAssignments = async (): Promise<{ roles: SystemRole[]; assignments: SystemRoleAssignment[] }> => {
+  const [roles, assignments] = await Promise.all([
+    client().from("roles").select("id, code, name").eq("is_active", true).order("name"),
+    client().from("profile_roles").select("profile_id, role_id, branch_id, valid_from, valid_until"),
+  ]);
+  if (roles.error || assignments.error) throw new Error("No se pudieron leer los roles y sus asignaciones.");
+  return { roles: roles.data ?? [], assignments: assignments.data ?? [] };
+};
+
+export const assignProfileRole = async (profileId: string, roleId: string): Promise<void> => {
+  const rpc = client() as unknown as { rpc: (name: string, args: { p_profile_id: string; p_role_id: string }) => PromiseLike<{ error: { message: string } | null }> };
+  const { error } = await rpc.rpc("assign_profile_role", { p_profile_id: profileId, p_role_id: roleId });
+  if (error) throw new Error(mensajeError("No se pudo asignar el rol", error.message));
+};
