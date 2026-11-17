@@ -1,11 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ProductCard } from './ProductCard';
+import { indexPromotionPrices } from '@/lib/promo-pricing';
 
-vi.mock('@/contexts/CartContext', () => ({ useCart: () => ({ addToCart: vi.fn() }) }));
+const mockAddToCart = vi.fn();
+
+vi.mock('@/contexts/CartContext', () => ({ useCart: () => ({ addToCart: mockAddToCart }) }));
 
 describe('precio en la tarjeta', () => {
   const base = { id: 'one', name: 'Cable', price: 1000, stock: 2, category: 'Cables' };
+
+  beforeEach(() => {
+    mockAddToCart.mockClear();
+  });
   it('muestra desde el menor precio cuando hay variantes diferentes', () => {
     render(<ProductCard {...base} hasVariants variantPrices={[3499.99, 1000]} />);
     expect(screen.getByText(/Desde \$ 1\.000/)).toBeInTheDocument();
@@ -83,5 +90,117 @@ describe('precio en la tarjeta', () => {
   it('no muestra badge de usado cuando el producto es nuevo', () => {
     render(<ProductCard {...base} condition="Nuevo" />);
     expect(screen.queryByText('Usado seleccionado · Garantía 90 días')).not.toBeInTheDocument();
+  });
+
+  it('con precio ERP y promo activa muestra precio efectivo, tachado, descuento y agrega ese precio al carrito', () => {
+    const index = indexPromotionPrices([
+      {
+        product_id: 'one',
+        variant_id: null,
+        list_price: 200000,
+        effective_price: 150000,
+        promotion_id: 'promo-erp-1',
+        promotion_ends_at: '2099-12-31T23:59:59.000Z',
+      },
+    ]);
+
+    render(
+      <ProductCard
+        {...base}
+        name="Samsung A55"
+        price={200000}
+        promotionIndex={index}
+      />
+    );
+
+    expect(screen.getByText('$ 150.000')).toBeInTheDocument();
+    expect(screen.getByText('$ 200.000')).toHaveClass('line-through');
+    expect(screen.getByText('PROMO')).toBeInTheDocument();
+    expect(screen.getByText('-25%')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Añadir a carrito'));
+    expect(mockAddToCart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'one',
+        price: 150000,
+      })
+    );
+  });
+
+  it('sin index (null) se ve idéntico a legacy y agrega precio legacy al carrito', () => {
+    render(
+      <ProductCard
+        {...base}
+        name="Motorola G23"
+        price={115900}
+        original_price={127500}
+        sale_expires_at="2099-12-31T23:59:59.000Z"
+        promotionIndex={null}
+      />
+    );
+
+    expect(screen.getByText('$ 115.900')).toBeInTheDocument();
+    expect(screen.getByText('$ 127.500')).toHaveClass('line-through');
+    expect(screen.getByText('PROMO')).toBeInTheDocument();
+    expect(screen.getByText('-9%')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Añadir a carrito'));
+    expect(mockAddToCart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'one',
+        price: 115900,
+      })
+    );
+  });
+
+  it('respeta estado legacy si la fila ERP tiene promotion_id null', () => {
+    const index = indexPromotionPrices([
+      {
+        product_id: 'one',
+        variant_id: null,
+        list_price: 95000,
+        effective_price: 95000,
+        promotion_id: null,
+        promotion_ends_at: null,
+      },
+    ]);
+
+    render(
+      <ProductCard
+        {...base}
+        price={95000}
+        original_price={120000}
+        promotionIndex={index}
+      />
+    );
+
+    expect(screen.getByText('$ 95.000')).toBeInTheDocument();
+    expect(screen.getByText('$ 120.000')).toHaveClass('line-through');
+    expect(screen.getByText('PROMO')).toBeInTheDocument();
+  });
+
+  it('no muestra tachado ni PROMO cuando la promo ERP expiró', () => {
+    const index = indexPromotionPrices([
+      {
+        product_id: 'one',
+        variant_id: null,
+        list_price: 100000,
+        effective_price: 80000,
+        promotion_id: 'promo-expired',
+        promotion_ends_at: '2020-01-01T00:00:00.000Z',
+      },
+    ]);
+
+    render(
+      <ProductCard
+        {...base}
+        price={100000}
+        promotionIndex={index}
+      />
+    );
+
+    expect(screen.getByText('$ 80.000')).toBeInTheDocument();
+    expect(screen.queryByText('$ 100.000')).not.toBeInTheDocument();
+    expect(screen.queryByText('PROMO')).not.toBeInTheDocument();
   });
 });

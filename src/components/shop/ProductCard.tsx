@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 import { calculateDiscountPercentage, calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
+import { resolveDisplayPrice, type StorefrontPromotionPrice } from '@/lib/promo-pricing';
 
 interface ProductCardProps {
   id: string;
@@ -11,6 +12,8 @@ interface ProductCardProps {
   price: number;
   price_usd?: number | null;
   original_price?: number | null;
+  sale_expires_at?: string | null;
+  promotionIndex?: ReadonlyMap<string, StorefrontPromotionPrice> | null;
   stock: number;
   image_url?: string;
   description?: string;
@@ -38,6 +41,8 @@ export const ProductCard = React.memo(({
   price,
   price_usd,
   original_price,
+  sale_expires_at,
+  promotionIndex,
   stock,
   image_url,
   description,
@@ -49,20 +54,30 @@ export const ProductCard = React.memo(({
   onSelectVariant,
 }: ProductCardProps) => {
   const { addToCart } = useCart();
-  const displayPrice = variantPrices.length ? Math.min(...variantPrices) : price;
+  const resolvedPrice = resolveDisplayPrice(
+    {
+      productId: id,
+      legacyPrice: price,
+      legacyOriginalPrice: original_price,
+      legacySaleExpiresAt: sale_expires_at,
+    },
+    promotionIndex,
+  );
+  const displayPrice = variantPrices.length ? Math.min(...variantPrices) : resolvedPrice.price;
   const hasPriceRange = new Set(variantPrices).size > 1;
   const showDiscount = hasValidDiscount({
     price: displayPrice,
-    originalPrice: original_price,
+    originalPrice: resolvedPrice.originalPrice,
+    saleExpiresAt: resolvedPrice.saleExpiresAt,
   });
   const discountPercentage = showDiscount
-    ? calculateDiscountPercentage({ price: displayPrice, originalPrice: original_price })
+    ? calculateDiscountPercentage({ price: displayPrice, originalPrice: resolvedPrice.originalPrice })
     : null;
   const originalUsdPrice = showDiscount
     ? calculateOriginalUsdPrice({
-        price,
+        price: resolvedPrice.price,
         priceUsd: price_usd,
-        originalPrice: original_price,
+        originalPrice: resolvedPrice.originalPrice,
       })
     : null;
   const visibleTags = (tags ?? []).filter(
@@ -83,7 +98,7 @@ export const ProductCard = React.memo(({
     addToCart({
       id,
       name,
-      price,
+      price: resolvedPrice.price,
       maxStock: stock,
       image_url: image_url || null,
     });
@@ -184,9 +199,9 @@ export const ProductCard = React.memo(({
               </>
             ) : (
               <>
-                {showDiscount && original_price != null && (
+                {showDiscount && resolvedPrice.originalPrice != null && (
                   <span className="text-[11px] sm:text-sm text-muted-foreground line-through block whitespace-nowrap">
-                    $ {original_price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+                    $ {resolvedPrice.originalPrice.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                   </span>
                 )}
                 <span className="text-sm sm:text-lg xl:text-xl font-bold text-primary block whitespace-nowrap tracking-tight">

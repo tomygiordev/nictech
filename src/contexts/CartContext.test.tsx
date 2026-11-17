@@ -298,6 +298,44 @@ describe('CartContext', () => {
   // validateCart (with Supabase mock)
   // -------------------------------------------------------------------------
   describe('validateCart()', () => {
+    it('comparte la misma promesa cuando hay una validación en curso', async () => {
+      let resolveQuery: (value: { data: { id: string; stock: number; name: string; price: number }[]; error: null }) => void = () => {};
+      const query = new Promise<{ data: { id: string; stock: number; name: string; price: number }[]; error: null }>((resolve) => {
+        resolveQuery = resolve;
+      });
+      vi.mocked(supabase.from).mockReturnValue({
+        select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ in: vi.fn().mockReturnValue(query) }) }),
+      } as unknown as ReturnType<typeof supabase.from>);
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-default'));
+      await act(async () => {
+        const first = cart().validateCart();
+        const second = cart().validateCart();
+        expect(second).toBe(first);
+        resolveQuery({ data: [{ id: 'prod-1', stock: 2, name: 'iPhone 14', price: 750 }], error: null });
+        expect(await first).toEqual({ removedItems: [], adjustedItems: ['iPhone 14'] });
+      });
+      expect(items()[0].price).toBe(750);
+    });
+
+    it('conserva el precio autoritativo al revalidar una proyección sin cambios', async () => {
+      vi.mocked(supabase.from).mockReturnValue({
+        select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({
+          data: [{ id: 'prod-1', stock: 5, name: 'iPhone 14', price: 500 }], error: null,
+        }) }) }),
+      } as unknown as ReturnType<typeof supabase.from>);
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-default'));
+      await act(async () => { await cart().validateCart(); });
+      act(() => {
+        expect(cart().applyAuthoritativePrices([{ product_id: 'prod-1', variant_id: null, unit_price: 450 }])).toBe(true);
+      });
+      expect(totalPrice()).toBe('450');
+      await act(async () => {
+        expect(await cart().validateCart()).toEqual({ removedItems: [], adjustedItems: [] });
+      });
+      expect(totalPrice()).toBe('450');
+    });
     const mockFrom = (productData: { id: string; stock: number; name: string }[]) => {
       vi.mocked(supabase.from).mockReturnValue({
         select: vi.fn().mockReturnValue({
@@ -306,7 +344,7 @@ describe('CartContext', () => {
           }),
           in: vi.fn().mockResolvedValue({ data: productData, error: null }),
         }),
-      } as unknown as ReturnType<typeof vi.fn>);
+      } as unknown as ReturnType<typeof supabase.from>);
     };
 
     it.each([
@@ -314,7 +352,7 @@ describe('CartContext', () => {
       { variantPrice: null, expected: 1000 },
       { variantPrice: undefined, expected: 1000 },
     ])('revalida precio de variante o usa el padre: $variantPrice', async ({ variantPrice, expected }) => {
-      vi.mocked(supabase.from).mockImplementation((table) => ({
+      vi.mocked(supabase.from).mockImplementation(((table: string) => ({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
             in: vi.fn().mockResolvedValue({ data: table === 'products'
@@ -322,7 +360,7 @@ describe('CartContext', () => {
               : [{ id: 'var-red', stock: 5, price: variantPrice }], error: null }),
           }),
         }),
-      } as ReturnType<typeof supabase.from>));
+      })) as unknown as typeof supabase.from);
       const { cart } = renderCart();
       await userEvent.click(screen.getByTestId('add-variant-red'));
       let result: Awaited<ReturnType<ReturnType<typeof useCart>['validateCart']>> | undefined;
@@ -446,7 +484,173 @@ describe('CartContext', () => {
 
       // Give React a chance to run any extra effects if validateCart had an unstable reference
       await new Promise((resolve) => setTimeout(resolve, 30));
-      expect(supabase.from).toHaveBeenCalledTimes(1);
+      expect(supabase.from).toHaveBeenCalledTimes(2);
+      expect(supabase.from).toHaveBeenNthCalledWith(1, 'products');
+      expect(supabase.from).toHaveBeenNthCalledWith(2, 'storefront_promotion_prices');
+    });
+
+    const mockTables = (handlers: {
+      products: { data: unknown; error: unknown };
+      product_variants?: { data: unknown; error: unknown };
+      storefront_promotion_prices: { data: unknown; error: unknown };
+    }) => {
+      vi.mocked(supabase.from).mockImplementation((table: string) => {
+        if (table === 'storefront_promotion_prices') {
+          return {
+            select: vi.fn().mockReturnValue({
+              in: vi.fn().mockResolvedValue(handlers.storefront_promotion_prices),
+            }),
+          } as unknown as ReturnType<typeof supabase.from>;
+        }
+        const response = table === 'product_variants'
+          ? (handlers.product_variants ?? { data: [], error: null })
+          : handlers.products;
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              in: vi.fn().mockResolvedValue(response),
+            }),
+          }),
+        } as unknown as ReturnType<typeof supabase.from>;
+      });
+    };
+
+    it('con promo vigente, validateCart ajusta el precio del ítem al effective_price', async () => {
+      mockTables({
+        products: {
+          data: [{ id: 'prod-1', stock: 5, name: 'iPhone 14', price: 500 }],
+          error: null,
+        },
+        storefront_promotion_prices: {
+          data: [
+            {
+              product_id: 'prod-1',
+              variant_id: null,
+              list_price: 500,
+              effective_price: 420,
+              promotion_id: 'promo-1',
+              promotion_ends_at: '2026-12-01T00:00:00Z',
+            },
+          ],
+          error: null,
+        },
+      });
+
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-default'));
+
+      let result: Awaited<ReturnType<ReturnType<typeof useCart>['validateCart']>> | undefined;
+      await act(async () => {
+        result = await cart().validateCart();
+      });
+
+      expect(result).toEqual({ removedItems: [], adjustedItems: ['iPhone 14'] });
+      expect(items()[0].price).toBe(420);
+      expect(totalPrice()).toBe('420');
+    });
+
+    it('con promo vigente en variante, validateCart ajusta el precio de la variante al effective_price', async () => {
+      mockTables({
+        products: {
+          data: [{ id: 'prod-1', stock: 5, name: 'iPhone 14', price: 1000 }],
+          error: null,
+        },
+        product_variants: {
+          data: [{ id: 'var-red', stock: 5, price: 800 }],
+          error: null,
+        },
+        storefront_promotion_prices: {
+          data: [
+            {
+              product_id: 'prod-1',
+              variant_id: 'var-red',
+              list_price: 800,
+              effective_price: 640,
+              promotion_id: 'promo-var',
+              promotion_ends_at: '2026-12-01T00:00:00Z',
+            },
+          ],
+          error: null,
+        },
+      });
+
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-variant-red'));
+
+      let result: Awaited<ReturnType<ReturnType<typeof useCart>['validateCart']>> | undefined;
+      await act(async () => {
+        result = await cart().validateCart();
+      });
+
+      expect(result).toEqual({ removedItems: [], adjustedItems: ['iPhone 14'] });
+      expect(items()[0].price).toBe(640);
+      expect(totalPrice()).toBe('640');
+    });
+
+    it('si la vista de promociones da error, usa el precio legacy', async () => {
+      mockTables({
+        products: {
+          data: [{ id: 'prod-1', stock: 5, name: 'iPhone 14', price: 650 }],
+          error: null,
+        },
+        storefront_promotion_prices: {
+          data: null,
+          error: { code: 'PGRST205', message: 'Could not find the table' },
+        },
+      });
+
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-default'));
+
+      let result: Awaited<ReturnType<ReturnType<typeof useCart>['validateCart']>> | undefined;
+      await act(async () => {
+        result = await cart().validateCart();
+      });
+
+      expect(result).toEqual({ removedItems: [], adjustedItems: ['iPhone 14'] });
+      expect(items()[0].price).toBe(650);
+      expect(totalPrice()).toBe('650');
+    });
+
+    it('sin bucle: un 409 posterior con el mismo precio no vuelve a ajustar', async () => {
+      mockTables({
+        products: {
+          data: [{ id: 'prod-1', stock: 5, name: 'iPhone 14', price: 500 }],
+          error: null,
+        },
+        storefront_promotion_prices: {
+          data: [
+            {
+              product_id: 'prod-1',
+              variant_id: null,
+              list_price: 500,
+              effective_price: 420,
+              promotion_id: 'promo-1',
+              promotion_ends_at: '2026-12-01T00:00:00Z',
+            },
+          ],
+          error: null,
+        },
+      });
+
+      const { cart } = renderCart();
+      await userEvent.click(screen.getByTestId('add-default'));
+
+      await act(async () => {
+        expect(await cart().validateCart()).toEqual({ removedItems: [], adjustedItems: ['iPhone 14'] });
+      });
+      expect(totalPrice()).toBe('420');
+
+      act(() => {
+        expect(cart().applyAuthoritativePrices([{ product_id: 'prod-1', variant_id: null, unit_price: 420 }])).toBe(true);
+      });
+      expect(totalPrice()).toBe('420');
+
+      await act(async () => {
+        expect(await cart().validateCart()).toEqual({ removedItems: [], adjustedItems: [] });
+      });
+      expect(items()[0].price).toBe(420);
+      expect(totalPrice()).toBe('420');
     });
   });
 });

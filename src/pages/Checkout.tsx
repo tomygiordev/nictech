@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { useCart } from '@/contexts/CartContext';
+import { useCart, type AuthoritativeCartPrice } from '@/contexts/CartContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -22,7 +22,7 @@ const PICKUP_BRANCH_ADDRESSES: Record<Exclude<DeliveryMethod, 'shipping'>, strin
 const Checkout = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { items, totalPrice, clearCart, validateCart, isValidating } = useCart();
+  const { items, totalPrice, clearCart, validateCart, applyAuthoritativePrices, isValidating } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mercadopago');
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('pickup_urdinarrain');
   const [loading, setLoading] = useState(false);
@@ -184,6 +184,7 @@ const Checkout = () => {
       const { data, error } = await supabase.functions.invoke('create-mercadopago-preference', {
         body: {
           checkout_id: checkoutIdRef.current,
+          expected_total: totalPrice,
           items: items.map(item => ({
             id: item.id,
             variant_id: item.variant?.id ?? null,
@@ -224,6 +225,25 @@ const Checkout = () => {
       if (typeof error === 'object' && error !== null && 'context' in error && error.context instanceof Response) {
         try {
           const body: unknown = await error.context.json();
+          if (error.context.status === 409 && body && typeof body === 'object' && 'items' in body && Array.isArray(body.items)) {
+            const prices: AuthoritativeCartPrice[] = [];
+            for (const item of body.items as unknown[]) {
+              if (!item || typeof item !== 'object' || !('product_id' in item) || typeof item.product_id !== 'string' ||
+                !('variant_id' in item) || (item.variant_id !== null && typeof item.variant_id !== 'string') ||
+                !('unit_price' in item) || typeof item.unit_price !== 'number') {
+                throw new Error('Respuesta de precios inválida');
+              }
+              prices.push({
+                product_id: item.product_id,
+                variant_id: typeof item.variant_id === 'string' ? item.variant_id : null,
+                unit_price: item.unit_price,
+              });
+            }
+            if (!applyAuthoritativePrices(prices)) throw new Error('El carrito cambió durante la validación');
+            checkoutIdRef.current = crypto.randomUUID();
+            toast.info('El precio cambió. Revisá el total actualizado antes de pagar.');
+            return;
+          }
           const safeMessages = new Set([
             'No se pudo obtener el precio vigente. Intentá nuevamente o contactá al local.',
             'El precio del producto tiene más de dos decimales o está fuera de rango. Contactá al local.',

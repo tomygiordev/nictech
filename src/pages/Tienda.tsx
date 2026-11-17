@@ -35,10 +35,17 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
 import { hasValidDiscount } from '@/lib/pricing';
+import { useStorefrontPromotionPrices } from '@/hooks/use-storefront-promotion-prices';
+import { resolveDisplayPrice } from '@/lib/promo-pricing';
 
 interface Category {
   id: string;
   name: string;
+}
+
+interface ProductVariantSummary {
+  id: string;
+  price: number | null;
 }
 
 interface Product {
@@ -46,8 +53,11 @@ interface Product {
   name: string;
   category_id: string;
   price: number;
+  legacy_price?: number;
   original_price?: number | null;
+  legacy_original_price?: number | null;
   sale_expires_at?: string | null;
+  legacy_sale_expires_at?: string | null;
   stock: number;
   image_url: string | null;
   additional_images: string[] | null;
@@ -60,6 +70,8 @@ interface Product {
   price_usd?: number | null;
   hasVariants?: boolean;
   variantPrices?: number[];
+  activeVariants?: ProductVariantSummary[];
+  hasPromo?: boolean;
 }
 
 interface SmartphoneModel {
@@ -216,26 +228,36 @@ const Tienda = () => {
     ]);
 
     if (productsRes.data) {
-      const formattedProducts: Product[] = productsRes.data.map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        category_id: item.category_id,
-        price: item.price,
-        stock: item.stock,
-        image_url: item.image_url || item.product_variants?.[0]?.image_url || null,
-        additional_images: item.additional_images || [],
-        description: item.description,
-        category: item.category,
-        tags: item.tags || [],
-        model_id: item.model_id,
-        brand_id: item.brand_id,
-        condition: item.condition,
-        original_price: item.original_price ?? null,
-        sale_expires_at: item.sale_expires_at ?? null,
-        price_usd: item.price_usd ?? null,
-        hasVariants: (item.product_variants?.length ?? 0) > 0,
-        variantPrices: item.product_variants?.filter(v => v.is_active).map(v => v.price ?? item.price) ?? [],
-      }));
+      const formattedProducts: Product[] = productsRes.data.map((item: any) => {
+        const activeVariants: ProductVariantSummary[] = (item.product_variants ?? [])
+          .filter((v: { is_active?: boolean }) => v.is_active)
+          .map((v: { id: string; price?: number | null }) => ({
+            id: v.id,
+            price: v.price ?? null,
+          }));
+
+        return {
+          id: item.id,
+          name: item.name,
+          category_id: item.category_id,
+          price: item.price,
+          stock: item.stock,
+          image_url: item.image_url || item.product_variants?.[0]?.image_url || null,
+          additional_images: item.additional_images || [],
+          description: item.description,
+          category: item.category,
+          tags: item.tags || [],
+          model_id: item.model_id,
+          brand_id: item.brand_id,
+          condition: item.condition,
+          original_price: item.original_price ?? null,
+          sale_expires_at: item.sale_expires_at ?? null,
+          price_usd: item.price_usd ?? null,
+          hasVariants: (item.product_variants?.length ?? 0) > 0,
+          variantPrices: activeVariants.map((v) => v.price ?? item.price),
+          activeVariants,
+        };
+      });
       setProducts(formattedProducts);
 
       if (formattedProducts.length > 0) {
@@ -274,20 +296,79 @@ const Tienda = () => {
     setLoading(false);
   };
 
+  const productIds = useMemo(() => products.map((product) => product.id), [products]);
+  const { index: promotionIndex } = useStorefrontPromotionPrices(productIds);
+
+  const resolvedProducts = useMemo(() => {
+    return products.map((product) => {
+      const resolvedBase = resolveDisplayPrice(
+        {
+          productId: product.id,
+          legacyPrice: product.price,
+          legacyOriginalPrice: product.original_price,
+          legacySaleExpiresAt: product.sale_expires_at,
+        },
+        promotionIndex,
+      );
+      const resolvedVariants = (product.activeVariants ?? []).map((variant) =>
+        resolveDisplayPrice(
+          {
+            productId: product.id,
+            variantId: variant.id,
+            legacyPrice: variant.price ?? product.price,
+            legacyOriginalPrice: product.original_price,
+            legacySaleExpiresAt: product.sale_expires_at,
+          },
+          promotionIndex,
+        ),
+      );
+      const variantPrices = resolvedVariants.map((variant) => variant.price);
+      const cheapestVariant =
+        resolvedVariants.length > 0
+          ? resolvedVariants.reduce((min, curr) => (curr.price < min.price ? curr : min))
+          : null;
+      const hasVariantErpPromo =
+        resolvedBase.source === 'legacy' && cheapestVariant?.source === 'erp';
+      const resolvedOriginalPrice = hasVariantErpPromo
+        ? cheapestVariant.originalPrice
+        : hasValidDiscount(resolvedBase)
+          ? resolvedBase.originalPrice
+          : null;
+      const resolvedSaleExpiresAt = hasVariantErpPromo
+        ? cheapestVariant.saleExpiresAt
+        : resolvedBase.saleExpiresAt;
+      const discountCheckPrice = hasVariantErpPromo
+        ? cheapestVariant.price
+        : resolvedBase.price;
+
+      return {
+        ...product,
+        legacy_price: product.price,
+        legacy_original_price: product.original_price ?? null,
+        legacy_sale_expires_at: product.sale_expires_at ?? null,
+        price: resolvedBase.price,
+        original_price: resolvedOriginalPrice,
+        sale_expires_at: resolvedSaleExpiresAt,
+        variantPrices,
+        hasPromo: hasValidDiscount({
+          price: discountCheckPrice,
+          originalPrice: resolvedOriginalPrice,
+          saleExpiresAt: resolvedSaleExpiresAt,
+        }),
+      };
+    });
+  }, [products, promotionIndex]);
+
   const maxPrice = useMemo(() => {
-    if (products.length === 0) return 0;
+    if (resolvedProducts.length === 0) return 0;
     return Math.max(
-      ...products.map((p) =>
-        hasValidDiscount({
-          price: p.price,
-          originalPrice: p.original_price,
-          saleExpiresAt: p.sale_expires_at,
-        })
+      ...resolvedProducts.map((p) =>
+        p.hasPromo
           ? (p.original_price ?? p.price)
           : p.price
       )
     );
-  }, [products]);
+  }, [resolvedProducts]);
 
   const normalizeText = (text: string) => {
     return text
@@ -311,11 +392,7 @@ const Tienda = () => {
       let score = clickCounts.get(product.id) || 0;
 
       // 1. Promo boost: offers have higher sales propensity (boost by 5 points)
-      const hasActivePromo = hasValidDiscount({
-        price: product.price,
-        originalPrice: product.original_price,
-        saleExpiresAt: product.sale_expires_at,
-      });
+      const hasActivePromo = Boolean(product.hasPromo);
       if (hasActivePromo) {
         score += 5;
       }
@@ -345,7 +422,7 @@ const Tienda = () => {
       return score;
     };
 
-    const result = products.filter(product => {
+    const result = resolvedProducts.filter(product => {
       const normalizedName = normalizeText(product.name);
       const normalizedDescription = normalizeText(product.description || '');
       const normalizedTags = (product.tags || []).map(tag => normalizeText(tag));
@@ -364,11 +441,7 @@ const Tienda = () => {
           categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'combos';
 
         if (isPromos) {
-          matchesCategory = hasValidDiscount({
-            price: product.price,
-            originalPrice: product.original_price,
-            saleExpiresAt: product.sale_expires_at,
-          });
+          matchesCategory = Boolean(product.hasPromo);
         } else if (isCombos) {
           matchesCategory = product.category?.name.toLowerCase() === 'combos';
         } else {
@@ -399,24 +472,24 @@ const Tienda = () => {
       }
       return 0;
     });
-  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap, categories, clickCounts]);
+  }, [resolvedProducts, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap, categories, clickCounts]);
 
   // Tags available for funda category
   const availableTags = useMemo(() => {
     if (!isFundaCategory) return [];
     const tagSet = new Set<string>();
-    for (const p of products) {
+    for (const p of resolvedProducts) {
       if (p.category_id === selectedCategory)
         (p.tags || []).forEach(t => tagSet.add(t));
     }
     return Array.from(tagSet).sort();
-  }, [products, selectedCategory, isFundaCategory]);
+  }, [resolvedProducts, selectedCategory, isFundaCategory]);
 
   // Models filtered by selected brand and stock availability in the selected category
   const filteredModels = useMemo(() => {
     const activeModelIds = new Set<string>();
     
-    for (const p of products) {
+    for (const p of resolvedProducts) {
       if (selectedCategory) {
         const isPromos = selectedCategory === '__promos__' ||
           categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'promos';
@@ -425,11 +498,7 @@ const Tienda = () => {
 
         let matchesCategory = true;
         if (isPromos) {
-          matchesCategory = hasValidDiscount({
-            price: p.price,
-            originalPrice: p.original_price,
-            saleExpiresAt: p.sale_expires_at,
-          });
+          matchesCategory = Boolean(p.hasPromo);
         } else if (isCombos) {
           matchesCategory = p.category?.name.toLowerCase() === 'combos';
         } else {
@@ -449,12 +518,12 @@ const Tienda = () => {
       if (selectedBrand && m.brand_id !== selectedBrand) return false;
       return true;
     });
-  }, [models, products, selectedCategory, selectedBrand, categories]);
+  }, [models, resolvedProducts, selectedCategory, selectedBrand, categories]);
 
   // Brands filtered by stock availability in the selected category
   const filteredBrands = useMemo(() => {
     const activeBrandIds = new Set<string>();
-    for (const p of products) {
+    for (const p of resolvedProducts) {
       if (selectedCategory) {
         const isPromos = selectedCategory === '__promos__' ||
           categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'promos';
@@ -463,11 +532,7 @@ const Tienda = () => {
 
         let matchesCategory = true;
         if (isPromos) {
-          matchesCategory = hasValidDiscount({
-            price: p.price,
-            originalPrice: p.original_price,
-            saleExpiresAt: p.sale_expires_at,
-          });
+          matchesCategory = Boolean(p.hasPromo);
         } else if (isCombos) {
           matchesCategory = p.category?.name.toLowerCase() === 'combos';
         } else {
@@ -486,7 +551,7 @@ const Tienda = () => {
     }
 
     return brands.filter(b => activeBrandIds.has(b.id));
-  }, [brands, products, selectedCategory, categories, modelBrandMap]);
+  }, [brands, resolvedProducts, selectedCategory, categories, modelBrandMap]);
 
   // Reset sub-filters when category changes
   useEffect(() => {
@@ -507,6 +572,14 @@ const Tienda = () => {
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
+  const resolvedSelectedProduct = useMemo(
+    () =>
+      selectedProduct
+        ? resolvedProducts.find((product) => product.id === selectedProduct.id) ?? selectedProduct
+        : null,
+    [selectedProduct, resolvedProducts],
+  );
+
   // Sincroniza el producto abierto con la URL /producto/:productId
   useEffect(() => {
     if (loading) return;
@@ -518,9 +591,9 @@ const Tienda = () => {
       return;
     }
 
-    const matchedProduct = findProductByParam(productId, products);
+    const matchedProduct = findProductByParam(productId, resolvedProducts);
     setSelectedProduct(matchedProduct);
-  }, [productId, products, loading, location.pathname]);
+  }, [productId, resolvedProducts, loading, location.pathname]);
 
   const handleOpenProduct = (product: Product, trackClick = true) => {
     if (trackClick) {
@@ -537,27 +610,27 @@ const Tienda = () => {
     }
   };
 
-  const selectedProductDescription = selectedProduct
-    ? (selectedProduct.description?.trim() ||
-      `${selectedProduct.name} disponible en Nictech con garantía escrita en Urdinarrain y Gilbert, Entre Ríos. Envíos a todo el país.`)
+  const selectedProductDescription = resolvedSelectedProduct
+    ? (resolvedSelectedProduct.description?.trim() ||
+      `${resolvedSelectedProduct.name} disponible en Nictech con garantía escrita en Urdinarrain y Gilbert, Entre Ríos. Envíos a todo el país.`)
     : '';
 
-  const productJsonLd = selectedProduct
+  const productJsonLd = resolvedSelectedProduct
     ? {
         '@context': 'https://schema.org',
         '@type': 'Product',
-        name: selectedProduct.name,
+        name: resolvedSelectedProduct.name,
         description: selectedProductDescription,
-        ...(selectedProduct.image_url ? { image: [selectedProduct.image_url] } : {}),
+        ...(resolvedSelectedProduct.image_url ? { image: [resolvedSelectedProduct.image_url] } : {}),
         offers: {
           '@type': 'Offer',
           priceCurrency: 'ARS',
-          price: selectedProduct.price,
+          price: resolvedSelectedProduct.price,
           availability:
-            selectedProduct.stock > 0
+            resolvedSelectedProduct.stock > 0
               ? 'https://schema.org/InStock'
               : 'https://schema.org/OutOfStock',
-          url: `https://nictech.com.ar/producto/${selectedProduct.id}`,
+          url: `https://nictech.com.ar/producto/${resolvedSelectedProduct.id}`,
         },
       }
     : null;
@@ -876,15 +949,8 @@ const Tienda = () => {
                             price={product.price}
                             variantPrices={product.variantPrices}
                             price_usd={product.price_usd}
-                            original_price={
-                              hasValidDiscount({
-                                price: product.price,
-                                originalPrice: product.original_price,
-                                saleExpiresAt: product.sale_expires_at,
-                              })
-                                ? product.original_price
-                                : null
-                            }
+                            original_price={product.original_price}
+                            sale_expires_at={product.sale_expires_at}
                             stock={product.stock}
                             image_url={product.image_url || undefined}
                             description={product.description || undefined}
@@ -995,9 +1061,10 @@ const Tienda = () => {
       </Layout>
 
       <ProductDetailModal
-        product={selectedProduct}
-        isOpen={!!selectedProduct}
+        product={resolvedSelectedProduct}
+        isOpen={!!resolvedSelectedProduct}
         onClose={handleCloseProduct}
+        promotionIndex={promotionIndex}
       />
     </>
   );

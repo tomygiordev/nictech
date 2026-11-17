@@ -10,14 +10,18 @@ import { cn } from '@/lib/utils';
 import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
 import { getVariantColor, isLightColor } from '@/lib/colors';
 import { calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
+import { resolveDisplayPrice, type StorefrontPromotionPrice } from '@/lib/promo-pricing';
 
 interface Product {
     id: string;
     name: string;
     price: number;
+    legacy_price?: number;
     price_usd?: number | null;
     original_price?: number | null;
+    legacy_original_price?: number | null;
     sale_expires_at?: string | null;
+    legacy_sale_expires_at?: string | null;
     stock: number;
     image_url: string | null;
     additional_images: string[] | null;
@@ -32,10 +36,11 @@ interface ProductDetailModalProps {
     product: Product | null;
     isOpen: boolean;
     onClose: () => void;
+    promotionIndex?: ReadonlyMap<string, StorefrontPromotionPrice> | null;
 }
 
 
-export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailModalProps) => {
+export const ProductDetailModal = ({ product, isOpen, onClose, promotionIndex }: ProductDetailModalProps) => {
     const { addToCart } = useCart();
 
     const [variants, setVariants] = useState<{ id: string, color: string, stock: number, image_url: string | null, price?: number | null }[]>([]);
@@ -159,6 +164,32 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         return () => document.removeEventListener('pointerdown', stop, true);
     }, [lightboxOpen]);
 
+    const baseLegacyPrice = product
+        ? (promotionIndex !== undefined ? (product.legacy_price ?? product.price) : product.price)
+        : 0;
+    const baseLegacyOriginalPrice = product
+        ? (promotionIndex !== undefined
+            ? (product.legacy_original_price !== undefined ? product.legacy_original_price : product.original_price)
+            : product.original_price)
+        : null;
+    const baseLegacySaleExpiresAt = product
+        ? (promotionIndex !== undefined
+            ? (product.legacy_sale_expires_at !== undefined ? product.legacy_sale_expires_at : product.sale_expires_at)
+            : product.sale_expires_at)
+        : null;
+    const resolvedPrice = product
+        ? resolveDisplayPrice(
+            {
+                productId: product.id,
+                variantId: selectedVariant?.id ?? null,
+                legacyPrice: selectedVariant?.price ?? baseLegacyPrice,
+                legacyOriginalPrice: baseLegacyOriginalPrice,
+                legacySaleExpiresAt: baseLegacySaleExpiresAt,
+            },
+            promotionIndex,
+        )
+        : null;
+
     const handleAddToCart = () => {
         if (product.hasVariants && !selectedVariant) {
             toast.error('Por favor elige un color antes de agregar al carrito', { duration: 3000 });
@@ -171,7 +202,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         addToCart({
             id: product.id,
             name: productName,
-            price: selectedVariant?.price ?? product.price,
+            price: resolvedPrice?.price ?? product.price,
             maxStock: selectedVariant ? selectedVariant.stock : product.stock,
             image_url: mappedImageUrl,
             variant: selectedVariant ? {
@@ -186,19 +217,20 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         onClose();
     };
 
-    if (!product) return null;
+    if (!product || !resolvedPrice) return null;
 
-    const effectivePrice = selectedVariant?.price ?? product.price;
+    const effectivePrice = resolvedPrice.price;
+    const effectiveOriginalPrice = resolvedPrice.originalPrice;
     const showDiscount = hasValidDiscount({
         price: effectivePrice,
-        originalPrice: product.original_price,
-        saleExpiresAt: product.sale_expires_at,
+        originalPrice: effectiveOriginalPrice,
+        saleExpiresAt: resolvedPrice.saleExpiresAt,
     });
     const originalUsdPrice = showDiscount
         ? calculateOriginalUsdPrice({
             price: effectivePrice,
             priceUsd: product.price_usd,
-            originalPrice: product.original_price,
+            originalPrice: effectiveOriginalPrice,
         })
         : null;
     const visibleTags = (product.tags ?? []).filter(
@@ -360,9 +392,9 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                         </>
                                     ) : (
                                         <>
-                                            {showDiscount && product.original_price != null && (
+                                            {showDiscount && effectiveOriginalPrice != null && (
                                                 <p className="text-base text-muted-foreground line-through">
-                                                    $ {product.original_price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+                                                    $ {effectiveOriginalPrice.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                                                 </p>
                                             )}
                                             <span className="text-2xl md:text-3xl font-bold text-primary">
