@@ -54,6 +54,7 @@ export const GlobalSearch = ({ open, onOpenChange }: GlobalSearchProps) => {
         supabase
           .from('products')
           .select('id, name, price, image_url, description, tags')
+          .eq('is_active', true)
           .gt('stock', 0)
           .limit(100),
         supabase

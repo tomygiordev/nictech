@@ -443,8 +443,8 @@ export function QuickRestockModal({ open, onClose, onRestockComplete, variantPro
           </DialogTitle>
         </div>
 
-        {/* Body */}
-        <div className="flex flex-1 min-h-0 divide-x divide-border">
+        {/* Body (stacks on mobile) */}
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 divide-y md:divide-y-0 md:divide-x divide-border overflow-y-auto md:overflow-hidden">
 
           {/* ── Left: search + item config ── */}
           <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
@@ -653,7 +653,7 @@ export function QuickRestockModal({ open, onClose, onRestockComplete, variantPro
           </div>
 
           {/* ── Right: cart + confirm ── */}
-          <div className="w-72 flex-shrink-0 flex flex-col bg-muted/10">
+          <div className="w-full md:w-72 flex-shrink-0 flex flex-col bg-muted/10 border-t md:border-t-0">
 
             {/* Cart header */}
             <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-background">
