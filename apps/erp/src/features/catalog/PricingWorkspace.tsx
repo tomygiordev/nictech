@@ -14,6 +14,7 @@ import { type ErpModuleId } from "@nictech/domain";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import { formatDateTime } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
+import { PromotionsPanel } from "./PromotionsPanel";
 
 interface ExchangeSnapshot {
   id: string;
@@ -193,6 +194,8 @@ export const PricingWorkspace: React.FC<PricingWorkspaceProps> = ({ onSelectModu
           <div className="flow-table-wrapper"><table className="flow-table"><thead><tr><th>Moneda</th><th>Cotización</th><th>Fuente</th><th>Fecha de cotización</th><th>Capturada</th><th>Snapshot</th></tr></thead><tbody>{snapshots.map((snapshot) => <tr key={snapshot.id}><td>{snapshot.quote_currency} / {snapshot.base_currency}</td><td style={{ fontWeight: 700 }}>{snapshot.rate_to_base}</td><td>{snapshot.source}</td><td>{formatDateTime(snapshot.quoted_at)}</td><td>{formatDateTime(snapshot.captured_at)}</td><td style={{ fontFamily: "monospace", fontSize: "11px" }}>{snapshot.id.slice(0, 8).toUpperCase()}</td></tr>)}</tbody></table></div>
         )}
       </div>
+
+      <PromotionsPanel />
     </div>
   );
 };
