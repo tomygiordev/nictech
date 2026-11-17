@@ -7,6 +7,7 @@ import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { buildProductGallery } from '@/lib/product-gallery';
 import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
 import { getVariantColor, isLightColor } from '@/lib/colors';
 import { calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
@@ -56,8 +57,12 @@ export const ProductDetailModal = ({ product, isOpen, onClose, promotionIndex }:
         api?.scrollTo(0);
         setCurrentImageIndex(0);
 
-        const initialImages = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
-        setImages(initialImages);
+        setImages(buildProductGallery({
+            productImage: product.image_url,
+            additionalImages: product.additional_images,
+            variants,
+            selectedVariantImage: selectedVariant?.image_url,
+        }));
 
         const fetchVariants = async () => {
             const { data } = await storefrontSupabase
@@ -79,21 +84,17 @@ export const ProductDetailModal = ({ product, isOpen, onClose, promotionIndex }:
 
     useEffect(() => {
         if (!product) return;
-        const initialImages = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
-
-        if (selectedVariant && selectedVariant.image_url) {
-            if (!initialImages.includes(selectedVariant.image_url)) {
-                setImages([selectedVariant.image_url, ...initialImages]);
-            } else {
-                const uniqueImages = Array.from(new Set([selectedVariant.image_url, ...initialImages]));
-                setImages(uniqueImages);
-            }
+        setImages(buildProductGallery({
+            productImage: product.image_url,
+            additionalImages: product.additional_images,
+            variants,
+            selectedVariantImage: selectedVariant?.image_url,
+        }));
+        if (selectedVariant) {
             setCurrentImageIndex(0);
             api?.scrollTo(0);
-        } else {
-            setImages(initialImages);
         }
-    }, [selectedVariant, product]);
+    }, [selectedVariant, product, variants]);
 
 
     const [lightboxOpen, setLightboxOpen] = useState(false);

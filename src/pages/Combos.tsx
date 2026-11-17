@@ -7,6 +7,7 @@ import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { supabase } from '@/integrations/supabase/client';
 import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
 import { hasValidDiscount } from '@/lib/pricing';
+import { pickPrimaryImage } from '@/lib/product-gallery';
 import { useStorefrontPromotionPrices } from '@/hooks/use-storefront-promotion-prices';
 import { resolveDisplayPrice } from '@/lib/promo-pricing';
 
@@ -70,7 +71,7 @@ export const Combos = () => {
             category_id: item.category_id,
             price: item.price,
             stock: item.stock,
-            image_url: item.image_url || item.product_variants?.[0]?.image_url || null,
+            image_url: pickPrimaryImage(item.image_url, item.product_variants),
             additional_images: item.additional_images || [],
             description: item.description,
             category: item.category,
