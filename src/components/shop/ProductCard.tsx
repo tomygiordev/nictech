@@ -5,6 +5,8 @@ import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 import { calculateDiscountPercentage, calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
 import { resolveDisplayPrice, type StorefrontPromotionPrice } from '@/lib/promo-pricing';
+import { formatInstallmentsLabel, formatPromoEndLabel } from '@/lib/promo-display';
+import { STOREFRONT_INSTALLMENTS } from '@/config/storefront-offers';
 
 interface ProductCardProps {
   id: string;
@@ -70,6 +72,8 @@ export const ProductCard = React.memo(({
     originalPrice: resolvedPrice.originalPrice,
     saleExpiresAt: resolvedPrice.saleExpiresAt,
   });
+  const promoEndLabel = showDiscount ? formatPromoEndLabel(resolvedPrice.saleExpiresAt) : null;
+  const installmentsLabel = formatInstallmentsLabel(displayPrice, STOREFRONT_INSTALLMENTS, { fromPrefix: hasPriceRange });
   const discountPercentage = showDiscount
     ? calculateDiscountPercentage({ price: displayPrice, originalPrice: resolvedPrice.originalPrice })
     : null;
@@ -212,6 +216,8 @@ export const ProductCard = React.memo(({
                 </p>
               </>
             )}
+            {promoEndLabel && <p className="text-[10px] sm:text-xs text-muted-foreground">{promoEndLabel}</p>}
+            {installmentsLabel && <p className="text-[10px] sm:text-xs text-muted-foreground">{installmentsLabel}</p>}
             <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
               {stock > 0 ? `${stock} disp.` : 'Sin stock'}
             </p>

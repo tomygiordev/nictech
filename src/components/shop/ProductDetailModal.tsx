@@ -12,6 +12,8 @@ import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
 import { getVariantColor, isLightColor } from '@/lib/colors';
 import { calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
 import { resolveDisplayPrice, type StorefrontPromotionPrice } from '@/lib/promo-pricing';
+import { formatInstallmentsLabel, formatPromoEndLabel } from '@/lib/promo-display';
+import { STOREFRONT_INSTALLMENTS } from '@/config/storefront-offers';
 
 interface Product {
     id: string;
@@ -227,6 +229,8 @@ export const ProductDetailModal = ({ product, isOpen, onClose, promotionIndex }:
         originalPrice: effectiveOriginalPrice,
         saleExpiresAt: resolvedPrice.saleExpiresAt,
     });
+    const promoEndLabel = showDiscount ? formatPromoEndLabel(resolvedPrice.saleExpiresAt) : null;
+    const installmentsLabel = formatInstallmentsLabel(effectivePrice, STOREFRONT_INSTALLMENTS);
     const originalUsdPrice = showDiscount
         ? calculateOriginalUsdPrice({
             price: effectivePrice,
@@ -406,6 +410,8 @@ export const ProductDetailModal = ({ product, isOpen, onClose, promotionIndex }:
                                     <p className="inline-flex items-center mt-2 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 text-xs font-medium">
                                         10% OFF abonando por transferencia bancaria
                                     </p>
+                                    {promoEndLabel && <p className="text-[10px] sm:text-xs text-muted-foreground">{promoEndLabel}</p>}
+                                    {installmentsLabel && <p className="text-[10px] sm:text-xs text-muted-foreground">{installmentsLabel}</p>}
                                 </div>
 
                                 <div className="prose prose-sm text-muted-foreground mb-6">

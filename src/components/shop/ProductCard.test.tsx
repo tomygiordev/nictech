@@ -203,4 +203,19 @@ describe('precio en la tarjeta', () => {
     expect(screen.queryByText('$ 100.000')).not.toBeInTheDocument();
     expect(screen.queryByText('PROMO')).not.toBeInTheDocument();
   });
+  it('muestra el fin de una promo válida', () => {
+    render(<ProductCard {...base} original_price={1200} sale_expires_at="2099-12-31T23:59:59Z" />);
+    expect(screen.getByText(/Promo válida hasta el/)).toBeInTheDocument();
+  });
+
+  it('no muestra fin de promo si no hay descuento válido', () => {
+    render(<ProductCard {...base} original_price={1000} sale_expires_at="2099-12-31T23:59:59Z" />);
+    expect(screen.queryByText(/Promo válida hasta el/)).not.toBeInTheDocument();
+  });
+
+  it('no muestra cuotas con la configuración predeterminada', () => {
+    render(<ProductCard {...base} />);
+    expect(screen.queryByText(/cuotas/i)).not.toBeInTheDocument();
+  });
+
 });
