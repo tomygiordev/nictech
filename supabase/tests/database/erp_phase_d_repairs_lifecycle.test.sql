@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(31);
+select plan(32);
 
 -- Setup test user with owner permissions
 insert into auth.users (
@@ -26,7 +26,7 @@ values (
   '87000000-0000-0000-0000-000000000099',
   '40000000-0000-0000-0000-000000000001',
   '87000000-0000-0000-0000-000000000099'
-);
+) on conflict do nothing;
 
 create temporary table d_ids(kind text primary key, id uuid, text_val text);
 grant all on d_ids to authenticated;
@@ -289,6 +289,16 @@ select is(
   'Quote decision is recorded as approved'
 );
 
+select throws_ok(
+  $$select erp.transition_repair_order(
+    (select id from d_ids where kind = 'repair_order'),
+    (select id from erp.repair_statuses where code = 'delivered' and organization_id = erp.current_organization_id()),
+    'Entregado', 'op-delivered-without-delivery', 'Intento sin entrega formal'
+  )$$,
+  '55000', 'formal delivery is required',
+  'No se puede marcar entregado sin entrega formal'
+);
+
 -- 10. Test formal delivery and derived warranty (Finding H05, H08)
 select lives_ok(
   $$insert into d_ids(kind, id)
@@ -361,8 +371,8 @@ select ok(
 );
 select is(
   (select status_code from erp.repair_orders_overview where id = (select id from d_ids where kind = 'repair_order')),
-  'ready',
-  'Overview view returns current status code ready'
+  'delivered',
+  'Overview view returns delivered after formal delivery'
 );
 
 select ok(

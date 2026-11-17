@@ -209,7 +209,11 @@ select throws_ok(
   '42501', null,
   'The private receipt implementation cannot be invoked directly'
 );
-select is((select count(*) from erp.purchase_receipts), 0::bigint, 'A denied receipt bypass has no side effects');
+select is(
+  (select count(*) from erp.purchase_receipts where idempotency_key = 'stage4-quarantine-bypass'),
+  0::bigint,
+  'A denied receipt bypass has no side effects'
+);
 
 select throws_ok(
   $$select erp.post_purchase_receipt(

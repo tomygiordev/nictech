@@ -81,21 +81,28 @@ values (
 insert into erp.products (
   id, organization_id, product_type_id, item_kind, unit_id,
   internal_code, internal_name, inventory_tracking, can_sell,
-  publish_on_web, allow_online_sale
+  publish_on_web, allow_online_sale, base_sale_price, tax_rate_percent
 ) values
   (
     'a2000000-0000-0000-0000-000000000001',
     '10000000-0000-0000-0000-000000000001',
     '60000000-0000-0000-0000-000000000001', 'product',
     '50000000-0000-0000-0000-000000000001',
-    'STAGE6-PRODUCT', 'Stage 6 Product', 'quantity', true, true, true
+    'STAGE6-PRODUCT', 'Stage 6 Product', 'quantity', true, true, true, 121, 21
   ),
   (
     'a2000000-0000-0000-0000-000000000002',
     '10000000-0000-0000-0000-000000000001',
     '60000000-0000-0000-0000-000000000004', 'service',
     '50000000-0000-0000-0000-000000000002',
-    'STAGE6-SERVICE', 'Stage 6 Service', 'none', true, false, false
+    'STAGE6-SERVICE', 'Stage 6 Service', 'none', true, false, false, 60.5, 21
+  ),
+  (
+    'a2000000-0000-0000-0000-000000000003',
+    '10000000-0000-0000-0000-000000000001',
+    '60000000-0000-0000-0000-000000000004', 'service',
+    '50000000-0000-0000-0000-000000000002',
+    'STAGE6-DELIVERY', 'Stage 6 Delivery', 'none', true, false, false, 20, 0
   );
 
 insert into erp.product_variants (
@@ -125,7 +132,26 @@ values (
   'a4000000-0000-0000-0000-000000000001',
   '40000000-0000-0000-0000-000000000001',
   'a4000000-0000-0000-0000-000000000001'
-);
+) on conflict do nothing;
+
+-- This register lives only inside the surrounding test transaction. It keeps the
+-- cash-flow assertions independent from any shift opened in a demo environment.
+insert into erp.cash_registers (id, organization_id, branch_id, code, name)
+values
+  (
+    '84000000-0000-0000-0000-0000000000c6',
+    '10000000-0000-0000-0000-000000000001',
+    '20000000-0000-0000-0000-000000000001',
+    'STAGE6-TEST',
+    'Caja aislada Stage 6'
+  ),
+  (
+    '84000000-0000-0000-0000-0000000000c7',
+    '10000000-0000-0000-0000-000000000001',
+    '20000000-0000-0000-0000-000000000001',
+    'STAGE6-USD-ONLY',
+    'Caja aislada USD Stage 6'
+  );
 
 select set_config('request.jwt.claim.sub', 'a4000000-0000-0000-0000-000000000001', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
@@ -137,11 +163,12 @@ select lives_ok(
 );
 
 select throws_ok(
-  $$select erp.create_sale(
+  $$select erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001',
     'a1000000-0000-0000-0000-000000000001', 'ARS',
     (select id from erp.exchange_rate_snapshots where source = 'stage6-local'),
-    'stage6-malformed-sale', 'Reject malformed sale JSON', '[1]'::jsonb
+    'stage6-malformed-sale', 'Reject malformed sale JSON', '[1]'::jsonb,
+    'non_fiscal'
   )$$,
   '22023', 'invalid sale line 1',
   'Sale JSON elements must be objects before typed casts'
@@ -157,14 +184,14 @@ select lives_ok(
 
 select lives_ok(
   $$select erp.open_cash_session(
-    '84000000-0000-0000-0000-000000000001', 'stage6-cash-open', 'Open test cash',
+    '84000000-0000-0000-0000-0000000000c6', 'stage6-cash-open', 'Open test cash',
     '[{"currency_code":"ARS","amount":0}]'::jsonb
   )$$,
   'Cash session opens with counted currency'
 );
 select is(
   erp.open_cash_session(
-    '84000000-0000-0000-0000-000000000001', 'stage6-cash-open', 'Open test cash',
+    '84000000-0000-0000-0000-0000000000c6', 'stage6-cash-open', 'Open test cash',
     '[{"currency_code":"ARS","amount":0}]'::jsonb
   ),
   (select id from erp.cash_sessions where idempotency_key = 'stage6-cash-open'),
@@ -172,7 +199,7 @@ select is(
 );
 select throws_ok(
   $$select erp.open_cash_session(
-    '84000000-0000-0000-0000-000000000001', 'stage6-cash-open-other', 'Second open',
+    '84000000-0000-0000-0000-0000000000c6', 'stage6-cash-open-other', 'Second open',
     '[{"currency_code":"ARS","amount":0}]'::jsonb
   )$$,
   '55000', 'cash register already has an open session',
@@ -192,13 +219,14 @@ insert into erp.profile_permission_overrides (
 );
 set local role authenticated;
 select throws_ok(
-  $$select erp.create_sale(
+  $$select erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001',
     'a1000000-0000-0000-0000-000000000001', 'ARS',
     (select id from erp.exchange_rate_snapshots where source = 'stage6-local'),
     'stage6-unauthorized-discount', 'Reject unauthorized discount',
-    '[{"kind":"service","product_id":"a2000000-0000-0000-0000-000000000002","description":"Discounted service","quantity":1,"unit_price":50,"discount_amount":1,"discount_reason":"Unauthorized","tax_rate_percent":21,"tax_amount":10.29}]'::jsonb,
-    '[{"payment_method_id":"82000000-0000-0000-0000-000000000002","amount":59.29}]'::jsonb
+    '[{"kind":"service","product_id":"a2000000-0000-0000-0000-000000000002","description":"Discounted service","quantity":1,"expected_unit_price":60.5,"expected_tax_rate":21,"gross_discount_amount":1,"discount_reason":"Unauthorized"}]'::jsonb,
+    'non_fiscal',
+    '[{"payment_method_id":"82000000-0000-0000-0000-000000000002","amount":59.5}]'::jsonb
   )$$,
   '42501', 'discount requires sales.discount and an explicit reason',
   'Discount is rejected without explicit authorization permission'
@@ -211,16 +239,17 @@ where profile_id = 'a4000000-0000-0000-0000-000000000001'
 set local role authenticated;
 
 select lives_ok(
-  $$select erp.create_sale(
+  $$select erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001',
     'a1000000-0000-0000-0000-000000000001', 'ARS',
     (select id from erp.exchange_rate_snapshots where source = 'stage6-local'),
     'stage6-sale', 'Mixed partial sale',
     '[
-      {"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Blue product","quantity":2,"unit_price":100,"discount_amount":10,"discount_reason":"Approved launch discount","tax_rate_percent":21,"tax_amount":39.9},
-      {"kind":"service","product_id":"a2000000-0000-0000-0000-000000000002","description":"Setup service","quantity":1,"unit_price":50,"discount_amount":0,"tax_rate_percent":21,"tax_amount":10.5},
-      {"kind":"free_concept","description":"Delivery","quantity":1,"unit_price":20,"discount_amount":0,"tax_rate_percent":0,"tax_amount":0}
+      {"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Blue product","quantity":2,"expected_unit_price":121,"expected_tax_rate":21,"gross_discount_amount":12.1,"discount_reason":"Approved launch discount"},
+      {"kind":"service","product_id":"a2000000-0000-0000-0000-000000000002","description":"Setup service","quantity":1,"expected_unit_price":60.5,"expected_tax_rate":21,"gross_discount_amount":0},
+      {"kind":"service","product_id":"a2000000-0000-0000-0000-000000000003","description":"Delivery","quantity":1,"expected_unit_price":20,"expected_tax_rate":0,"gross_discount_amount":0}
     ]'::jsonb,
+    'non_fiscal',
     jsonb_build_array(
       jsonb_build_object('payment_method_id','82000000-0000-0000-0000-000000000001','cash_session_id',(select id from erp.cash_sessions where idempotency_key = 'stage6-cash-open'),'amount',100),
       jsonb_build_object('payment_method_id','82000000-0000-0000-0000-000000000002','amount',100)
@@ -233,7 +262,7 @@ select is((select subtotal_amount from erp.sales where idempotency_key = 'stage6
 select is((select discount_amount from erp.sales where idempotency_key = 'stage6-sale'), 10::numeric, 'Sale discount is immutable');
 select is((select tax_amount from erp.sales where idempotency_key = 'stage6-sale'), 50.4::numeric, 'Sale tax is immutable');
 select is((select total_amount from erp.sales where idempotency_key = 'stage6-sale'), 310.4::numeric, 'Sale total reconciles');
-select is((select count(*) from erp.sale_lines where sale_id = (select id from erp.sales where idempotency_key = 'stage6-sale')), 3::bigint, 'Product, service and free concept persist');
+select is((select count(*) from erp.sale_lines where sale_id = (select id from erp.sales where idempotency_key = 'stage6-sale')), 3::bigint, 'Product and services persist');
 select is((select count(*) from erp.sale_discount_authorizations where sale_id = (select id from erp.sales where idempotency_key = 'stage6-sale')), 1::bigint, 'Discount has explicit authorization');
 select is((select count(*) from erp.payments where sale_id = (select id from erp.sales where idempotency_key = 'stage6-sale')), 2::bigint, 'Split payments persist independently');
 select is((select sum(amount) from erp.payments where sale_id = (select id from erp.sales where idempotency_key = 'stage6-sale')), 200::numeric, 'Partial payment total is preserved');
@@ -244,21 +273,22 @@ select is((select value_delta_base from erp.stock_cost_movements where document_
 select is((select sum(amount) from erp.cash_movements where cash_session_id = (select id from erp.cash_sessions where idempotency_key = 'stage6-cash-open')), 100::numeric, 'Cash payment reaches cash ledger');
 select ok(exists(select 1 from erp.audit_events where table_name = 'sales' and metadata->>'redacted' = 'true'), 'Sale audit is redacted');
 select is(
-  erp.create_sale(
+  (erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001',
     'a1000000-0000-0000-0000-000000000001', 'ARS',
     (select id from erp.exchange_rate_snapshots where source = 'stage6-local'),
     'stage6-sale', 'Mixed partial sale',
     '[
-      {"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Blue product","quantity":2,"unit_price":100,"discount_amount":10,"discount_reason":"Approved launch discount","tax_rate_percent":21,"tax_amount":39.9},
-      {"kind":"service","product_id":"a2000000-0000-0000-0000-000000000002","description":"Setup service","quantity":1,"unit_price":50,"discount_amount":0,"tax_rate_percent":21,"tax_amount":10.5},
-      {"kind":"free_concept","description":"Delivery","quantity":1,"unit_price":20,"discount_amount":0,"tax_rate_percent":0,"tax_amount":0}
+      {"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Blue product","quantity":2,"expected_unit_price":121,"expected_tax_rate":21,"gross_discount_amount":12.1,"discount_reason":"Approved launch discount"},
+      {"kind":"service","product_id":"a2000000-0000-0000-0000-000000000002","description":"Setup service","quantity":1,"expected_unit_price":60.5,"expected_tax_rate":21,"gross_discount_amount":0},
+      {"kind":"service","product_id":"a2000000-0000-0000-0000-000000000003","description":"Delivery","quantity":1,"expected_unit_price":20,"expected_tax_rate":0,"gross_discount_amount":0}
     ]'::jsonb,
+    'non_fiscal',
     jsonb_build_array(
       jsonb_build_object('payment_method_id','82000000-0000-0000-0000-000000000001','cash_session_id',(select id from erp.cash_sessions where idempotency_key = 'stage6-cash-open'),'amount',100),
       jsonb_build_object('payment_method_id','82000000-0000-0000-0000-000000000002','amount',100)
     )
-  ),
+  )->>'sale_id')::uuid,
   (select id from erp.sales where idempotency_key = 'stage6-sale'),
   'Sale retry does not duplicate business facts'
 );
@@ -330,17 +360,22 @@ select lives_ok(
   $$select erp.capture_exchange_rate('USD', 1000, 'stage6-usd', '2026-08-19 12:30:00+00', 'stage6-fx-usd', 'Stage 6 USD rate')$$,
   'USD exchange snapshot is available for currency enforcement'
 );
+select erp.open_cash_session(
+  '84000000-0000-0000-0000-0000000000c7', 'stage6-cash-open-usd-only', 'Open USD-only cash',
+  '[{"currency_code":"USD","amount":0}]'::jsonb
+);
 select throws_ok(
-  $$select erp.create_sale(
+  $$select erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001',
-    'a1000000-0000-0000-0000-000000000001', 'USD',
-    (select id from erp.exchange_rate_snapshots where source = 'stage6-usd'),
-    'stage6-usd-cash-sale', 'Reject cash in unopened USD',
-    '[{"kind":"service","product_id":"a2000000-0000-0000-0000-000000000002","description":"USD service","quantity":1,"unit_price":1,"discount_amount":0,"tax_rate_percent":0,"tax_amount":0}]'::jsonb,
+    'a1000000-0000-0000-0000-000000000001', 'ARS',
+    (select id from erp.exchange_rate_snapshots where source = 'stage6-local'),
+    'stage6-ars-in-usd-cash-sale', 'Reject ARS cash in USD-only session',
+    '[{"kind":"service","product_id":"a2000000-0000-0000-0000-000000000003","description":"Delivery service","quantity":1,"expected_unit_price":20,"expected_tax_rate":0,"gross_discount_amount":0}]'::jsonb,
+    'non_fiscal',
     jsonb_build_array(jsonb_build_object(
       'payment_method_id','82000000-0000-0000-0000-000000000001',
-      'cash_session_id',(select id from erp.cash_sessions where idempotency_key = 'stage6-cash-open'),
-      'amount',1
+      'cash_session_id',(select id from erp.cash_sessions where idempotency_key = 'stage6-cash-open-usd-only'),
+      'amount',20
     ))
   )$$,
   '23503', 'payment currency is not open in its cash session',
@@ -367,7 +402,7 @@ select throws_ok(
 );
 select lives_ok(
   $$select erp.open_cash_session(
-    '84000000-0000-0000-0000-000000000001', 'stage6-refund-cash-open', 'Open refund cash',
+    '84000000-0000-0000-0000-0000000000c6', 'stage6-refund-cash-open', 'Open refund cash',
     '[{"currency_code":"ARS","amount":0}]'::jsonb
   )$$,
   'A new cash session opens after the original closes'
@@ -422,15 +457,16 @@ select lives_ok(
   'A second web order obtains an independent reservation'
 );
 select throws_ok(
-  $$select erp.create_sale(
+  $$select erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001',
     'a1000000-0000-0000-0000-000000000001', 'ARS',
     (select id from erp.exchange_rate_snapshots where source = 'stage6-local'),
     'stage6-duplicate-reservation-sale', 'Reject duplicate overconsumption',
     '[
-      {"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Duplicate one","quantity":1,"unit_price":50,"discount_amount":0,"tax_rate_percent":0,"tax_amount":0},
-      {"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Duplicate two","quantity":1,"unit_price":50,"discount_amount":0,"tax_rate_percent":0,"tax_amount":0}
+      {"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Duplicate one","quantity":1,"expected_unit_price":121,"expected_tax_rate":21,"gross_discount_amount":0},
+      {"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Duplicate two","quantity":1,"expected_unit_price":121,"expected_tax_rate":21,"gross_discount_amount":0}
     ]'::jsonb,
+    'non_fiscal',
     '[]'::jsonb,
     (select reservation_batch_id from erp.web_orders where idempotency_key = 'stage6-web-order-2')
   )$$,
@@ -640,13 +676,14 @@ select set_config('request.jwt.claim.role', 'authenticated', true);
 set local role authenticated;
 
 select lives_ok(
-  $$select erp.create_sale(
+  $$select erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001',
     'a1000000-0000-0000-0000-000000000001', 'ARS',
     (select id from erp.exchange_rate_snapshots where source = 'stage6-local'),
     'stage6-cancel-sale', 'Sale to cancel',
-    '[{"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Cancellation product","quantity":1,"unit_price":100,"discount_amount":0,"tax_rate_percent":0,"tax_amount":0}]'::jsonb,
-    '[{"payment_method_id":"82000000-0000-0000-0000-000000000002","amount":100}]'::jsonb
+    '[{"kind":"product","product_id":"a2000000-0000-0000-0000-000000000001","variant_id":"a3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Cancellation product","quantity":1,"expected_unit_price":121,"expected_tax_rate":21,"gross_discount_amount":0}]'::jsonb,
+    'non_fiscal',
+    '[{"payment_method_id":"82000000-0000-0000-0000-000000000002","amount":121}]'::jsonb
   )$$,
   'Cancellation fixture sale posts normally'
 );

@@ -1,0 +1,34 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+select plan(10);
+create temporary table sheet_fixture(k text primary key, id uuid, value text);
+insert into sheet_fixture values ('owner',gen_random_uuid(),null),('no_stock',gen_random_uuid(),null),('category',gen_random_uuid(),null),('brand',gen_random_uuid(),null),('role',gen_random_uuid(),null);
+insert into sheet_fixture select 'org',id,null from erp.organizations order by created_at limit 1;
+insert into sheet_fixture select 'location',l.id,null from erp.locations l where l.organization_id=(select id from sheet_fixture where k='org') and l.is_active order by l.created_at limit 1;
+insert into auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+select id,'authenticated','authenticated',id::text||'@example.test','{}','{}',now(),now() from sheet_fixture where k in ('owner','no_stock');
+insert into erp.profiles(id,organization_id,display_name) select f.id,(select id from sheet_fixture where k='org'),'Fixture' from sheet_fixture f where f.k in ('owner','no_stock') on conflict (id) do nothing;
+insert into erp.profile_roles(organization_id,profile_id,role_id)
+select o.id,u.id,r.id from sheet_fixture o,sheet_fixture u,erp.roles r where o.k='org' and u.k='owner' and r.organization_id=o.id and r.code='owner';
+insert into erp.roles(id,organization_id,code,name) select (select id from sheet_fixture where k='role'),id,'sheet-test-'||gen_random_uuid()::text,'Sheet test' from sheet_fixture where k='org';
+insert into erp.role_permissions(organization_id,role_id,permission_id) select (select id from sheet_fixture where k='org'),(select id from sheet_fixture where k='role'),id from erp.permissions where code='catalog.manage';
+insert into erp.profile_roles(organization_id,profile_id,role_id) values ((select id from sheet_fixture where k='org'),(select id from sheet_fixture where k='no_stock'),(select id from sheet_fixture where k='role'));
+insert into erp.product_categories(id,organization_id,code,name) select (select id from sheet_fixture where k='category'),id,'SHT-'||gen_random_uuid()::text,'Ficha test' from sheet_fixture where k='org';
+insert into erp.brands(id,organization_id,code,name) select (select id from sheet_fixture where k='brand'),id,'SHT-'||gen_random_uuid()::text,'Ficha test '||gen_random_uuid()::text from sheet_fixture where k='org';
+select set_config('request.jwt.claim.role','authenticated',true);
+select set_config('request.jwt.claim.sub',(select id::text from sheet_fixture where k='owner'),true);
+create temporary table sheet_payload as select jsonb_build_object('internal_name','Fixture ficha','category_id',(select id from sheet_fixture where k='category'),'brand_id',(select id from sheet_fixture where k='brand'),'base_cost',10,'base_sale_price',100,'public_description','Visible','internal_description','Privada','variants',jsonb_build_array(jsonb_build_object('code','COLOR-'||gen_random_uuid()::text,'name','Negro','is_active',true),jsonb_build_object('code','COLOR-'||gen_random_uuid()::text,'name','Azul','is_active',true))) as value;
+create temporary table sheet_result as select erp.save_catalog_product_sheet(value) as value from sheet_payload;
+select ok((select value->'product'->>'internal_description'='Privada' and value->'product'->>'public_description'='Visible' from sheet_result),'Descripciones separadas');
+select lives_ok($$select erp.save_catalog_product_sheet(jsonb_build_object('id',value->'product'->>'id','internal_description','Actualizada')) from sheet_result$$,'Edición interna permitida');
+select ok((select public_description='Visible' and internal_description='Actualizada' from erp.products where id=(select (value->'product'->>'id')::uuid from sheet_result)),'Descripción pública preservada');
+select ok(not exists(select 1 from information_schema.columns where table_schema='public' and table_name='products' and column_name='internal_description'),'Proyección web no contiene columna interna');
+select lives_ok($$select erp.save_catalog_product_sheet(jsonb_build_object('id',value->'product'->>'id','initial_stock',jsonb_build_array(jsonb_build_object('variant_code',value->'variants'->0->>'code','quantity',3,'location_id',(select id from sheet_fixture where k='location'),'unit_cost',10),jsonb_build_object('variant_id',value->'variants'->1->>'id','quantity',2,'location_id',(select id from sheet_fixture where k='location'),'unit_cost',8)))) from sheet_result$$,'Ingreso inicial crea movimiento');
+select ok((select count(*)=1 from erp.stock_documents where posted_by=(select id from sheet_fixture where k='owner') and reason='Ingreso inicial desde ficha'),'Se creó un solo documento');
+select ok((select sum(quantity_on_hand)=5 and count(distinct variant_id)=2 from erp.stock_balances where product_id=(select (value->'product'->>'id')::uuid from sheet_result)),'Saldo por variante correcto');
+select throws_ok($$select erp.save_catalog_product_sheet(jsonb_build_object('id',value->'product'->>'id','public_description','No debe persistir','initial_stock',jsonb_build_array(jsonb_build_object('variant_id',value->'variants'->0->>'id','quantity',0,'location_id',(select id from sheet_fixture where k='location'),'unit_cost',10)))) from sheet_result$$,'22023','cantidad debe ser mayor a cero','Error de stock revierte la ficha');
+select ok((select public_description='Visible' from erp.products where id=(select (value->'product'->>'id')::uuid from sheet_result)),'Falla preserva descripción');
+select set_config('request.jwt.claim.sub',(select id::text from sheet_fixture where k='no_stock'),true);
+select throws_ok($$select erp.save_catalog_product_sheet(jsonb_build_object('id',value->'product'->>'id','initial_stock',jsonb_build_array(jsonb_build_object('variant_id',value->'variants'->0->>'id','quantity',1,'location_id',(select id from sheet_fixture where k='location'),'unit_cost',10)))) from sheet_result$$,'42501','stock.adjust permission is required','Catálogo sin stock.adjust no puede ingresar existencias');
+select * from finish();
+rollback;

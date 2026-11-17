@@ -23,6 +23,18 @@ begin;
 set local statement_timeout = '30s';
 set local lock_timeout = '10s';
 
+-- The smoke test owns its actor and reference models; no seeded Auth account is required.
+create temporary table catalog_smoke_fixture(k text primary key, id uuid);
+insert into catalog_smoke_fixture values ('actor',gen_random_uuid()),('brand',gen_random_uuid()),('model1',gen_random_uuid()),('model2',gen_random_uuid());
+insert into catalog_smoke_fixture select 'org',id from erp.organizations order by created_at limit 1;
+insert into auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+select id,'authenticated','authenticated',id::text||'@example.test','{}','{}',now(),now() from catalog_smoke_fixture where k='actor';
+insert into erp.profiles(id,organization_id,display_name) values ((select id from catalog_smoke_fixture where k='actor'),(select id from catalog_smoke_fixture where k='org'),'Fixture catálogo') on conflict (id) do nothing;
+insert into erp.profile_roles(organization_id,profile_id,role_id) select o.id,a.id,r.id from catalog_smoke_fixture o,catalog_smoke_fixture a,erp.roles r where o.k='org' and a.k='actor' and r.organization_id=o.id and r.code='owner' on conflict do nothing;
+insert into erp.brands(id,organization_id,code,name) select (select id from catalog_smoke_fixture where k='brand'),id,'SMOKE-'||gen_random_uuid()::text,'Smoke '||gen_random_uuid()::text from catalog_smoke_fixture where k='org';
+insert into erp.product_models(id,organization_id,brand_id,code,name) select f.id,(select id from catalog_smoke_fixture where k='org'),(select id from catalog_smoke_fixture where k='brand'),'SMOKE-'||gen_random_uuid()::text,'Smoke '||gen_random_uuid()::text from catalog_smoke_fixture f where f.k in ('model1','model2');
+
+
 do $$
 declare
   -- Candidate actor discovery & tenant references
@@ -295,9 +307,12 @@ begin
 
     select count(*) into v_count
       from erp.product_compatible_models
-     where product_id = v_prod_a and organization_id = v_org_id;
+     where product_id = v_prod_a and organization_id = v_org_id and is_active;
     if v_count is distinct from 1 then
-      raise exception 'Assertion failed: expected 1 compatible model after sync, got %', v_count;
+      raise exception 'Assertion failed: expected 1 active compatible model after sync, got %', v_count;
+    end if;
+    if not exists (select 1 from erp.product_compatible_models where product_id=v_prod_a and organization_id=v_org_id and model_id=v_model2_id and not is_active) then
+      raise exception 'Assertion failed: removed compatibility must remain as inactive history';
     end if;
 
     -- 4.4 Optimistic Concurrency check: passing stale expected_updated_at must fail

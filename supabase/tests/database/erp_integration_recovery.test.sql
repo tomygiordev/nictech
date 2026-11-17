@@ -97,7 +97,7 @@ values (
   'e4000000-0000-0000-0000-000000000001',
   '40000000-0000-0000-0000-000000000001',
   'e4000000-0000-0000-0000-000000000001'
-);
+) on conflict do nothing;
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -118,7 +118,7 @@ values (
   'e4000000-0000-0000-0000-000000000002',
   '40000000-0000-0000-0000-000000000002',
   'e4000000-0000-0000-0000-000000000002'
-);
+) on conflict do nothing;
 
 set local role postgres;
 insert into erp.integration_outbox (

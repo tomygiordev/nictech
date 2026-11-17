@@ -1,3 +1,4 @@
+select set_config('erp.seed_repair_statuses','on',false);
 insert into erp.organizations (
   id,
   legal_name,
@@ -37,6 +38,9 @@ values
 on conflict (id) do update set
   organization_id=excluded.organization_id,from_status_id=excluded.from_status_id,
   to_status_id=excluded.to_status_id,required_permission=excluded.required_permission,is_active=true;
+
+select erp.install_repair_public_stages('10000000-0000-0000-0000-000000000001');
+select set_config('erp.seed_repair_statuses','off',false);
 
 insert into erp.repair_test_templates (id,organization_id,code,kind,name)
 values

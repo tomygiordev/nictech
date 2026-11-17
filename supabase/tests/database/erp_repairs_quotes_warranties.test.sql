@@ -110,6 +110,10 @@ values
 ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-000000000001','authenticated','authenticated','stage7@nictech.local','not-used',now(),'{}','{"display_name":"Stage 7"}',now(),now()),
 ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-000000000002','authenticated','authenticated','stage7-quotes@nictech.local','not-used',now(),'{}','{"display_name":"Stage 7 Quotes"}',now(),now()),
 ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-000000000003','authenticated','authenticated','stage7-foreign@nictech.local','not-used',now(),'{}','{"display_name":"Stage 7 Foreign"}',now(),now());
+insert into erp.profiles(id,organization_id,display_name)
+select id,case when id='b3000000-0000-0000-0000-000000000003'::uuid then 'b9000000-0000-0000-0000-000000000001'::uuid else '10000000-0000-0000-0000-000000000001'::uuid end, 'Fixture reparación'
+from auth.users where id in ('b3000000-0000-0000-0000-000000000001','b3000000-0000-0000-0000-000000000002','b3000000-0000-0000-0000-000000000003')
+on conflict (id) do nothing;
 update erp.profiles set organization_id='10000000-0000-0000-0000-000000000001' where id in('b3000000-0000-0000-0000-000000000001','b3000000-0000-0000-0000-000000000002');
 update erp.profiles set organization_id='b9000000-0000-0000-0000-000000000001' where id='b3000000-0000-0000-0000-000000000003';
 insert into erp.roles(id,organization_id,code,name,is_system)
@@ -122,9 +126,38 @@ values
 ('10000000-0000-0000-0000-000000000001','b3000000-0000-0000-0000-000000000002','40000000-0000-0000-0000-000000000002','b3000000-0000-0000-0000-000000000001'),
 ('b9000000-0000-0000-0000-000000000001','b3000000-0000-0000-0000-000000000003','b9000000-0000-0000-0000-000000000005','b3000000-0000-0000-0000-000000000003');
 
+-- Keep the suite reproducible even when a demo already contains repair orders.
+create temporary table stage7_expected_order_number as
+select greatest(
+  coalesce((
+    select max(order_number) + 1
+    from erp.repair_orders
+    where organization_id = '10000000-0000-0000-0000-000000000001'
+      and branch_id = '20000000-0000-0000-0000-000000000001'
+  ), 1),
+  coalesce((
+    select next_number
+    from erp.repair_number_counters
+    where organization_id = '10000000-0000-0000-0000-000000000001'
+      and branch_id = '20000000-0000-0000-0000-000000000001'
+  ), 1)
+)::bigint as order_number;
+grant select on stage7_expected_order_number to authenticated;
+
 insert into erp.repair_number_counters(organization_id,branch_id,next_number)
-values('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',1)
-on conflict(organization_id,branch_id) do update set next_number=1;
+select '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', order_number
+from stage7_expected_order_number
+on conflict(organization_id,branch_id) do update set next_number=excluded.next_number;
+
+-- Keep repair-payment coverage independent from the register used by the demo.
+insert into erp.cash_registers (id, organization_id, branch_id, code, name)
+values (
+  '84000000-0000-0000-0000-0000000000c7',
+  '10000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000001',
+  'STAGE7-TEST',
+  'Caja aislada Stage 7'
+);
 
 select set_config('request.jwt.claim.sub','',true);
 select set_config('request.jwt.claim.role','service_role',true);
@@ -172,7 +205,11 @@ select is((select count(*) from erp.equipment_ownership_events where equipment_i
 select lives_ok($$select erp.transfer_customer_equipment('20000000-0000-0000-0000-000000000001',(select id from stage7_ids where kind='equipment'),'b1000000-0000-0000-0000-000000000001','stage7-transfer-back','Return ownership')$$,'Equipment can return through another ownership event');
 
 select lives_ok($$insert into stage7_ids(kind,id,secret) select 'order',repair_order_id,tracking_token from erp.create_repair_order('20000000-0000-0000-0000-000000000001','b1000000-0000-0000-0000-000000000001',(select id from stage7_ids where kind='equipment'),'["charger"]','Scratched','Corner dent','Internal intake note','Does not charge','stage7-order','Receive equipment')$$,'Numbered repair order is created');
-select is((select order_number from erp.repair_orders where id=(select id from stage7_ids where kind='order')),1::bigint,'First branch counter value is deterministic');
+select is(
+  (select order_number from erp.repair_orders where id=(select id from stage7_ids where kind='order')),
+  (select order_number from stage7_expected_order_number),
+  'Repair order uses the next available branch number deterministically'
+);
 select is((select count(*) from erp.repair_state_events where repair_order_id=(select id from stage7_ids where kind='order')),1::bigint,'Initial state event is appended');
 reset role;
 select is((select request_hash from erp.repair_commands where command_name='repair.order.create' and idempotency_key='stage7-order'),encode(extensions.digest(convert_to(jsonb_build_object('customer_id','b1000000-0000-0000-0000-000000000001'::uuid,'equipment_id',(select id from stage7_ids where kind='equipment'),'accessories','["charger"]'::jsonb,'condition','Scratched','damage','Corner dent','notes','Internal intake note','fault','Does not charge','reason','Receive equipment')::text,'UTF8'),'sha256'),'hex'),'Command request identity uses SHA-256');
@@ -299,12 +336,12 @@ select is((select status from erp.inventory_units where id=(select id from stage
 select throws_ok($$select erp.record_repair_labor((select id from stage7_ids where kind='order'),'Invalid labor','NaN'::numeric,10,'stage7-labor-nan')$$,'22023','finite labor values are required','Labor rejects NaN');
 select lives_ok($$select erp.record_repair_labor((select id from stage7_ids where kind='order'),'Bench work',1.5,20,'stage7-labor')$$,'Finite labor cost fact is recorded');
 
-select lives_ok($$select erp.open_cash_session('84000000-0000-0000-0000-000000000001','stage7-cash','Open repair cash','[{"currency_code":"ARS","amount":0}]')$$,'Repair cash session opens under existing rules');
+select lives_ok($$select erp.open_cash_session('84000000-0000-0000-0000-0000000000c7','stage7-cash','Open repair cash','[{"currency_code":"ARS","amount":0}]')$$,'Repair cash session opens under existing rules');
 select lives_ok($$insert into stage7_ids(kind,id) values('deposit',erp.record_repair_payment((select id from stage7_ids where kind='order'),'82000000-0000-0000-0000-000000000001',(select id from erp.cash_sessions where idempotency_key='stage7-cash'),50,'ARS',(select id from erp.exchange_rate_snapshots where source='stage7-local'),'stage7-deposit','Repair deposit',null))$$,'Repair deposit uses generic payment and cash facts');
 select is((select sale_id from erp.payments where id=(select id from stage7_ids where kind='deposit')),null::uuid,'Repair deposit has no fake sale owner');
 select is((select repair_order_id from erp.payments where id=(select id from stage7_ids where kind='deposit')),(select id from stage7_ids where kind='order'),'Repair deposit has exactly one repair owner');
 select is((select count(*) from erp.customer_account_entries where payment_id=(select id from stage7_ids where kind='deposit')),0::bigint,'Repair deposit creates no customer-account entry');
-select lives_ok($$select erp.reverse_repair_payment((select id from stage7_ids where kind='deposit'),'stage7-deposit-reverse','Reverse deposit',null)$$,'Repair payment exact reversal uses current cash session');
+select lives_ok($$select erp.reverse_repair_payment((select id from stage7_ids where kind='deposit'),'stage7-deposit-reverse','Reverse deposit',(select id from erp.cash_sessions where idempotency_key='stage7-cash'))$$,'Repair payment exact reversal uses current cash session');
 select is((select sum(amount) from erp.payments where repair_order_id=(select id from stage7_ids where kind='order')),0::numeric,'Repair payment reversal offsets exactly');
 
 select throws_ok($$select * from erp.create_repair_media_upload_token((select id from stage7_ids where kind='order'),null,1,1000,array['image/jpeg'],'stage7-media-null-expiry')$$,'22023','bounded media token policy and TTL within 24 hours are required','Media token creation rejects NULL expiry');

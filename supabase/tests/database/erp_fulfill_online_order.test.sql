@@ -36,13 +36,13 @@ values (
 insert into erp.products (
   id, organization_id, product_type_id, item_kind, unit_id,
   internal_code, internal_name, inventory_tracking, can_sell,
-  publish_on_web, allow_online_sale
+  publish_on_web, allow_online_sale, base_sale_price
 ) values (
   'b2000000-0000-0000-0000-000000000001',
   '10000000-0000-0000-0000-000000000001',
   '60000000-0000-0000-0000-000000000001', 'product',
   '50000000-0000-0000-0000-000000000001',
-  'FULFILL-PRODUCT', 'Fulfill Product', 'quantity', true, true, true
+  'FULFILL-PRODUCT', 'Fulfill Product', 'quantity', true, true, true, 1
 );
 
 insert into erp.product_variants (
@@ -72,7 +72,7 @@ values (
   'b4000000-0000-0000-0000-000000000001',
   '40000000-0000-0000-0000-000000000001',
   'b4000000-0000-0000-0000-000000000001'
-);
+) on conflict do nothing;
 
 select set_config('request.jwt.claim.sub', 'b4000000-0000-0000-0000-000000000001', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);

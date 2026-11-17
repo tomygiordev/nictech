@@ -120,79 +120,190 @@ declare
   r_role record;
   r_table record;
   r_priv record;
+  v_role_id uuid;
+  v_exchange_rate_id uuid;
 begin
   -- --------------------------------------------------------------------------
-  -- 1. Discover Active Environment and Real Authenticated Actor
+  -- 1. Self-Contained Environment, References, User & Role Fixture
   -- --------------------------------------------------------------------------
-  for r_cand in
-    select p.id as profile_id, p.organization_id
-      from erp.profiles p
-      join erp.organizations o on o.id = p.organization_id and o.is_active = true
-     where p.is_active = true
-     order by p.created_at asc
-  loop
-    perform set_config('request.jwt.claim.sub', r_cand.profile_id::text, true);
-    perform set_config('request.jwt.claim.role', 'authenticated', true);
+  select id into v_org_id
+    from erp.organizations
+   where is_active = true
+   order by created_at asc
+   limit 1;
 
-    for r_branch in
-      select b.id as branch_id
-        from erp.branches b
-       where b.organization_id = r_cand.organization_id and b.is_active = true
-    loop
-      if erp.has_permission('sales.create', r_branch.branch_id)
-         and erp.has_permission('documents.issue', r_branch.branch_id)
-         and erp.has_permission('documents.view', r_branch.branch_id)
-         and erp.has_permission('orders.manage', r_branch.branch_id) then
+  if v_org_id is null then
+    v_org_id := gen_random_uuid();
+    insert into erp.organizations (id, legal_name, display_name, timezone, default_currency, is_active)
+    values (v_org_id, 'POS Test Org ' || v_suffix, 'POS Test Org ' || v_suffix, 'America/Argentina/Buenos_Aires', 'ARS', true);
+  end if;
 
-        select id into v_location_id
-          from erp.locations
-         where organization_id = r_cand.organization_id
-           and branch_id = r_branch.branch_id
-           and is_active = true
-           and allows_sale = true
-         limit 1;
+  select id into v_branch_id
+    from erp.branches
+   where organization_id = v_org_id and is_active = true
+   order by created_at asc
+   limit 1;
 
-        select id into v_unit_id
-          from erp.units_of_measure
-         where organization_id = r_cand.organization_id and is_active = true
-         limit 1;
+  if v_branch_id is null then
+    v_branch_id := gen_random_uuid();
+    insert into erp.branches (id, organization_id, code, name, is_active)
+    values (v_branch_id, v_org_id, 'BR-' || v_suffix, 'Sucursal ' || v_suffix, true);
+  end if;
 
-        select id into v_type_id
-          from erp.product_types
-         where organization_id = r_cand.organization_id
-           and item_kind = 'product'
-           and default_tracking_mode = 'quantity'
-           and is_active = true
-         limit 1;
+  select id into v_location_id
+    from erp.locations
+   where organization_id = v_org_id
+     and branch_id = v_branch_id
+     and is_active = true
+     and allows_sale = true
+   order by created_at asc
+   limit 1;
 
-        select id into v_snapshot_id
-          from erp.exchange_rate_snapshots
-         where organization_id = r_cand.organization_id
-           and quote_currency = 'ARS'
-           and rate_to_base = 1
-         limit 1;
+  if v_location_id is null then
+    v_location_id := gen_random_uuid();
+    insert into erp.locations (id, organization_id, branch_id, code, name, kind, allows_sale, contributes_to_web_stock, is_active)
+    values (v_location_id, v_org_id, v_branch_id, 'LOC-' || v_suffix, 'Mostrador ' || v_suffix, 'store', true, false, true);
+  end if;
 
-        select id into v_payment_method_id
-          from erp.payment_methods
-         where organization_id = r_cand.organization_id and is_active = true
-           and requires_cash_session = false
-         limit 1;
+  select id into v_unit_id
+    from erp.units_of_measure
+   where organization_id = v_org_id and is_active = true
+   order by created_at asc
+   limit 1;
 
-        if v_location_id is not null and v_unit_id is not null and v_type_id is not null
-           and v_snapshot_id is not null and v_payment_method_id is not null then
-          v_admin_uid := r_cand.profile_id;
-          v_org_id := r_cand.organization_id;
-          v_branch_id := r_branch.branch_id;
-          v_has_discount := erp.has_permission('sales.discount', r_branch.branch_id);
-          exit;
-        end if;
-      end if;
-    end loop;
+  if v_unit_id is null then
+    v_unit_id := gen_random_uuid();
+    insert into erp.units_of_measure (id, organization_id, code, name, allows_decimals, is_active)
+    values (v_unit_id, v_org_id, 'UN-' || v_suffix, 'Unidad ' || v_suffix, false, true);
+  end if;
 
-    if v_admin_uid is not null then exit; end if;
-  end loop;
+  select id into v_type_id
+    from erp.product_types
+   where organization_id = v_org_id
+     and item_kind = 'product'
+     and default_tracking_mode = 'quantity'
+     and is_active = true
+   order by created_at asc
+   limit 1;
 
-  if v_admin_uid is null then
+  if v_type_id is null then
+    v_type_id := gen_random_uuid();
+    insert into erp.product_types (id, organization_id, code, name, item_kind, default_tracking_mode, is_active)
+    values (v_type_id, v_org_id, 'PT-' || v_suffix, 'Producto ' || v_suffix, 'product', 'quantity', true);
+  end if;
+
+  select id into v_snapshot_id
+    from erp.exchange_rate_snapshots
+   where organization_id = v_org_id
+     and quote_currency = 'ARS'
+     and rate_to_base = 1
+   order by created_at asc
+   limit 1;
+
+  if v_snapshot_id is null then
+    insert into erp.organization_currencies (organization_id, currency_code, decimal_places, is_base)
+    values (v_org_id, 'ARS', 2, true)
+    on conflict do nothing;
+
+    v_exchange_rate_id := gen_random_uuid();
+    v_snapshot_id := gen_random_uuid();
+
+    insert into erp.exchange_rates (
+      id, organization_id, base_currency, quote_currency, rate_to_base,
+      source, quoted_at, idempotency_key, request_hash
+    ) values (
+      v_exchange_rate_id, v_org_id, 'ARS', 'ARS', 1,
+      'pos-test-local', now(), 'pos-gross-rate-' || v_suffix, repeat('a', 64)
+    );
+
+    insert into erp.exchange_rate_snapshots (
+      id, organization_id, exchange_rate_id, base_currency, quote_currency,
+      rate_to_base, source, quoted_at, captured_at
+    ) values (
+      v_snapshot_id, v_org_id, v_exchange_rate_id, 'ARS', 'ARS',
+      1, 'pos-test-local', now(), now()
+    );
+  end if;
+
+  select id into v_payment_method_id
+    from erp.payment_methods
+   where organization_id = v_org_id
+     and is_active = true
+     and requires_cash_session = false
+   order by created_at asc
+   limit 1;
+
+  if v_payment_method_id is null then
+    v_payment_method_id := gen_random_uuid();
+    insert into erp.payment_methods (
+      id, organization_id, code, name, surcharge_percent, max_installments,
+      settlement_kind, requires_cash_session, is_active
+    ) values (
+      v_payment_method_id, v_org_id, 'PM-' || v_suffix, 'Tarjeta ' || v_suffix, 0, 12,
+      'card', false, true
+    );
+  end if;
+
+  v_admin_uid := gen_random_uuid();
+  insert into auth.users (
+    instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+  ) values (
+    '00000000-0000-0000-0000-000000000000', v_admin_uid, 'authenticated', 'authenticated',
+    'pos-gross-' || v_suffix || '@nictech.local', 'not-used', now(),
+    '{"provider":"email"}'::jsonb, '{"display_name":"POS Gross Test"}'::jsonb, now(), now()
+  )
+  on conflict (id) do nothing;
+
+  insert into erp.profiles (id, organization_id, display_name, is_active)
+  values (v_admin_uid, v_org_id, 'POS Gross Test ' || v_suffix, true)
+  on conflict (id) do update
+    set organization_id = excluded.organization_id,
+        is_active = true;
+
+  insert into erp.roles (organization_id, code, name, description, is_system, is_active)
+  values (v_org_id, 'test-pos-gross-' || v_suffix, 'Test POS Gross ' || v_suffix, 'Fixture role for POS gross pricing test', false, true)
+  on conflict (organization_id, code) do update set is_active = true
+  returning id into v_role_id;
+
+  insert into erp.role_permissions (organization_id, role_id, permission_id, is_active)
+  select v_org_id, v_role_id, perm.id, true
+    from erp.permissions perm
+   where perm.code in (
+     'catalog.view', 'catalog.manage',
+     'pricing.view', 'pricing.manage',
+     'sales.view', 'sales.create', 'sales.discount',
+     'orders.view', 'orders.manage',
+     'documents.view', 'documents.issue',
+     'stock.view', 'stock.move', 'stock.adjust',
+     'accounting.view', 'accounting.post', 'accounting.close_period',
+     'reports.view', 'reports.export',
+     'customers.view', 'customers.manage',
+     'audit.view', 'purchases.view', 'costs.view', 'costs.manage', 'profitability.view', 'locations.view'
+   )
+     and perm.is_active
+  on conflict (role_id, permission_id) do update
+    set is_active = true,
+        updated_at = now();
+
+  insert into erp.profile_roles (organization_id, profile_id, role_id, created_by)
+  values (v_org_id, v_admin_uid, v_role_id, v_admin_uid)
+  on conflict (profile_id, role_id) where branch_id is null do update
+    set valid_from = clock_timestamp(),
+        valid_until = null;
+
+  perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+
+  v_has_discount := erp.has_permission('sales.discount', v_branch_id);
+
+  if not (
+    erp.has_permission('sales.create', v_branch_id)
+    and erp.has_permission('documents.issue', v_branch_id)
+    and erp.has_permission('documents.view', v_branch_id)
+    and erp.has_permission('orders.manage', v_branch_id)
+  ) or v_location_id is null or v_unit_id is null or v_type_id is null
+     or v_snapshot_id is null or v_payment_method_id is null then
     raise exception 'TEST PRECONDITION FAILED: authorized active profile, sales references and non-cash payment method are required';
   end if;
 
@@ -209,7 +320,14 @@ begin
    limit 1;
 
   if v_template_version_id is null then
-    raise exception 'TEST PRECONDITION FAILED: an existing active sale document template version is required';
+    v_template_id := gen_random_uuid();
+    v_template_version_id := gen_random_uuid();
+
+    insert into erp.document_templates (id, organization_id, code, name, document_kind, is_active)
+    values (v_template_id, v_org_id, 'SALE_RECEIPT_' || v_suffix, 'Comprobante de venta ' || v_suffix, 'sale', true);
+
+    insert into erp.document_template_versions (id, organization_id, template_id, version, definition)
+    values (v_template_version_id, v_org_id, v_template_id, 1, '{"sections":["business","customer","sale","payments","totals"]}'::jsonb);
   end if;
 
   select
@@ -253,7 +371,7 @@ begin
     v_var_override, v_prod_with_vars, v_org_id, 'VAR-OVR-' || v_suffix, 'Var Override', 0, 1500.0000, true
   );
 
-  -- Legacy delta variant (delta 200.0000 -> resolves to 1200.0000 ARS)
+  -- Legacy delta variant (delta 200.0000 is ignored).
   insert into erp.product_variants (
     id, product_id, organization_id, code, name, price_delta, final_price_ars, is_active
   ) values (
@@ -480,17 +598,12 @@ begin
   );
 
   -- --------------------------------------------------------------------------
-  -- TEST 1: Inherited Negative Price Rejection (No clamp to 0)
+  -- TEST 1: A negative legacy delta does not affect an inherited price.
   -- --------------------------------------------------------------------------
-  v_sqlstate := null;
-  v_sqlerrm := null;
-  begin
-    perform erp.resolve_catalog_effective_price(v_prod_neg, v_var_neg);
-  exception when others then
-    get stacked diagnostics v_sqlstate = returned_sqlstate, v_sqlerrm = message_text;
-  end;
-  if v_sqlstate is distinct from '23514' or v_sqlerrm is distinct from 'inherited variant price cannot be negative' then
-    raise exception 'ASSERTION FAILED T1: Expected SQLSTATE 23514 (negative price), got: % (%)', v_sqlstate, v_sqlerrm;
+  v_res := erp.resolve_catalog_effective_price(v_prod_neg, v_var_neg);
+  if (v_res->>'final_price_ars')::numeric <> 50.0000
+    or v_res->>'price_source' <> 'parent_inherited' then
+    raise exception 'ASSERTION FAILED T1: legacy delta must be ignored: %', v_res;
   end if;
 
   -- --------------------------------------------------------------------------
@@ -512,7 +625,7 @@ begin
 
   -- Legacy delta
   v_res := erp.resolve_catalog_effective_price(v_prod_with_vars, v_var_delta);
-  if (v_res->>'final_price_ars')::numeric <> 1200.0000 or (v_res->>'price_source') <> 'legacy_delta' then
+  if (v_res->>'final_price_ars')::numeric <> 1000.0000 or (v_res->>'price_source') <> 'parent_inherited' then
     raise exception 'ASSERTION FAILED T2.c: Legacy delta resolution failed: %', v_res;
   end if;
 

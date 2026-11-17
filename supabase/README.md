@@ -1,6 +1,6 @@
 # Supabase local de NicTech
 
-Este directorio es la fuente versionada del esquema futuro. El desarrollo actual es exclusivamente local.
+Este directorio es la fuente versionada del esquema. La preparación y las pruebas de base de datos descritas aquí son locales.
 
 ## Comandos permitidos
 
@@ -14,10 +14,24 @@ npm run db:stop
 `C:\Users\Gime\.supabase\profile` contenga `supabase`; ese archivo no contiene credenciales.
 
 El arranque usa `--ignore-health-check` porque algunos servicios tardan más que el timeout de la
-CLI en Windows. Storage, `pg-meta` y Studio quedan disponibles después de inicializar; el núcleo
-usado por las aplicaciones queda disponible en `http://127.0.0.1:54321` (API, Auth, REST,
-Realtime y Functions). Mailpit queda en `http://127.0.0.1:54324` y Studio en
-`http://127.0.0.1:54323`.
+CLI en Windows. Los puertos locales se asignan fuera del rango reservado de Windows 54193–54492:
+
+| Servicio | Endpoint local |
+|---|---|
+| API, Auth, REST, Realtime y Functions | `http://127.0.0.1:55421` |
+| PostgreSQL | `127.0.0.1:55422` |
+| Studio | `http://127.0.0.1:55423` |
+| Mailpit web | `http://127.0.0.1:55424` |
+| Mailpit SMTP | `127.0.0.1:55425` |
+| Mailpit POP3 | `127.0.0.1:55426` |
+| Analytics | `127.0.0.1:55427` |
+| Vector | `127.0.0.1:55428` |
+| Supavisor pooler (deshabilitado por defecto) | `127.0.0.1:55429` |
+| PostgreSQL shadow, para migraciones | `127.0.0.1:55420` |
+
+El storefront local usa la URL de API `http://127.0.0.1:55421`. El ERP puede usar un proyecto
+Supabase remoto mediante su propio archivo `apps/erp/.env` o las variables `ERP_SUPABASE_*`
+para construirlo con Docker.
 
 El contenedor `vector` puede reiniciarse porque la imagen no logra acceder al socket Docker de
 Windows. Es un componente de observabilidad y no bloquea la aplicación, la base ni Storage. Para
@@ -32,8 +46,11 @@ No se ejecuta `supabase db reset` durante la preparación normal: puede destruir
 
 ## Aplicaciones en Docker
 
-Crear una copia local de `.env.example` como `.env` y reemplazar la publishable key por la
-devuelta por `npx supabase status`. Luego construir y levantar las dos aplicaciones:
+Crear una copia local de `.env.example` como `.env`. Configurar `VITE_SUPABASE_*` con el
+Supabase local para el storefront y `ERP_SUPABASE_*` con la URL y la publishable key del proyecto
+remoto para el ERP. Las variables del ERP son obligatorias al usar este compose; su ausencia
+impide construir una imagen que apunte por accidente a la base local. Luego construir y levantar
+las dos aplicaciones:
 
 ```bash
 docker compose -f docker-compose.apps.yml --env-file .env up --build -d
@@ -43,7 +60,8 @@ docker compose -f docker-compose.apps.yml --env-file .env up --build -d
 - ERP: `http://127.0.0.1:8081`
 
 El compose de aplicaciones es independiente del compose administrado por la CLI de Supabase.
-No copia el `.env` remoto existente ni incluye credenciales de servicio en las imágenes.
+El build del ERP recibe la URL y la publishable key públicas; no incluye credenciales de servicio
+en las imágenes. Vite lee `apps/erp/.env` al desarrollar el ERP fuera de Docker.
 
 ## Comandos prohibidos sin autorizacion expresa
 

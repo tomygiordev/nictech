@@ -29,13 +29,13 @@ values (
 insert into erp.products (
   id, organization_id, product_type_id, item_kind, unit_id,
   internal_code, internal_name, inventory_tracking, can_sell,
-  publish_on_web, allow_online_sale
+  publish_on_web, allow_online_sale, base_sale_price, tax_rate_percent
 ) values (
   'd2000000-0000-0000-0000-000000000001',
   '10000000-0000-0000-0000-000000000001',
   '60000000-0000-0000-0000-000000000001', 'product',
   '50000000-0000-0000-0000-000000000001',
-  'REPORT-PRODUCT', 'Report Product', 'quantity', true, true, true
+  'REPORT-PRODUCT', 'Report Product', 'quantity', true, true, true, 121, 21
 );
 
 insert into erp.product_variants (
@@ -65,7 +65,7 @@ values (
   'd4000000-0000-0000-0000-000000000001',
   '40000000-0000-0000-0000-000000000001',
   'd4000000-0000-0000-0000-000000000001'
-);
+) on conflict do nothing;
 
 select set_config('request.jwt.claim.sub', 'd4000000-0000-0000-0000-000000000001', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
@@ -88,12 +88,23 @@ select lives_ok(
   'Chart of accounts is bootstrapped'
 );
 select lives_ok(
-  $$select erp.create_sale(
+  $$select erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001',
     'd1000000-0000-0000-0000-000000000001', 'ARS',
     (select id from erp.exchange_rate_snapshots where source = 'report-local'),
     'report-sale', 'Report fixture sale',
-    '[{"kind":"product","product_id":"d2000000-0000-0000-0000-000000000001","variant_id":"d3000000-0000-0000-0000-000000000001","from_location_id":"30000000-0000-0000-0000-000000000002","description":"Green product","quantity":2,"unit_price":100,"discount_amount":0,"tax_rate_percent":21,"tax_amount":42}]'::jsonb,
+    jsonb_build_array(jsonb_build_object(
+      'kind', 'product',
+      'product_id', 'd2000000-0000-0000-0000-000000000001'::uuid,
+      'variant_id', 'd3000000-0000-0000-0000-000000000001'::uuid,
+      'from_location_id', '30000000-0000-0000-0000-000000000002'::uuid,
+      'description', 'Green product',
+      'quantity', 2,
+      'expected_unit_price', (erp.resolve_catalog_effective_price('d2000000-0000-0000-0000-000000000001'::uuid, 'd3000000-0000-0000-0000-000000000001'::uuid)->>'final_price_ars')::numeric,
+      'expected_tax_rate', (erp.resolve_catalog_effective_price('d2000000-0000-0000-0000-000000000001'::uuid, 'd3000000-0000-0000-0000-000000000001'::uuid)->>'tax_rate_percent')::numeric,
+      'gross_discount_amount', 0
+    )),
+    'non_fiscal',
     '[{"payment_method_id":"82000000-0000-0000-0000-000000000002","amount":242}]'::jsonb
   )$$,
   'Report fixture sale posts normally'

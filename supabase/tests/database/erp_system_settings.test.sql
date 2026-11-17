@@ -26,7 +26,19 @@ values (
   '88000000-0000-0000-0000-000000000096',
   '40000000-0000-0000-0000-000000000001',
   '88000000-0000-0000-0000-000000000096'
-);
+) on conflict do nothing;
+
+-- Autocontenido: system.manage lo crea la migracion 202609070010 (sin datos en una
+-- restauracion schema-only de prod), asi que el fixture lo garantiza y se lo da al owner.
+insert into erp.permissions (code, module, name, is_sensitive)
+values ('system.manage', 'system', 'Gestionar ajustes del sistema', true)
+on conflict (code) do update set is_active = true;
+
+insert into erp.role_permissions (organization_id, role_id, permission_id)
+select '10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', permission.id
+from erp.permissions permission
+where permission.code = 'system.manage'
+on conflict (role_id, permission_id) do update set is_active = true;
 
 -- Setup: segunda organizacion con usuario propio (para RLS entre orgs).
 insert into erp.organizations (id, legal_name, display_name)
@@ -43,6 +55,8 @@ insert into auth.users (
   '{"display_name":"System Other Org"}'::jsonb, now(), now()
 );
 
+insert into erp.profiles(id,organization_id,display_name) values ('88000000-0000-0000-0000-000000000095','90000000-0000-0000-0000-000000000001','Fixture otra organización') on conflict (id) do nothing;
+
 update erp.profiles
    set organization_id = '90000000-0000-0000-0000-000000000001'
  where id = '88000000-0000-0000-0000-000000000095';
@@ -58,6 +72,8 @@ insert into auth.users (
   '{"provider":"email","providers":["email"]}'::jsonb,
   '{"display_name":"System Sin Permisos"}'::jsonb, now(), now()
 );
+
+insert into erp.profiles(id,organization_id,display_name) values ('88000000-0000-0000-0000-000000000094','10000000-0000-0000-0000-000000000001','Fixture sin permisos') on conflict (id) do nothing;
 
 update erp.profiles
    set organization_id = '10000000-0000-0000-0000-000000000001'

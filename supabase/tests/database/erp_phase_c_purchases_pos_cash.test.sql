@@ -35,6 +35,16 @@ values (
   '86000000-0000-0000-0000-000000000098',
   '40000000-0000-0000-0000-000000000001',
   '86000000-0000-0000-0000-000000000098'
+) on conflict do nothing;
+
+-- Use a transaction-owned register so this suite never collides with a real open shift.
+insert into erp.cash_registers (id, organization_id, branch_id, code, name)
+values (
+  '84000000-0000-0000-0000-0000000000c1',
+  '10000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000001',
+  'PHASE-C-TEST',
+  'Caja aislada Phase C'
 );
 
 select set_config('request.jwt.claim.sub', '86000000-0000-0000-0000-000000000098', true);
@@ -45,7 +55,7 @@ set local role authenticated;
 create temporary table _test_ctx as
 select
   '20000000-0000-0000-0000-000000000001'::uuid as branch_id,
-  '84000000-0000-0000-0000-000000000001'::uuid as register_id,
+  '84000000-0000-0000-0000-0000000000c1'::uuid as register_id,
   '30000000-0000-0000-0000-000000000001'::uuid as location_id,
   '82000000-0000-0000-0000-000000000001'::uuid as cash_method_id,
   erp.get_or_create_exchange_snapshot('ARS') as snapshot_id,
@@ -86,7 +96,7 @@ select is(
 select throws_ok(
   $$
     select erp.open_cash_session(
-      '84000000-0000-0000-0000-000000000001'::uuid,
+      (select register_id from _test_ctx),
       'op-cash-open-c02-duplicate',
       'Intento apertura duplicada',
       jsonb_build_array(
@@ -127,9 +137,17 @@ select erp.post_stock_document(
   )
 );
 
--- 4. POS Cash Sale: create_sale with payment linked to cash session
+create temporary table _sale_prod_price as
+select
+  (quote->>'final_price_ars')::numeric as unit_gross_price,
+  (quote->>'tax_rate_percent')::numeric as tax_rate_percent
+from (
+  select erp.resolve_catalog_effective_price((select product_id from _sale_prod)) as quote
+) q;
+
+-- 4. POS Cash Sale: create_sale_with_invoice with payment linked to cash session
 create temporary table _sale_c_result as
-select erp.create_sale(
+select (erp.create_sale_with_invoice(
   (select branch_id from _test_ctx),
   (select customer_id from _test_ctx),
   'ARS',
@@ -143,12 +161,12 @@ select erp.create_sale(
       'from_location_id', (select location_id from _test_ctx),
       'description', 'Cargador Rápido 20W',
       'quantity', 2,
-      'unit_price', 8500,
-      'discount_amount', 0,
-      'tax_rate_percent', 0,
-      'tax_amount', 0
+      'expected_unit_price', (select unit_gross_price from _sale_prod_price),
+      'expected_tax_rate', (select tax_rate_percent from _sale_prod_price),
+      'gross_discount_amount', 0
     )
   ),
+  'non_fiscal',
   jsonb_build_array(
     jsonb_build_object(
       'payment_method_id', (select cash_method_id from _test_ctx),
@@ -156,7 +174,7 @@ select erp.create_sale(
       'amount', 17000
     )
   )
-) as sale_id;
+)->>'sale_id')::uuid as sale_id;
 
 select is(
   ((select sale_id from _sale_c_result) is not null),
@@ -173,7 +191,7 @@ select is(
 
 -- 6. POS sale idempotency: re-submitting does not duplicate cash movement
 select is(
-  (select erp.create_sale(
+  ((select erp.create_sale_with_invoice(
     (select branch_id from _test_ctx),
     (select customer_id from _test_ctx),
     'ARS',
@@ -187,12 +205,12 @@ select is(
         'from_location_id', (select location_id from _test_ctx),
         'description', 'Cargador Rápido 20W',
         'quantity', 2,
-        'unit_price', 8500,
-        'discount_amount', 0,
-        'tax_rate_percent', 0,
-        'tax_amount', 0
+        'expected_unit_price', (select unit_gross_price from _sale_prod_price),
+        'expected_tax_rate', (select tax_rate_percent from _sale_prod_price),
+        'gross_discount_amount', 0
       )
     ),
+    'non_fiscal',
     jsonb_build_array(
       jsonb_build_object(
         'payment_method_id', (select cash_method_id from _test_ctx),
@@ -200,7 +218,7 @@ select is(
         'amount', 17000
       )
     )
-  )),
+  ))->>'sale_id')::uuid,
   (select sale_id from _sale_c_result),
   'Sale replay returns existing sale_id without duplicating facts'
 );
@@ -332,36 +350,36 @@ select is(
   'Receipt replay returns existing receipt ID without duplicate stock or payables'
 );
 
--- 13-20. POS sale, document and fiscal request are one idempotent operation
+-- 13-20. POS emits local fiscal and non-fiscal invoices without provider work
 select has_function(
   'erp',
-  'create_sale_with_fiscal_document',
-  array['uuid','uuid','text','uuid','text','text','jsonb','jsonb','uuid'],
-  'POS fiscal sale command exists'
+  'create_sale_with_invoice',
+  array['uuid','uuid','text','uuid','text','text','jsonb','text','jsonb','uuid'],
+  'POS internal invoice command exists'
 );
 
 select is(
   has_function_privilege(
     'service_role',
-    'erp.create_sale_with_fiscal_document(uuid,uuid,text,uuid,text,text,jsonb,jsonb,uuid)',
+    'erp.create_sale_with_invoice(uuid,uuid,text,uuid,text,text,jsonb,text,jsonb,uuid)',
     'EXECUTE'
   ),
   false,
-  'Service role cannot invoke the POS fiscal sale command directly'
+  'Service role cannot invoke the checked POS invoice command directly'
 );
 
 select is(
   has_function_privilege(
     'authenticated',
-    'erp.create_sale_with_fiscal_document(uuid,uuid,text,uuid,text,text,jsonb,jsonb,uuid)',
+    'erp.create_sale_with_invoice(uuid,uuid,text,uuid,text,text,jsonb,text,jsonb,uuid)',
     'EXECUTE'
   ),
   true,
-  'Authenticated actors use the checked POS fiscal sale command'
+  'Authenticated actors can issue local POS invoices'
 );
 
 create temporary table _fiscal_sale_c as
-select erp.create_sale_with_fiscal_document(
+select erp.create_sale_with_invoice(
   (select branch_id from _test_ctx),
   (select customer_id from _test_ctx),
   'ARS',
@@ -375,40 +393,73 @@ select erp.create_sale_with_fiscal_document(
       'from_location_id', (select location_id from _test_ctx),
       'description', 'Cargador Rápido 20W',
       'quantity', 1,
-      'unit_price', 8500,
-      'discount_amount', 0,
-      'tax_rate_percent', 0,
-      'tax_amount', 0
+      'expected_unit_price', (select unit_gross_price from _sale_prod_price),
+      'expected_tax_rate', (select tax_rate_percent from _sale_prod_price),
+      'gross_discount_amount', 0
     )
   ),
+  'fiscal',
   '[]'::jsonb
 ) as result;
 
 select ok(
-  (select result ? 'sale_id' and result ? 'document_id' and result ? 'fiscal_request_id' and result->>'fiscal_status' = 'queued' from _fiscal_sale_c),
-  'POS fiscal sale returns sale, document, request and queued status'
+  (select result ? 'sale_id' and result ? 'document_id' and result->>'invoice_kind' = 'fiscal' and result->>'document_number' ~ '^F-[0-9]{8,}$' from _fiscal_sale_c),
+  'POS sale returns an internally issued fiscal invoice and local number'
+);
+
+create temporary table _non_fiscal_sale_c as
+select erp.create_sale_with_invoice(
+  (select branch_id from _test_ctx),
+  (select customer_id from _test_ctx),
+  'ARS',
+  (select snapshot_id from _test_ctx),
+  'op-non-fiscal-sale-c01',
+  'Venta POS con comprobante no fiscal',
+  jsonb_build_array(
+    jsonb_build_object(
+      'kind', 'product',
+      'product_id', (select product_id from _sale_prod),
+      'from_location_id', (select location_id from _test_ctx),
+      'description', 'Cargador Rápido 20W',
+      'quantity', 1,
+      'expected_unit_price', (select unit_gross_price from _sale_prod_price),
+      'expected_tax_rate', (select tax_rate_percent from _sale_prod_price),
+      'gross_discount_amount', 0
+    )
+  ),
+  'non_fiscal',
+  '[]'::jsonb
+) as result;
+
+select ok(
+  (select result ? 'sale_id' and result ? 'document_id' and result->>'invoice_kind' = 'non_fiscal' and result->>'document_number' ~ '^NF-[0-9]{8,}$' from _non_fiscal_sale_c),
+  'POS sale returns an internally issued non-fiscal invoice and local number'
 );
 
 select is(
-  (select count(*) from erp.documents where owner_type = 'sale' and owner_id = ((select result->>'sale_id' from _fiscal_sale_c))::uuid),
-  1::bigint,
-  'POS fiscal sale creates exactly one persisted sale document'
+  (select count(*) from erp.fiscal_requests where document_id in (
+    ((select result->>'document_id' from _fiscal_sale_c))::uuid,
+    ((select result->>'document_id' from _non_fiscal_sale_c))::uuid
+  )),
+  0::bigint,
+  'Neither local invoice creates a fiscal provider request'
 );
 
 select is(
-  (select count(*) from erp.fiscal_requests where document_id = ((select result->>'document_id' from _fiscal_sale_c))::uuid),
-  1::bigint,
-  'POS fiscal sale creates exactly one fiscal request'
+  (select count(*)
+   from erp.integration_outbox outbox_row
+   join erp.fiscal_requests request_row on request_row.id = outbox_row.aggregate_id
+   where outbox_row.event_type = 'fiscal.issue.requested'
+     and request_row.document_id in (
+       ((select result->>'document_id' from _fiscal_sale_c))::uuid,
+       ((select result->>'document_id' from _non_fiscal_sale_c))::uuid
+     )),
+  0::bigint,
+  'Neither local invoice enqueues fiscal provider work'
 );
 
 select is(
-  (select count(*) from erp.integration_outbox where event_type = 'fiscal.issue.requested' and aggregate_id = ((select result->>'fiscal_request_id' from _fiscal_sale_c))::uuid),
-  1::bigint,
-  'POS fiscal sale enqueues exactly one fiscal outbox event'
-);
-
-select is(
-  (select erp.create_sale_with_fiscal_document(
+  (select erp.create_sale_with_invoice(
     (select branch_id from _test_ctx),
     (select customer_id from _test_ctx),
     'ARS',
@@ -422,12 +473,12 @@ select is(
         'from_location_id', (select location_id from _test_ctx),
         'description', 'Cargador Rápido 20W',
         'quantity', 1,
-        'unit_price', 8500,
-        'discount_amount', 0,
-        'tax_rate_percent', 0,
-        'tax_amount', 0
+        'expected_unit_price', (select unit_gross_price from _sale_prod_price),
+        'expected_tax_rate', (select tax_rate_percent from _sale_prod_price),
+        'gross_discount_amount', 0
       )
     ),
+    'fiscal',
     '[]'::jsonb
   )),
   (select result from _fiscal_sale_c),

@@ -21,7 +21,7 @@
 --    b. Variant with own final price override resolves to final_price_ars (variant_override, is_override=true).
 --    c. Variant inheriting resolves to parent price (parent_inherited).
 --    d. Parent price update alters inherited variant price but leaves override variant strictly unchanged.
---    e. Legacy delta: variant with price_delta and null final_price_ars resolves to parent + delta (legacy_delta).
+--    e. Legacy delta: variant with price_delta and null final_price_ars inherits the parent price.
 --    f. Override vs delta: explicit final_price_ars wins over price_delta (override beats delta).
 --    g. Zero price: final_price_ars = 0 resolves as variant_override (is_override=true).
 --    h. Exact 100.005 numeric(18,4) resolution without rounding or tax recalculation.
@@ -39,7 +39,9 @@ set local lock_timeout = '10s';
 
 do $$
 declare
-  r_cand record;
+  v_role_id uuid;
+  v_no_sync_role_id uuid;
+  v_branch_id uuid;
   v_admin_uid uuid;
   v_org_id uuid;
   v_unit_id uuid;
@@ -85,88 +87,164 @@ declare
 begin
   begin
     -- ------------------------------------------------------------------------
-    -- 1. Discover Active Tenant & Profile with catalog.manage
+    -- 1. Self-Contained Tenant, References, User & Role Fixture
     -- ------------------------------------------------------------------------
-    for r_cand in
-      select p.id as profile_id, p.organization_id
-        from erp.profiles p
-        join erp.organizations o on o.id = p.organization_id and o.is_active = true
-       where p.is_active = true
-       order by p.created_at asc
-    loop
-      select id into v_unit_id
-        from erp.units_of_measure
-       where organization_id = r_cand.organization_id and is_active = true
+    select id into v_org_id
+      from erp.organizations
+     where is_active = true
+     order by created_at asc
+     limit 1;
+
+    if v_org_id is null then
+      v_org_id := gen_random_uuid();
+      insert into erp.organizations (id, legal_name, display_name, timezone, default_currency, is_active)
+      values (v_org_id, 'Test Org ' || v_test_suffix, 'Test Org ' || v_test_suffix, 'America/Argentina/Buenos_Aires', 'ARS', true);
+    end if;
+
+    select id into v_unit_id
+      from erp.units_of_measure
+     where organization_id = v_org_id and is_active = true
+     order by created_at asc
+     limit 1;
+
+    if v_unit_id is null then
+      v_unit_id := gen_random_uuid();
+      insert into erp.units_of_measure (id, organization_id, code, name, allows_decimals, is_active)
+      values (v_unit_id, v_org_id, 'UN-' || v_test_suffix, 'Unidad ' || v_test_suffix, false, true);
+    end if;
+
+    select id into v_type_id
+      from erp.product_types
+     where organization_id = v_org_id and item_kind = 'product' and is_active = true
+     order by created_at asc
+     limit 1;
+
+    if v_type_id is null then
+      v_type_id := gen_random_uuid();
+      insert into erp.product_types (id, organization_id, code, name, item_kind, default_tracking_mode, is_active)
+      values (v_type_id, v_org_id, 'PT-' || v_test_suffix, 'Producto ' || v_test_suffix, 'product', 'quantity', true);
+    end if;
+
+    if not exists (select 1 from erp.locations where organization_id = v_org_id and is_active = true) then
+      select id into v_branch_id
+        from erp.branches
+       where organization_id = v_org_id and is_active = true
        limit 1;
 
-      select id into v_type_id
-        from erp.product_types
-       where organization_id = r_cand.organization_id and item_kind = 'product' and is_active = true
-       limit 1;
-
-      if v_unit_id is not null and v_type_id is not null then
-        perform set_config('request.jwt.claim.sub', r_cand.profile_id::text, true);
-        perform set_config('request.jwt.claims', json_build_object('sub', r_cand.profile_id, 'role', 'authenticated')::text, true);
-
-        if erp.has_permission('catalog.manage') and erp.has_permission('catalog.view') then
-          v_admin_uid := r_cand.profile_id;
-          v_org_id := r_cand.organization_id;
-
-          -- Check if this org has NO storefront sync enabled
-          if not exists (select 1 from erp.storefront_catalog_sync where organization_id = r_cand.organization_id) then
-            v_no_sync_admin_uid := r_cand.profile_id;
-            v_no_sync_org_id := r_cand.organization_id;
-            v_no_sync_unit_id := v_unit_id;
-            v_no_sync_type_id := v_type_id;
-            v_can_test_create_rpc := true;
-          end if;
-
-          exit;
-        end if;
+      if v_branch_id is null then
+        v_branch_id := gen_random_uuid();
+        insert into erp.branches (id, organization_id, code, name, is_active)
+        values (v_branch_id, v_org_id, 'BR-' || v_test_suffix, 'Sucursal ' || v_test_suffix, true);
       end if;
-    end loop;
 
-    if v_admin_uid is null then
-      raise exception 'PRECONDITION FAILED: no active ERP profile with catalog.manage and catalog.view found';
+      insert into erp.locations (id, organization_id, branch_id, code, name, kind, allows_sale, contributes_to_web_stock, is_active)
+      values (gen_random_uuid(), v_org_id, v_branch_id, 'LOC-' || v_test_suffix, 'Mostrador ' || v_test_suffix, 'store', true, false, true);
     end if;
 
-    -- If the first admin's org has storefront sync, look for another org without sync
-    if not v_can_test_create_rpc then
-      for r_cand in
-        select p.id as profile_id, p.organization_id
-          from erp.profiles p
-          join erp.organizations o on o.id = p.organization_id and o.is_active = true
-         where p.is_active = true
-           and not exists (select 1 from erp.storefront_catalog_sync where organization_id = p.organization_id)
-         order by p.created_at asc
-      loop
-        select id into v_no_sync_unit_id
-          from erp.units_of_measure
-         where organization_id = r_cand.organization_id and is_active = true
-         limit 1;
+    v_admin_uid := gen_random_uuid();
+    insert into auth.users (
+      instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    ) values (
+      '00000000-0000-0000-0000-000000000000', v_admin_uid, 'authenticated', 'authenticated',
+      'variant-price-' || v_test_suffix || '@nictech.local', 'not-used', now(),
+      '{"provider":"email"}'::jsonb, '{"display_name":"Variant Price Test"}'::jsonb, now(), now()
+    )
+    on conflict (id) do nothing;
 
-        select id into v_no_sync_type_id
-          from erp.product_types
-         where organization_id = r_cand.organization_id and item_kind = 'product' and is_active = true
-         limit 1;
+    insert into erp.profiles (id, organization_id, display_name, is_active)
+    values (v_admin_uid, v_org_id, 'Variant Price Test ' || v_test_suffix, true)
+    on conflict (id) do update
+      set organization_id = excluded.organization_id,
+          is_active = true;
 
-        if v_no_sync_unit_id is not null and v_no_sync_type_id is not null then
-          perform set_config('request.jwt.claim.sub', r_cand.profile_id::text, true);
-          perform set_config('request.jwt.claims', json_build_object('sub', r_cand.profile_id, 'role', 'authenticated')::text, true);
+    insert into erp.roles (organization_id, code, name, description, is_system, is_active)
+    values (v_org_id, 'test-variant-price-' || v_test_suffix, 'Test Variant Price ' || v_test_suffix, 'Fixture role for variant final price test', false, true)
+    on conflict (organization_id, code) do update set is_active = true
+    returning id into v_role_id;
 
-          if erp.has_permission('catalog.manage') and erp.has_permission('catalog.view') then
-            v_no_sync_admin_uid := r_cand.profile_id;
-            v_no_sync_org_id := r_cand.organization_id;
-            v_can_test_create_rpc := true;
-            exit;
-          end if;
-        end if;
-      end loop;
+    insert into erp.role_permissions (organization_id, role_id, permission_id, is_active)
+    select v_org_id, v_role_id, perm.id, true
+      from erp.permissions perm
+     where perm.code in ('catalog.view', 'catalog.manage', 'pricing.view', 'pricing.manage')
+       and perm.is_active
+    on conflict (role_id, permission_id) do update
+      set is_active = true,
+          updated_at = now();
+
+    insert into erp.profile_roles (organization_id, profile_id, role_id, created_by)
+    values (v_org_id, v_admin_uid, v_role_id, v_admin_uid)
+    on conflict (profile_id, role_id) where branch_id is null do update
+      set valid_from = clock_timestamp(),
+          valid_until = null;
+
+    if not exists (select 1 from erp.storefront_catalog_sync where organization_id = v_org_id) then
+      v_no_sync_admin_uid := v_admin_uid;
+      v_no_sync_org_id := v_org_id;
+      v_no_sync_unit_id := v_unit_id;
+      v_no_sync_type_id := v_type_id;
+      v_can_test_create_rpc := true;
+    else
+      v_no_sync_org_id := gen_random_uuid();
+      v_no_sync_unit_id := gen_random_uuid();
+      v_no_sync_type_id := gen_random_uuid();
+      v_no_sync_admin_uid := gen_random_uuid();
+
+      insert into erp.organizations (id, legal_name, display_name, timezone, default_currency, is_active)
+      values (v_no_sync_org_id, 'NoSync Org ' || v_test_suffix, 'NoSync Org ' || v_test_suffix, 'America/Argentina/Buenos_Aires', 'ARS', true);
+
+      insert into erp.units_of_measure (id, organization_id, code, name, allows_decimals, is_active)
+      values (v_no_sync_unit_id, v_no_sync_org_id, 'UN-NS-' || v_test_suffix, 'Unidad NS', false, true);
+
+      insert into erp.product_types (id, organization_id, code, name, item_kind, default_tracking_mode, is_active)
+      values (v_no_sync_type_id, v_no_sync_org_id, 'PT-NS-' || v_test_suffix, 'Tipo NS', 'product', 'quantity', true);
+
+      insert into auth.users (
+        instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+        raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+      ) values (
+        '00000000-0000-0000-0000-000000000000', v_no_sync_admin_uid, 'authenticated', 'authenticated',
+        'variant-nosync-' || v_test_suffix || '@nictech.local', 'not-used', now(),
+        '{"provider":"email"}'::jsonb, '{"display_name":"Variant NoSync Test"}'::jsonb, now(), now()
+      )
+      on conflict (id) do nothing;
+
+      insert into erp.profiles (id, organization_id, display_name, is_active)
+      values (v_no_sync_admin_uid, v_no_sync_org_id, 'Variant NoSync Test ' || v_test_suffix, true)
+      on conflict (id) do update
+        set organization_id = excluded.organization_id,
+            is_active = true;
+
+      insert into erp.roles (organization_id, code, name, description, is_system, is_active)
+      values (v_no_sync_org_id, 'test-variant-nosync-' || v_test_suffix, 'Test Variant NoSync ' || v_test_suffix, 'Fixture role without sync', false, true)
+      on conflict (organization_id, code) do update set is_active = true
+      returning id into v_no_sync_role_id;
+
+      insert into erp.role_permissions (organization_id, role_id, permission_id, is_active)
+      select v_no_sync_org_id, v_no_sync_role_id, perm.id, true
+        from erp.permissions perm
+       where perm.code in ('catalog.view', 'catalog.manage', 'pricing.view', 'pricing.manage')
+         and perm.is_active
+      on conflict (role_id, permission_id) do update
+        set is_active = true,
+            updated_at = now();
+
+      insert into erp.profile_roles (organization_id, profile_id, role_id, created_by)
+      values (v_no_sync_org_id, v_no_sync_admin_uid, v_no_sync_role_id, v_no_sync_admin_uid)
+      on conflict (profile_id, role_id) where branch_id is null do update
+        set valid_from = clock_timestamp(),
+            valid_until = null;
+
+      v_can_test_create_rpc := true;
     end if;
 
-    -- Switch back to main test actor
+    -- Switch to main test actor
     perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
     perform set_config('request.jwt.claims', json_build_object('sub', v_admin_uid, 'role', 'authenticated')::text, true);
+
+    if not (erp.has_permission('catalog.manage') and erp.has_permission('catalog.view')) then
+      raise exception 'PRECONDITION FAILED: fixture ERP profile lacks catalog.manage or catalog.view';
+    end if;
 
     v_sku_fixture := 'FXT-P-' || v_test_suffix;
     v_sku_create := 'CRT-P-' || v_test_suffix;
@@ -346,7 +424,7 @@ begin
       raise exception 'ASSERTION FAILED: override variant should remain at 13500.50, got %', v_price_res;
     end if;
 
-    -- 5e. Legacy delta: variant with price_delta = 1500 and final_price_ars = null resolves to base + delta
+    -- 5e. Legacy delta does not participate in the effective price.
     insert into erp.product_variants (
       id, organization_id, product_id, code, name, price_delta, final_price_ars, is_active
     ) values (
@@ -354,8 +432,8 @@ begin
     );
 
     v_price_res := erp.resolve_catalog_effective_price(p_product_id => v_prod_a, p_variant_id => v_var_delta_id);
-    if (v_price_res->>'final_price_ars')::numeric <> 13500 -- 12000 base + 1500 delta
-      or v_price_res->>'price_source' <> 'legacy_delta'
+    if (v_price_res->>'final_price_ars')::numeric <> 12000
+      or v_price_res->>'price_source' <> 'parent_inherited'
       or (v_price_res->>'is_override')::boolean <> false then
       raise exception 'ASSERTION FAILED: legacy delta resolution incorrect: %', v_price_res;
     end if;
@@ -449,9 +527,9 @@ begin
       )
     );
 
-    -- Row 1: base (12000) + delta (1500) = 13500
-    if ((v_res->'variants'->0)->>'effective_price_ars')::numeric <> 13500 then
-      raise exception 'ASSERTION FAILED B1: existing delta row effective price should be 13500, got %', v_res;
+    -- Row 1: legacy delta is retained but ignored in the effective price.
+    if ((v_res->'variants'->0)->>'effective_price_ars')::numeric <> 12000 then
+      raise exception 'ASSERTION FAILED B1: existing delta row effective price should be 12000, got %', v_res;
     end if;
 
     -- Row 2: MUST BE 12000 (parent base), NOT 13500 (must not leak delta from row 1!)
@@ -729,22 +807,25 @@ begin
     -- ------------------------------------------------------------------------
     -- 9. Storefront Cleanliness Assertion (CERO rows in public tables)
     -- ------------------------------------------------------------------------
-    select count(*) into v_public_count
-      from public.products
-     where id in (v_prod_a, v_foreign_prod_id)
-        or name like '%' || v_test_suffix || '%';
+    -- Una base solo-migraciones no tiene las tablas legacy: cero filas por definicion.
+    if to_regclass('public.products') is not null and to_regclass('public.product_variants') is not null then
+      select count(*) into v_public_count
+        from public.products
+       where id in (v_prod_a, v_foreign_prod_id)
+          or name like '%' || v_test_suffix || '%';
 
-    if v_public_count > 0 then
-      raise exception 'ASSERTION FAILED B6: public.products has % rows for test fixtures', v_public_count;
-    end if;
+      if v_public_count > 0 then
+        raise exception 'ASSERTION FAILED B6: public.products has % rows for test fixtures', v_public_count;
+      end if;
 
-    select count(*) into v_public_count
-      from public.product_variants
-     where id in (v_var_inherit_id, v_var_override_id, v_var_delta_id, v_var_zero_id, v_var_exact_id, v_foreign_var_id)
-        or color like '%' || v_test_suffix || '%';
+      select count(*) into v_public_count
+        from public.product_variants
+       where id in (v_var_inherit_id, v_var_override_id, v_var_delta_id, v_var_zero_id, v_var_exact_id, v_foreign_var_id)
+          or color like '%' || v_test_suffix || '%';
 
-    if v_public_count > 0 then
-      raise exception 'ASSERTION FAILED B6: public.product_variants has % rows for test fixtures', v_public_count;
+      if v_public_count > 0 then
+        raise exception 'ASSERTION FAILED B6: public.product_variants has % rows for test fixtures', v_public_count;
+      end if;
     end if;
 
     -- ------------------------------------------------------------------------

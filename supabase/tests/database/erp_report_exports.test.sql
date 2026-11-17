@@ -67,7 +67,7 @@ values
   'e5000000-0000-0000-0000-000000000002',
   '40000000-0000-0000-0000-000000000002',
   'e5000000-0000-0000-0000-000000000002'
-);
+) on conflict do nothing;
 
 set local role postgres;
 insert into erp.organizations (id, legal_name, display_name)
