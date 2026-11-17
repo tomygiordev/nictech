@@ -1,15 +1,19 @@
-import { createClient } from "supabase";
+import { createClient } from "./client.ts";
 import {
   aggregateCartItems,
   assertUuid,
-  encodeMercadoPagoItemId,
+  checkoutPriceKey,
+  checkoutTotal,
+  buildMercadoPagoItems,
+  buildOrderItems,
   validateCatalogItems,
   type ProductRecord,
-  type ValidatedCheckoutItem,
   type VariantRecord,
 } from "./domain.ts";
 
 const DEFAULT_ORIGINS = [
+  "https://nictech.com.ar",
+  "https://www.nictech.com.ar",
   "https://nictech.vercel.app",
   "https://www.nictech.vercel.app",
   "http://localhost:8080",
@@ -29,6 +33,7 @@ interface RequestBody {
   items?: unknown;
   payer?: unknown;
   origin?: unknown;
+  expected_total?: unknown;
 }
 
 function getAllowedOrigins(): string[] {
@@ -146,6 +151,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return jsonResponse(req, { error: "Método no permitido" }, 405);
   }
+  if (Deno.env.get("ERP_CHECKOUT_PAUSED") === "true") {
+    return jsonResponse(req, { error: "Los pagos están momentáneamente pausados. Intentá nuevamente en unos minutos." }, 503);
+  }
 
   try {
     const accessToken = requireEnvironment("MERCADOPAGO_ACCESS_TOKEN");
@@ -165,23 +173,23 @@ Deno.serve(async (req) => {
     const variantIds = requestedItems
       .map((item) => item.variant_id)
       .filter((variantId): variantId is string => Boolean(variantId));
-    const [productsResult, variantsResult] = await Promise.all([
-      supabase.from("products").select("id, name, price, stock, image_url").in("id", productIds),
+    const [productsResult, variantsResult, productVariantsResult] = await Promise.all([
+      supabase.from("products").select("id, name, stock, image_url").eq("is_active", true).in("id", productIds),
       variantIds.length
-        ? supabase.from("product_variants").select("id, product_id, color, stock, image_url").in("id", variantIds)
+        ? supabase.from("product_variants").select("id, product_id, color, stock, image_url").eq("is_active", true).in("id", variantIds)
         : Promise.resolve({ data: [] as VariantRecord[], error: null }),
+      supabase.from("product_variants").select("product_id").in("product_id", productIds),
     ]);
 
-    if (productsResult.error || variantsResult.error) {
-      console.error("Catalog validation failed", productsResult.error ?? variantsResult.error);
+    if (productsResult.error || variantsResult.error || productVariantsResult.error) {
+      console.error("Catalog validation failed", productsResult.error ?? variantsResult.error ?? productVariantsResult.error);
       throw new Error("No se pudo comprobar el inventario");
     }
+    const productsWithVariants = new Set((productVariantsResult.data ?? []).map((variant) => variant.product_id));
+    if (requestedItems.some((item) => !item.variant_id && productsWithVariants.has(item.product_id))) {
+      throw new Error("Seleccioná una variante para este producto antes de pagar");
+    }
 
-    const validatedItems = validateCatalogItems(
-      requestedItems,
-      (productsResult.data ?? []) as ProductRecord[],
-      (variantsResult.data ?? []) as VariantRecord[],
-    );
     // Never offer a payment that the canonical ERP cannot identify and fulfill.
     const organizationId = requireEnvironment("ERP_ORGANIZATION_ID");
     assertUuid(organizationId, "Organización ERP");
@@ -203,15 +211,38 @@ Deno.serve(async (req) => {
         throw new Error("La variante no está habilitada para cobro online en el ERP.");
       }
     }
-    const total = validatedItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
-    const persistedItems = validatedItems.map((item) => ({
-      product_id: item.product_id,
-      variant_id: item.variant_id,
-      inventory_unit_id: null,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      title: item.title,
+    const resolvedPrices = await Promise.all(requestedItems.map(async (item) => {
+      const { data, error } = await supabase.schema("erp").rpc("resolve_catalog_effective_price_internal", {
+        p_organization_id: organizationId,
+        p_product_id: item.product_id,
+        p_variant_id: item.variant_id,
+      });
+      if (error || !data || typeof data !== "object" || Array.isArray(data)) {
+        throw new Error("No se pudo obtener el precio vigente. Intentá nuevamente o contactá al local.");
+      }
+      return [checkoutPriceKey(item.product_id, item.variant_id), (data as Record<string, unknown>).final_price_ars] as const;
     }));
+    const validatedItems = validateCatalogItems(
+      requestedItems,
+      (productsResult.data ?? []) as ProductRecord[],
+      (variantsResult.data ?? []) as VariantRecord[],
+      new Map(resolvedPrices),
+    );
+    const total = checkoutTotal(validatedItems);
+    if (body.expected_total !== undefined) {
+      if (typeof body.expected_total !== "number" || !Number.isFinite(body.expected_total) || body.expected_total < 0 ||
+        !Number.isSafeInteger(Math.round(body.expected_total * 100)) ||
+        Math.abs(body.expected_total * 100 - Math.round(body.expected_total * 100)) > 0.000001) {
+        throw new Error("Total esperado inválido");
+      }
+      if (Math.round(body.expected_total * 100) !== Math.round(total * 100)) {
+        return jsonResponse(req, {
+          total,
+          items: validatedItems.map(({ product_id, variant_id, unit_price }) => ({ product_id, variant_id, unit_price })),
+        }, 409);
+      }
+    }
+    const persistedItems = buildOrderItems(validatedItems);
 
     const { error: insertOrderError } = await supabase.from("orders").insert({
       id: checkoutId,
@@ -231,7 +262,8 @@ Deno.serve(async (req) => {
       if (
         existingOrderError ||
         !existingOrder ||
-        existingOrder.total !== total ||
+        !Number.isFinite(Number(existingOrder.total)) ||
+        Math.round(Number(existingOrder.total) * 100) !== Math.round(total * 100) ||
         comparableJson(existingOrder.items) !== comparableJson(persistedItems) ||
         comparableJson(existingOrder.payer) !== comparableJson(payer) ||
         !["pending", "in_process"].includes(existingOrder.status)
@@ -245,16 +277,7 @@ Deno.serve(async (req) => {
 
     const validOrigin = resolveStorefrontOrigin(req, body.origin);
     const preference = {
-      items: validatedItems.map((item: ValidatedCheckoutItem) => ({
-        id: encodeMercadoPagoItemId(item.product_id, item.variant_id),
-        title: item.title,
-        currency_id: "ARS",
-        picture_url: item.image_url ?? undefined,
-        description: item.title,
-        category_id: "others",
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-      })),
+      items: buildMercadoPagoItems(validatedItems),
       back_urls: {
         success: `${validOrigin}/checkout?payment=success`,
         failure: `${validOrigin}/checkout?payment=failure`,
@@ -301,6 +324,7 @@ Deno.serve(async (req) => {
       id: mpData.id,
       init_point: mpData.init_point,
       sandbox_init_point: mpData.sandbox_init_point,
+      total,
     }, 200);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Error desconocido";

@@ -8,6 +8,8 @@ import { verifyMercadoPagoSignature } from "./signature.ts";
 // Requires MERCADOPAGO_WEBHOOK_SECRET env var (set in Supabase secrets).
 // Reference: https://www.mercadopago.com.ar/developers/en/docs/your-integrations/notifications/webhooks
 const ALLOWED_ORIGINS = [
+  "https://nictech.com.ar",
+  "https://www.nictech.com.ar",
   "https://nictech.vercel.app",
   "https://www.nictech.vercel.app",
   "http://localhost:8080",
@@ -58,7 +60,7 @@ function buildOrderEmail(payer: any, items: any[], total: number, paymentId: str
           <tr>
             <td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:32px 40px;text-align:center;">
               <img
-                src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/resources/Copia%20de%20path5.png"
+                src="https://qatkzvlomuaoaxlfgjfa.supabase.co/storage/v1/object/public/resources/Copia%20de%20path5.png"
                 alt="Nictech"
                 style="height:48px;object-fit:contain;"
               />
@@ -159,7 +161,7 @@ function buildAdminEmail(payer: any, items: any[], total: number, paymentId: str
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:32px 0;"><tr><td align="center">
 <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
   <tr><td style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:28px 40px;text-align:center;">
-    <img src="https://tuzpcofywkhglkqplhnn.supabase.co/storage/v1/object/public/resources/Copia%20de%20path5.png" alt="Nictech" style="height:44px;object-fit:contain;"/>
+    <img src="https://qatkzvlomuaoaxlfgjfa.supabase.co/storage/v1/object/public/resources/Copia%20de%20path5.png" alt="Nictech" style="height:44px;object-fit:contain;"/>
     <p style="color:rgba(255,255,255,0.5);font-size:12px;margin:10px 0 0;">Panel de ventas</p>
   </td></tr>
   <tr><td style="padding:32px 40px 16px;text-align:center;">
@@ -350,6 +352,10 @@ Deno.serve(async (req) => {
       return jsonResponse(req, { error: "Firma inválida" }, 401);
     }
 
+    if (Deno.env.get("ERP_CHECKOUT_PAUSED") === "true") {
+      return jsonResponse(req, { error: "Procesamiento de pagos temporalmente pausado" }, 503);
+    }
+
     return await processPayment(paymentId, requestId, envelope, req);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Error desconocido";
@@ -393,7 +399,7 @@ async function processPayment(
 
   const { data: storefrontOrder, error: orderError } = await supabase
     .from("orders")
-    .select("id, status, total, items, payer")
+    .select("id, status, total, items, payer, stock_decremented")
     .eq("id", storefrontOrderId)
     .single();
   if (orderError || !storefrontOrder) throw new Error("La orden de storefront no existe");
@@ -428,6 +434,21 @@ async function processPayment(
     throw new Error("La metadata del pago no coincide con la orden");
   }
 
+  // A payment handled by the previous webhook has already reduced public
+  // stock. Replaying it through ERP would book the same sale a second time.
+  if (storefrontOrder.stock_decremented) {
+    const { data: existingSync, error: syncError } = await supabase.schema("erp")
+      .from("storefront_payment_syncs")
+      .select("id")
+      .eq("storefront_order_id", storefrontOrderId)
+      .eq("provider_payment_id", paymentId)
+      .maybeSingle();
+    if (syncError) throw syncError;
+    if (!existingSync) {
+      throw new Error("El pago fue procesado antes de activar el ERP; requiere conciliación manual");
+    }
+  }
+
   const providerOccurredAt = [paymentData.date_approved, paymentData.date_last_updated, paymentData.date_created]
     .find((value): value is string => typeof value === "string" && !Number.isNaN(Date.parse(value)));
   if (!providerOccurredAt) throw new Error("El pago no contiene una fecha válida");
@@ -442,7 +463,7 @@ async function processPayment(
       p_branch_id: requireUuidEnvironment("ERP_BRANCH_ID"),
       p_location_id: requireUuidEnvironment("ERP_STOREFRONT_LOCATION_ID"),
       p_storefront_order_id: storefrontOrderId,
-      p_customer_id: requireUuidEnvironment("ERP_STOREFRONT_CUSTOMER_ID"),
+      p_customer_id: null,
       p_exchange_snapshot_id: requireUuidEnvironment("ERP_STORE_EXCHANGE_SNAPSHOT_ID"),
       p_payment_method_id: requireUuidEnvironment("ERP_MERCADOPAGO_PAYMENT_METHOD_ID"),
       p_provider_payment_id: paymentId,
