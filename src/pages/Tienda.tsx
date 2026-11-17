@@ -39,6 +39,7 @@ import { pickPrimaryImage } from '@/lib/product-gallery';
 import { useStorefrontPromotionPrices } from '@/hooks/use-storefront-promotion-prices';
 import { resolveDisplayPrice } from '@/lib/promo-pricing';
 import { BUSINESS_INFO } from '@/config/business-info';
+import { SITE_URL, buildProductPath, canonicalProductUrl, findProductByParam } from '@/lib/product-url';
 
 interface Category {
   id: string;
@@ -86,33 +87,6 @@ interface Brand {
   id: string;
   name: string;
 }
-
-const slugifyProductName = (name: string): string =>
-  name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-export const buildProductPath = (product: { id: string; name: string }): string => {
-  const slug = slugifyProductName(product.name);
-  return slug ? `/producto/${slug}--${product.id}` : `/producto/${product.id}`;
-};
-
-const findProductByParam = (param: string, items: Product[]): Product | null => {
-  const directMatch = items.find((p) => p.id === param);
-  if (directMatch) return directMatch;
-
-  const separatorIdx = param.lastIndexOf('--');
-  if (separatorIdx !== -1) {
-    const extractedId = param.slice(separatorIdx + 2);
-    const byExtractedId = items.find((p) => p.id === extractedId);
-    if (byExtractedId) return byExtractedId;
-  }
-
-  return items.find((p) => slugifyProductName(p.name) === param) ?? null;
-};
 
 const Tienda = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -571,14 +545,17 @@ const Tienda = () => {
 
     const matchedProduct = findProductByParam(productId, resolvedProducts);
     setSelectedProduct(matchedProduct);
-  }, [productId, resolvedProducts, loading, location.pathname]);
+    if (matchedProduct && productId !== buildProductPath(matchedProduct).slice('/producto/'.length)) {
+      navigate(buildProductPath(matchedProduct), { replace: true });
+    }
+  }, [productId, resolvedProducts, loading, location.pathname, navigate]);
 
   const handleOpenProduct = (product: Product, trackClick = true) => {
     if (trackClick) {
       supabase.from('product_clicks').insert({ product_id: product.id });
     }
     setSelectedProduct(product);
-    navigate(`/producto/${product.id}`, { replace: false });
+    navigate(buildProductPath(product));
   };
 
   const handleCloseProduct = () => {
@@ -598,6 +575,7 @@ const Tienda = () => {
         '@context': 'https://schema.org',
         '@type': 'Product',
         name: resolvedSelectedProduct.name,
+        url: canonicalProductUrl(resolvedSelectedProduct),
         description: selectedProductDescription,
         ...(resolvedSelectedProduct.image_url ? { image: [resolvedSelectedProduct.image_url] } : {}),
         offers: {
@@ -608,7 +586,7 @@ const Tienda = () => {
             resolvedSelectedProduct.stock > 0
               ? 'https://schema.org/InStock'
               : 'https://schema.org/OutOfStock',
-          url: `https://nictech.com.ar/producto/${resolvedSelectedProduct.id}`,
+          url: canonicalProductUrl(resolvedSelectedProduct),
         },
       }
     : null;
@@ -620,22 +598,30 @@ const Tienda = () => {
     itemListElement: displayedProducts.slice(0, 10).map((product, index) => ({
       '@type': 'ListItem',
       position: index + 1,
-      url: `https://nictech.com.ar/producto/${product.id}`,
+      url: canonicalProductUrl(product),
       name: product.name,
     })),
   };
 
+  const productNotFound = Boolean(productId && !loading && !findProductByParam(productId, resolvedProducts));
+
   return (
     <>
       <Helmet>
-        {selectedProduct ? (
+        {productNotFound ? (
+          <>
+            <title>Producto no encontrado | Nictech</title>
+            <meta name="robots" content="noindex" />
+          </>
+        ) : selectedProduct ? (
           <>
             <title>{`${selectedProduct.name} | Tienda Nictech`}</title>
             <meta name="description" content={selectedProductDescription} />
             <meta property="og:title" content={`${selectedProduct.name} | Tienda Nictech`} />
             <meta property="og:description" content={selectedProductDescription} />
             <meta property="og:type" content="product" />
-            <meta property="og:url" content={`https://nictech.com.ar/producto/${selectedProduct.id}`} />
+            <meta property="og:url" content={canonicalProductUrl(selectedProduct)} />
+            <link rel="canonical" href={canonicalProductUrl(selectedProduct)} />
             {selectedProduct.image_url && (
               <meta property="og:image" content={selectedProduct.image_url} />
             )}
@@ -644,6 +630,9 @@ const Tienda = () => {
         ) : (
           <>
             <title>Nictech | Tienda de Celulares, Accesorios y Servicio Técnico en Urdinarrain y Gilbert</title>
+            {(location.pathname === '/tienda' || location.pathname === '/') && (
+              <link rel="canonical" href={location.pathname === '/tienda' ? `${SITE_URL}/tienda` : `${SITE_URL}/`} />
+            )}
             <meta
               name="description"
               content="Comprá celulares nuevos y usados seleccionados con garantía escrita, accesorios y computación, o repará tu equipo en nuestro servicio técnico en Urdinarrain y Gilbert, Entre Ríos. Envíos a todo el país."

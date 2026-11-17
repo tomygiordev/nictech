@@ -8,6 +8,7 @@ import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { buildProductGallery } from '@/lib/product-gallery';
+import { buildProductPath } from '@/lib/product-url';
 import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
 import { getVariantColor, isLightColor } from '@/lib/colors';
 import { calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
@@ -251,7 +252,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose, promotionIndex }:
         ? `${product.name} (${selectedVariant.color})`
         : product.name;
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nictech.com.ar';
-    const productUrl = `${origin}/producto/${product.id}`;
+    const productUrl = `${origin}${buildProductPath(product)}`;
     const whatsappMessage = `Hola Nictech! Quiero consultar por ${productNameForWhatsapp} ($ ${effectivePrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}). ¿Está disponible? ${productUrl}`;
     const whatsappUrl = `https://wa.me/5493446353769?text=${encodeURIComponent(whatsappMessage)}`;
 
