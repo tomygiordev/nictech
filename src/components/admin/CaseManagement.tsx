@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { optimizeImage, fileExtension, IMAGE_UPLOAD_OPTIONS } from '@/lib/image-upload';
 import { toast } from '@/hooks/use-toast';
 import { Loader2, Plus, Save, Trash2, Image as ImageIcon, Upload, Filter, Search, X, Smartphone, Palette, Pencil, Star, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -320,9 +321,10 @@ export const CaseManagement = () => {
         try {
             let imageUrl = null;
             if (newVariant.image_file) {
-                const fileExt = newVariant.image_file.name.split('.').pop();
+                const optimized = await optimizeImage(newVariant.image_file);
+                const fileExt = fileExtension(optimized);
                 const fileName = `variant_${Math.random()}.${fileExt}`;
-                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, newVariant.image_file);
+                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
                 if (upErr) throw upErr;
                 const { data } = supabase.storage.from('product_images').getPublicUrl(fileName);
                 imageUrl = data.publicUrl;
@@ -402,9 +404,10 @@ export const CaseManagement = () => {
             // but let's assume we handle it via a new state or extending the interface locally.
             // We'll use a local `editVariantFile` state for the file.
             if (editVariantFile) {
-                const fileExt = editVariantFile.name.split('.').pop();
+                const optimized = await optimizeImage(editVariantFile);
+                const fileExt = fileExtension(optimized);
                 const fileName = `variant_${Math.random()}.${fileExt}`;
-                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, editVariantFile);
+                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
                 if (upErr) throw upErr;
                 const { data } = supabase.storage.from('product_images').getPublicUrl(fileName);
                 imageUrl = data.publicUrl;

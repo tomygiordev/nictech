@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- legacy variant payload shape. */
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { optimizeImage, fileExtension, IMAGE_UPLOAD_OPTIONS } from '@/lib/image-upload';
 import { toast } from '@/hooks/use-toast';
 import { Loader2, Plus, Save, Trash2, Image as ImageIcon, Upload, Filter, Search, X, Smartphone, Palette, Pencil, Star, EyeOff, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -282,9 +283,10 @@ export const VariantManagement = () => {
 
             let imageUrl = null;
             if (newVariantData.image_file) {
-                const fileExt = newVariantData.image_file.name.split('.').pop();
+                const optimized = await optimizeImage(newVariantData.image_file);
+                const fileExt = fileExtension(optimized);
                 const fileName = `product_base_${Math.random()}.${fileExt}`;
-                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, newVariantData.image_file);
+                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
                 if (upErr) throw upErr;
                 const { data: publicUrlData } = supabase.storage.from('product_images').getPublicUrl(fileName);
                 imageUrl = publicUrlData.publicUrl;
@@ -376,9 +378,10 @@ export const VariantManagement = () => {
         try {
             let imageUrl = null;
             if (newVariant.image_file) {
-                const fileExt = newVariant.image_file.name.split('.').pop();
+                const optimized = await optimizeImage(newVariant.image_file);
+                const fileExt = fileExtension(optimized);
                 const fileName = `variant_${Math.random()}.${fileExt}`;
-                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, newVariant.image_file);
+                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
                 if (upErr) throw upErr;
                 const { data } = supabase.storage.from('product_images').getPublicUrl(fileName);
                 imageUrl = data.publicUrl;
@@ -433,9 +436,10 @@ export const VariantManagement = () => {
         try {
             let imageUrl = editingVariantItem.image_preview;
             if (editingVariantItem.image_file) {
-                const fileExt = editingVariantItem.image_file.name.split('.').pop();
+                const optimized = await optimizeImage(editingVariantItem.image_file);
+                const fileExt = fileExtension(optimized);
                 const fileName = `product_base_update_${Math.random()}.${fileExt}`;
-                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, editingVariantItem.image_file);
+                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
                 if (upErr) throw upErr;
                 const { data: publicUrlData } = supabase.storage.from('product_images').getPublicUrl(fileName);
                 imageUrl = publicUrlData.publicUrl;
@@ -476,9 +480,10 @@ export const VariantManagement = () => {
             // but let's assume we handle it via a new state or extending the interface locally.
             // We'll use a local `editVariantFile` state for the file.
             if (editVariantFile) {
-                const fileExt = editVariantFile.name.split('.').pop();
+                const optimized = await optimizeImage(editVariantFile);
+                const fileExt = fileExtension(optimized);
                 const fileName = `variant_${Math.random()}.${fileExt}`;
-                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, editVariantFile);
+                const { error: upErr } = await supabase.storage.from('product_images').upload(fileName, optimized, IMAGE_UPLOAD_OPTIONS);
                 if (upErr) throw upErr;
                 const { data } = supabase.storage.from('product_images').getPublicUrl(fileName);
                 imageUrl = data.publicUrl;
