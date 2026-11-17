@@ -21,7 +21,7 @@ describe('product URLs', () => {
   });
 
   it('builds the canonical absolute URL', () => {
-    expect(canonicalProductUrl(product)).toBe(`https://nictech.com.ar/producto/motorola-g23-128-gb-blanco-usado--${id}`);
+    expect(canonicalProductUrl(product)).toBe(`https://www.nictech.com.ar/producto/motorola-g23-128-gb-blanco-usado--${id}`);
   });
 
   it('parses the ID after the last separator or the entire parameter', () => {

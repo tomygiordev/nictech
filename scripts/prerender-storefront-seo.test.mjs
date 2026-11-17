@@ -31,10 +31,10 @@ describe('SEO de productos', () => {
 
   it('renderiza metadatos y JSON-LD escapados sin ofertas', () => {
     const product = { ...products[0], name: 'Equipo "especial" <nuevo>' };
-    const html = renderProductHtml(base, product, 'https://nictech.com.ar');
+    const html = renderProductHtml(base, product, 'https://www.nictech.com.ar');
     expect(html).toContain('<title>Equipo &quot;especial&quot; &lt;nuevo&gt; | Tienda Nictech</title>');
     expect(html).toMatch(/name="description"\s+content="Pantalla amplia Buena batería Equipo revisado"/);
-    const url = `https://nictech.com.ar${buildProductPath(product)}`;
+    const url = `https://www.nictech.com.ar${buildProductPath(product)}`;
     expect(html).toContain(`property="og:url" content="${url}"`);
     expect(html).toContain(`<link rel="canonical" href="${url}"`);
     for (const pattern of [/<title\b/gi, /name="description"/gi, /property="og:url"/gi, /rel="canonical"/gi]) expect(html.match(pattern)).toHaveLength(1);
@@ -48,8 +48,8 @@ describe('SEO de productos', () => {
   });
 
   it('conserva estáticas y deduplica productos activos', () => {
-    const staticUrl = 'https://nictech.com.ar/tienda';
-    const xml = buildSitemap([{ loc: staticUrl, changefreq: 'daily', priority: '0.9' }, staticUrl], [...products, products[0]], 'https://nictech.com.ar');
+    const staticUrl = 'https://www.nictech.com.ar/tienda';
+    const xml = buildSitemap([{ loc: staticUrl, changefreq: 'daily', priority: '0.9' }, staticUrl], [...products, products[0]], 'https://www.nictech.com.ar');
     expect(xml.match(/<loc>/g)).toHaveLength(4);
     expect(xml).toContain('<changefreq>daily</changefreq>');
     expect(xml).toContain(buildProductPath(products[0]));

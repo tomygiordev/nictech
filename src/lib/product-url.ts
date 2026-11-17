@@ -1,4 +1,4 @@
-export const SITE_URL = 'https://nictech.com.ar';
+export const SITE_URL = 'https://www.nictech.com.ar';
 
 type ProductIdentity = { id: string; name: string };
 

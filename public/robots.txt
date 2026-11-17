@@ -22,4 +22,4 @@ Disallow: /admin
 Disallow: /login
 Disallow: /checkout
 
-Sitemap: https://nictech.com.ar/sitemap.xml
+Sitemap: https://www.nictech.com.ar/sitemap.xml

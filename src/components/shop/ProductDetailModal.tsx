@@ -251,7 +251,7 @@ export const ProductDetailModal = ({ product, isOpen, onClose, promotionIndex }:
     const productNameForWhatsapp = selectedVariant
         ? `${product.name} (${selectedVariant.color})`
         : product.name;
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nictech.com.ar';
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.nictech.com.ar';
     const productUrl = `${origin}${buildProductPath(product)}`;
     const whatsappMessage = `Hola Nictech! Quiero consultar por ${productNameForWhatsapp} ($ ${effectivePrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}). ¿Está disponible? ${productUrl}`;
     const whatsappUrl = `https://wa.me/5493446353769?text=${encodeURIComponent(whatsappMessage)}`;
