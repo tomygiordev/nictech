@@ -83,6 +83,21 @@ export const ProductCompatibilityModal: React.FC<ProductCompatibilityModalProps>
     }
   }, [isOpen, product, loadCompatibleModels]);
 
+  // Filter models for selection
+  const filteredModels = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return models.filter((m) => {
+      if (brandFilter !== "all" && m.brand_id !== brandFilter) {
+        return false;
+      }
+      if (!q) return true;
+      const brandName = brandMap.get(m.brand_id)?.toLowerCase() || "";
+      const modelName = m.name.toLowerCase();
+      const modelCode = m.code.toLowerCase();
+      return modelName.includes(q) || modelCode.includes(q) || brandName.includes(q);
+    });
+  }, [models, brandFilter, searchQuery, brandMap]);
+
   if (!product) return null;
 
   const handleClose = () => {
@@ -109,21 +124,6 @@ export const ProductCompatibilityModal: React.FC<ProductCompatibilityModalProps>
     if (submitting) return;
     setSelectedModelIds([]);
   };
-
-  // Filter models for selection
-  const filteredModels = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return models.filter((m) => {
-      if (brandFilter !== "all" && m.brand_id !== brandFilter) {
-        return false;
-      }
-      if (!q) return true;
-      const brandName = brandMap.get(m.brand_id)?.toLowerCase() || "";
-      const modelName = m.name.toLowerCase();
-      const modelCode = m.code.toLowerCase();
-      return modelName.includes(q) || modelCode.includes(q) || brandName.includes(q);
-    });
-  }, [models, brandFilter, searchQuery, brandMap]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -156,6 +156,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
   const [recentDocs, setRecentDocs] = useState<DbStockDoc[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>("");
+  const [showInactive, setShowInactive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -187,15 +188,16 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
       setError(null);
 
       // 1. Fetch real stock balances broken down by variant & location
-      const { data: balData, error: balErr } = await supabase
+      let balanceQuery = supabase
         .from("stock_balances")
         .select(`
           id, product_id, variant_id, location_id, quantity_on_hand, quantity_reserved, updated_at,
-          products(internal_code, internal_name, item_kind),
+          products!inner(internal_code, internal_name, item_kind),
           product_variants(name, code),
           locations(name, code, branch_id)
-        `)
-        .order("updated_at", { ascending: false });
+        `);
+      if (!showInactive) balanceQuery = balanceQuery.eq("products.is_active", true);
+      const { data: balData, error: balErr } = await balanceQuery.order("updated_at", { ascending: false });
 
       if (balErr) throw balErr;
 
@@ -251,7 +253,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [labelTargetId]);
+  }, [labelTargetId, showInactive]);
 
   useEffect(() => {
     if (activeModuleId !== "stock-counts") fetchStockData();
@@ -484,6 +486,8 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           onSelectModule={onSelectModule}
         />
       )}
+
+      {!isStockCountsMode && <label><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Ver inactivos</label>}
 
       {error && (
         <FeedbackAlert

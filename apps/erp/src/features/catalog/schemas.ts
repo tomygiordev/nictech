@@ -39,6 +39,7 @@ export interface DbProductVariant {
   id: string;
   code: string;
   name: string;
+  color_id?: string | null;
   attributes?: Record<string, unknown>;
   price_delta: number;
   final_price_ars?: number | null;
@@ -100,6 +101,14 @@ export interface DbCatalogProduct {
   internal_code: string;
   internal_name: string;
   public_name: string | null;
+  public_description?: string | null;
+  sheet_template?: "celular" | "accesorio" | "funda";
+  web_status?: "draft" | "published" | "paused";
+  tags?: string[];
+  condition?: "nuevo" | "usado" | "reacondicionado" | null;
+  capacity?: string | null;
+  media_initialized?: boolean;
+  sheet_fields_initialized?: boolean;
   base_sale_price: number;
   base_cost?: number;
   tax_rate_percent: number;

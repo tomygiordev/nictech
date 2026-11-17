@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.18"
+  }
   erp: {
     Tables: {
       account_reconciliations: {
@@ -740,6 +745,56 @@ export type Database = {
           },
         ]
       }
+      catalog_code_counters: {
+        Row: {
+          last_value: number
+          organization_id: string
+          prefix: string
+        }
+        Insert: {
+          last_value?: number
+          organization_id: string
+          prefix: string
+        }
+        Update: {
+          last_value?: number
+          organization_id?: string
+          prefix?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_code_counters_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_recode_capabilities: {
+        Row: {
+          backend_pid: number
+          organization_id: string
+          product_id: string
+          token: string
+          transaction_id: number
+        }
+        Insert: {
+          backend_pid: number
+          organization_id: string
+          product_id: string
+          token: string
+          transaction_id: number
+        }
+        Update: {
+          backend_pid?: number
+          organization_id?: string
+          product_id?: string
+          token?: string
+          transaction_id?: number
+        }
+        Relationships: []
+      }
       chart_of_accounts: {
         Row: {
           account_type: Database["erp"]["Enums"]["account_type"]
@@ -791,6 +846,50 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "chart_of_accounts"
             referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      colors: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          hex: string | null
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          hex?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          hex?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colors_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1671,6 +1770,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      cutover_function_backups: {
+        Row: {
+          captured_at: string
+          definition: string
+          function_identity: string
+          id: number
+          restored_at: string | null
+        }
+        Insert: {
+          captured_at?: string
+          definition: string
+          function_identity: string
+          id?: never
+          restored_at?: string | null
+        }
+        Update: {
+          captured_at?: string
+          definition?: string
+          function_identity?: string
+          id?: never
+          restored_at?: string | null
+        }
+        Relationships: []
       }
       document_counters: {
         Row: {
@@ -2869,6 +2992,13 @@ export type Database = {
             foreignKeyName: "inventory_cost_balances_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "inventory_cost_balances_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -2878,6 +3008,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_profitability_by_line"
             referencedColumns: ["product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "inventory_cost_balances_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "inventory_cost_balances_variant_fk"
@@ -2960,6 +3097,13 @@ export type Database = {
             foreignKeyName: "inventory_cost_entries_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "inventory_cost_entries_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -2983,6 +3127,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "inventory_cost_entries_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "inventory_cost_entries_variant_fk"
@@ -3052,6 +3203,13 @@ export type Database = {
             foreignKeyName: "inventory_count_lines_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "inventory_count_lines_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -3068,6 +3226,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "inventory_count_lines_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "inventory_count_lines_variant_fk"
@@ -3231,6 +3396,13 @@ export type Database = {
             foreignKeyName: "inventory_units_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "inventory_units_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -3245,6 +3417,13 @@ export type Database = {
             foreignKeyName: "inventory_units_variant_fk"
             columns: ["variant_id", "product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "inventory_units_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "product_variants"
             referencedColumns: ["id", "product_id", "organization_id"]
           },
@@ -3252,6 +3431,7 @@ export type Database = {
       }
       journal_entries: {
         Row: {
+          accounting_contract: string
           branch_id: string
           created_at: string
           created_by: string | null
@@ -3269,8 +3449,10 @@ export type Database = {
           status: Database["erp"]["Enums"]["accounting_entry_status"]
           total_credit: number
           total_debit: number
+          v2_original_entry_id: string | null
         }
         Insert: {
+          accounting_contract?: string
           branch_id: string
           created_at?: string
           created_by?: string | null
@@ -3288,8 +3470,10 @@ export type Database = {
           status?: Database["erp"]["Enums"]["accounting_entry_status"]
           total_credit?: number
           total_debit?: number
+          v2_original_entry_id?: string | null
         }
         Update: {
+          accounting_contract?: string
           branch_id?: string
           created_at?: string
           created_by?: string | null
@@ -3307,6 +3491,7 @@ export type Database = {
           status?: Database["erp"]["Enums"]["accounting_entry_status"]
           total_credit?: number
           total_debit?: number
+          v2_original_entry_id?: string | null
         }
         Relationships: [
           {
@@ -3333,6 +3518,13 @@ export type Database = {
           {
             foreignKeyName: "journal_entries_reversal_fk"
             columns: ["reversal_of_entry_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entries"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "journal_entries_v2_original_fk"
+            columns: ["v2_original_entry_id", "organization_id"]
             isOneToOne: false
             referencedRelation: "journal_entries"
             referencedColumns: ["id", "organization_id"]
@@ -3396,6 +3588,53 @@ export type Database = {
           },
           {
             foreignKeyName: "journal_entry_lines_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legacy_write_canary_events: {
+        Row: {
+          actor_role: string
+          actor_user_id: string | null
+          created_at: string
+          group_code: string
+          id: number
+          operation: string
+          organization_id: string
+          row_id: string | null
+          table_name: string
+          touched_columns: string[]
+        }
+        Insert: {
+          actor_role: string
+          actor_user_id?: string | null
+          created_at?: string
+          group_code: string
+          id?: never
+          operation: string
+          organization_id: string
+          row_id?: string | null
+          table_name: string
+          touched_columns?: string[]
+        }
+        Update: {
+          actor_role?: string
+          actor_user_id?: string | null
+          created_at?: string
+          group_code?: string
+          id?: never
+          operation?: string
+          organization_id?: string
+          row_id?: string | null
+          table_name?: string
+          touched_columns?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legacy_write_canary_events_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -4071,6 +4310,13 @@ export type Database = {
             foreignKeyName: "pc_components_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "pc_components_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -4094,6 +4340,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "pc_components_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "pc_components_variant_fk"
@@ -4772,6 +5025,13 @@ export type Database = {
             foreignKeyName: "pc_lineage_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "pc_lineage_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -4788,6 +5048,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "pc_lineage_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "pc_lineage_variant_fk"
@@ -5024,6 +5291,54 @@ export type Database = {
         }
         Relationships: []
       }
+      pos_v2_zero_accounting_outcomes: {
+        Row: {
+          accounting_contract: string
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          posting_kind: string
+          reason: string
+          sale_id: string
+        }
+        Insert: {
+          accounting_contract?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          posting_kind?: string
+          reason?: string
+          sale_id: string
+        }
+        Update: {
+          accounting_contract?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          posting_kind?: string
+          reason?: string
+          sale_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_v2_zero_accounting_outcomes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_v2_zero_accounting_outcomes_sale_fk"
+            columns: ["sale_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
       price_change_applications: {
         Row: {
           applied_at: string
@@ -5138,6 +5453,13 @@ export type Database = {
             foreignKeyName: "price_preview_lines_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "price_preview_lines_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -5147,6 +5469,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_profitability_by_line"
             referencedColumns: ["product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "price_preview_lines_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "price_preview_lines_variant_fk"
@@ -5274,6 +5603,13 @@ export type Database = {
             foreignKeyName: "price_entries_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "price_entries_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -5283,6 +5619,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_profitability_by_line"
             referencedColumns: ["product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "price_entries_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "price_entries_variant_fk"
@@ -5354,6 +5697,7 @@ export type Database = {
       product_categories: {
         Row: {
           code: string
+          code_prefix: string
           created_at: string
           description: string | null
           id: string
@@ -5365,6 +5709,7 @@ export type Database = {
         }
         Insert: {
           code: string
+          code_prefix: string
           created_at?: string
           description?: string | null
           id?: string
@@ -5376,6 +5721,7 @@ export type Database = {
         }
         Update: {
           code?: string
+          code_prefix?: string
           created_at?: string
           description?: string | null
           id?: string
@@ -5399,6 +5745,72 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "product_categories"
             referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      product_compatible_models: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          model_id: string
+          organization_id: string
+          product_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          model_id: string
+          organization_id: string
+          product_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          model_id?: string
+          organization_id?: string
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_compatible_models_model_fk"
+            columns: ["model_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "product_models"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_compatible_models_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_compatible_models_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_compatible_models_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_compatible_models_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_profitability_by_line"
+            referencedColumns: ["product_id", "organization_id"]
           },
         ]
       }
@@ -5460,6 +5872,13 @@ export type Database = {
             foreignKeyName: "product_identifiers_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_identifiers_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -5472,6 +5891,104 @@ export type Database = {
           },
           {
             foreignKeyName: "product_identifiers_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_identifiers_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+        ]
+      }
+      product_media: {
+        Row: {
+          alt_text: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          is_primary: boolean
+          organization_id: string
+          product_id: string
+          sort_order: number
+          storage_path: string
+          updated_at: string
+          updated_by: string | null
+          variant_id: string | null
+        }
+        Insert: {
+          alt_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          is_primary?: boolean
+          organization_id: string
+          product_id: string
+          sort_order: number
+          storage_path: string
+          updated_at?: string
+          updated_by?: string | null
+          variant_id?: string | null
+        }
+        Update: {
+          alt_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          is_primary?: boolean
+          organization_id?: string
+          product_id?: string
+          sort_order?: number
+          storage_path?: string
+          updated_at?: string
+          updated_by?: string | null
+          variant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_media_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_media_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_media_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_media_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_profitability_by_line"
+            referencedColumns: ["product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_media_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_media_variant_fk"
             columns: ["variant_id", "product_id", "organization_id"]
             isOneToOne: false
             referencedRelation: "product_variants"
@@ -5575,7 +6092,9 @@ export type Database = {
         Row: {
           attributes: Json
           code: string
+          color_id: string | null
           created_at: string
+          final_price_ars: number | null
           id: string
           image_path: string | null
           is_active: boolean
@@ -5588,7 +6107,9 @@ export type Database = {
         Insert: {
           attributes?: Json
           code: string
+          color_id?: string | null
           created_at?: string
+          final_price_ars?: number | null
           id?: string
           image_path?: string | null
           is_active?: boolean
@@ -5601,7 +6122,9 @@ export type Database = {
         Update: {
           attributes?: Json
           code?: string
+          color_id?: string | null
           created_at?: string
+          final_price_ars?: number | null
           id?: string
           image_path?: string | null
           is_active?: boolean
@@ -5613,11 +6136,25 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "product_variants_color_fk"
+            columns: ["color_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "colors"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
             foreignKeyName: "product_variants_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_variants_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
           },
           {
             foreignKeyName: "product_variants_product_fk"
@@ -5644,7 +6181,9 @@ export type Database = {
           brand_id: string | null
           can_sell: boolean
           can_use_as_repair_part: boolean
+          capacity: string | null
           category_id: string | null
+          condition: string | null
           created_at: string
           created_by: string | null
           id: string
@@ -5655,6 +6194,7 @@ export type Database = {
           inventory_tracking: Database["erp"]["Enums"]["inventory_tracking_mode"]
           is_active: boolean
           item_kind: Database["erp"]["Enums"]["catalog_item_kind"]
+          media_initialized: boolean
           minimum_stock: number
           model_id: string | null
           normalized_internal_code: string | null
@@ -5665,6 +6205,9 @@ export type Database = {
           publish_on_web: boolean
           purchase_currency: string
           service_price_mode: Database["erp"]["Enums"]["service_price_mode"]
+          sheet_fields_initialized: boolean
+          sheet_template: string
+          tags: string[]
           target_margin_percent: number | null
           tax_rate_percent: number
           unit_id: string
@@ -5672,6 +6215,7 @@ export type Database = {
           updated_by: string | null
           warranty_days: number
           web_image_path: string | null
+          web_status: string | null
           zero_stock_behavior: Database["erp"]["Enums"]["zero_stock_behavior"]
         }
         Insert: {
@@ -5682,7 +6226,9 @@ export type Database = {
           brand_id?: string | null
           can_sell?: boolean
           can_use_as_repair_part?: boolean
+          capacity?: string | null
           category_id?: string | null
+          condition?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -5693,6 +6239,7 @@ export type Database = {
           inventory_tracking: Database["erp"]["Enums"]["inventory_tracking_mode"]
           is_active?: boolean
           item_kind: Database["erp"]["Enums"]["catalog_item_kind"]
+          media_initialized?: boolean
           minimum_stock?: number
           model_id?: string | null
           normalized_internal_code?: string | null
@@ -5703,6 +6250,9 @@ export type Database = {
           publish_on_web?: boolean
           purchase_currency?: string
           service_price_mode?: Database["erp"]["Enums"]["service_price_mode"]
+          sheet_fields_initialized?: boolean
+          sheet_template?: string
+          tags?: string[]
           target_margin_percent?: number | null
           tax_rate_percent?: number
           unit_id: string
@@ -5710,6 +6260,7 @@ export type Database = {
           updated_by?: string | null
           warranty_days?: number
           web_image_path?: string | null
+          web_status?: string | null
           zero_stock_behavior?: Database["erp"]["Enums"]["zero_stock_behavior"]
         }
         Update: {
@@ -5720,7 +6271,9 @@ export type Database = {
           brand_id?: string | null
           can_sell?: boolean
           can_use_as_repair_part?: boolean
+          capacity?: string | null
           category_id?: string | null
+          condition?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -5731,6 +6284,7 @@ export type Database = {
           inventory_tracking?: Database["erp"]["Enums"]["inventory_tracking_mode"]
           is_active?: boolean
           item_kind?: Database["erp"]["Enums"]["catalog_item_kind"]
+          media_initialized?: boolean
           minimum_stock?: number
           model_id?: string | null
           normalized_internal_code?: string | null
@@ -5741,6 +6295,9 @@ export type Database = {
           publish_on_web?: boolean
           purchase_currency?: string
           service_price_mode?: Database["erp"]["Enums"]["service_price_mode"]
+          sheet_fields_initialized?: boolean
+          sheet_template?: string
+          tags?: string[]
           target_margin_percent?: number | null
           tax_rate_percent?: number
           unit_id?: string
@@ -5748,6 +6305,7 @@ export type Database = {
           updated_by?: string | null
           warranty_days?: number
           web_image_path?: string | null
+          web_status?: string | null
           zero_stock_behavior?: Database["erp"]["Enums"]["zero_stock_behavior"]
         }
         Relationships: [
@@ -6003,6 +6561,135 @@ export type Database = {
           },
         ]
       }
+      promotion_targets: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          organization_id: string
+          product_id: string
+          promotion_id: string
+          variant_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          organization_id: string
+          product_id: string
+          promotion_id: string
+          variant_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          organization_id?: string
+          product_id?: string
+          promotion_id?: string
+          variant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promotion_targets_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "promotion_targets_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "promotion_targets_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_profitability_by_line"
+            referencedColumns: ["product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "promotion_targets_promotion_fk"
+            columns: ["promotion_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "promotions"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "promotion_targets_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "promotion_targets_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+        ]
+      }
+      promotions: {
+        Row: {
+          channels: string[]
+          created_at: string
+          created_by: string | null
+          ends_at: string | null
+          id: string
+          is_active: boolean
+          kind: string
+          name: string
+          organization_id: string
+          starts_at: string
+          updated_at: string
+          updated_by: string | null
+          value: number
+        }
+        Insert: {
+          channels: string[]
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string | null
+          id?: string
+          is_active?: boolean
+          kind: string
+          name: string
+          organization_id: string
+          starts_at: string
+          updated_at?: string
+          updated_by?: string | null
+          value: number
+        }
+        Update: {
+          channels?: string[]
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: string
+          name?: string
+          organization_id?: string
+          starts_at?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promotions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       provider_webhook_events: {
         Row: {
           branch_id: string
@@ -6223,6 +6910,13 @@ export type Database = {
             foreignKeyName: "purchase_order_lines_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "purchase_order_lines_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -6232,6 +6926,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_profitability_by_line"
             referencedColumns: ["product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "purchase_order_lines_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "purchase_order_lines_variant_fk"
@@ -6454,6 +7155,13 @@ export type Database = {
             foreignKeyName: "purchase_receipt_lines_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "purchase_receipt_lines_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -6477,6 +7185,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "purchase_receipt_lines_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "purchase_receipt_lines_variant_fk"
@@ -7243,6 +7958,54 @@ export type Database = {
           },
         ]
       }
+      repair_notes: {
+        Row: {
+          branch_id: string
+          content: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_public: boolean
+          organization_id: string
+          repair_order_id: string
+        }
+        Insert: {
+          branch_id: string
+          content: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_public?: boolean
+          organization_id: string
+          repair_order_id: string
+        }
+        Update: {
+          branch_id?: string
+          content?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_public?: boolean
+          organization_id?: string
+          repair_order_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repair_notes_repair_order_id_organization_id_branch_id_fkey"
+            columns: ["repair_order_id", "organization_id", "branch_id"]
+            isOneToOne: false
+            referencedRelation: "repair_orders"
+            referencedColumns: ["id", "organization_id", "branch_id"]
+          },
+          {
+            foreignKeyName: "repair_notes_repair_order_id_organization_id_branch_id_fkey"
+            columns: ["repair_order_id", "organization_id", "branch_id"]
+            isOneToOne: false
+            referencedRelation: "repair_orders_overview"
+            referencedColumns: ["id", "organization_id", "branch_id"]
+          },
+        ]
+      }
       repair_number_counters: {
         Row: {
           branch_id: string
@@ -7294,6 +8057,7 @@ export type Database = {
           order_code: string
           order_number: number
           organization_id: string
+          public_tracking_code: string
           reported_fault: string
           tracking_token_digest: string
         }
@@ -7311,6 +8075,7 @@ export type Database = {
           order_code: string
           order_number: number
           organization_id: string
+          public_tracking_code: string
           reported_fault: string
           tracking_token_digest: string
         }
@@ -7328,6 +8093,7 @@ export type Database = {
           order_code?: string
           order_number?: number
           organization_id?: string
+          public_tracking_code?: string
           reported_fault?: string
           tracking_token_digest?: string
         }
@@ -7592,6 +8358,13 @@ export type Database = {
             foreignKeyName: "repair_quote_lines_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "repair_quote_lines_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -7615,6 +8388,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "repair_quote_lines_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "repair_quote_lines_variant_fk"
@@ -7991,6 +8771,7 @@ export type Database = {
           name: string
           organization_id: string
           public_message: string
+          public_stage: string | null
           requires_final_tests: boolean
         }
         Insert: {
@@ -8004,6 +8785,7 @@ export type Database = {
           name: string
           organization_id: string
           public_message: string
+          public_stage?: string | null
           requires_final_tests?: boolean
         }
         Update: {
@@ -8017,6 +8799,7 @@ export type Database = {
           name?: string
           organization_id?: string
           public_message?: string
+          public_stage?: string | null
           requires_final_tests?: boolean
         }
         Relationships: [
@@ -8224,6 +9007,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      repair_tracking_attempts: {
+        Row: {
+          attempts: number
+          bucket: string
+          window_started: string
+        }
+        Insert: {
+          attempts: number
+          bucket: string
+          window_started: string
+        }
+        Update: {
+          attempts?: number
+          bucket?: string
+          window_started?: string
+        }
+        Relationships: []
+      }
+      repair_tracking_rate_config: {
+        Row: {
+          max_per_ip: number
+          max_per_value: number
+          singleton: boolean
+          window_seconds: number
+        }
+        Insert: {
+          max_per_ip?: number
+          max_per_value?: number
+          singleton?: boolean
+          window_seconds?: number
+        }
+        Update: {
+          max_per_ip?: number
+          max_per_value?: number
+          singleton?: boolean
+          window_seconds?: number
+        }
+        Relationships: []
       }
       repair_tracking_tokens: {
         Row: {
@@ -8566,17 +9388,21 @@ export type Database = {
           description: string
           discount_amount: number
           from_location_id: string | null
+          gross_discount_amount: number
           id: string
           inventory_unit_id: string | null
           kind: Database["erp"]["Enums"]["sale_line_kind"]
           line_number: number
           line_total: number
+          net_subtotal_amount: number | null
           organization_id: string
+          pricing_version: string
           product_id: string | null
           quantity: number
           sale_id: string
           tax_amount: number
           tax_rate_percent: number
+          unit_gross_price: number | null
           unit_price: number
           variant_id: string | null
         }
@@ -8586,17 +9412,21 @@ export type Database = {
           description: string
           discount_amount?: number
           from_location_id?: string | null
+          gross_discount_amount?: number
           id?: string
           inventory_unit_id?: string | null
           kind: Database["erp"]["Enums"]["sale_line_kind"]
           line_number: number
           line_total: number
+          net_subtotal_amount?: number | null
           organization_id: string
+          pricing_version?: string
           product_id?: string | null
           quantity: number
           sale_id: string
           tax_amount: number
           tax_rate_percent: number
+          unit_gross_price?: number | null
           unit_price: number
           variant_id?: string | null
         }
@@ -8606,17 +9436,21 @@ export type Database = {
           description?: string
           discount_amount?: number
           from_location_id?: string | null
+          gross_discount_amount?: number
           id?: string
           inventory_unit_id?: string | null
           kind?: Database["erp"]["Enums"]["sale_line_kind"]
           line_number?: number
           line_total?: number
+          net_subtotal_amount?: number | null
           organization_id?: string
+          pricing_version?: string
           product_id?: string | null
           quantity?: number
           sale_id?: string
           tax_amount?: number
           tax_rate_percent?: number
+          unit_gross_price?: number | null
           unit_price?: number
           variant_id?: string | null
         }
@@ -8634,6 +9468,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sale_lines_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
           },
           {
             foreignKeyName: "sale_lines_product_fk"
@@ -8662,6 +9503,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "sale_lines_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "sale_lines_variant_fk"
@@ -8749,6 +9597,7 @@ export type Database = {
           id: string
           idempotency_key: string
           organization_id: string
+          pricing_version: string
           reason: string
           request_hash: string
           stock_document_id: string | null
@@ -8768,6 +9617,7 @@ export type Database = {
           id?: string
           idempotency_key: string
           organization_id: string
+          pricing_version?: string
           reason: string
           request_hash: string
           stock_document_id?: string | null
@@ -8787,6 +9637,7 @@ export type Database = {
           id?: string
           idempotency_key?: string
           organization_id?: string
+          pricing_version?: string
           reason?: string
           request_hash?: string
           stock_document_id?: string | null
@@ -9049,6 +9900,13 @@ export type Database = {
             foreignKeyName: "stock_balances_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_balances_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -9058,6 +9916,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_profitability_by_line"
             referencedColumns: ["product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_balances_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "stock_balances_variant_fk"
@@ -9166,6 +10031,13 @@ export type Database = {
             foreignKeyName: "stock_cost_movements_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_cost_movements_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -9203,6 +10075,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_cost_movements_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "stock_cost_movements_variant_fk"
@@ -9300,6 +10179,13 @@ export type Database = {
             foreignKeyName: "stock_document_lines_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_document_lines_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -9323,6 +10209,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_document_lines_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "stock_document_lines_variant_fk"
@@ -9485,6 +10378,13 @@ export type Database = {
             foreignKeyName: "stock_movements_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_movements_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -9501,6 +10401,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_movements_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "stock_movements_variant_fk"
@@ -9643,6 +10550,13 @@ export type Database = {
             foreignKeyName: "stock_reservations_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_reservations_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -9664,8 +10578,76 @@ export type Database = {
             foreignKeyName: "stock_reservations_variant_fk"
             columns: ["variant_id", "product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_reservations_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "product_variants"
             referencedColumns: ["id", "product_id", "organization_id"]
+          },
+        ]
+      }
+      storefront_catalog_sync: {
+        Row: {
+          enabled_at: string
+          organization_id: string
+        }
+        Insert: {
+          enabled_at?: string
+          organization_id: string
+        }
+        Update: {
+          enabled_at?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_catalog_sync_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      storefront_cutover_groups: {
+        Row: {
+          admin_tab_hidden: boolean
+          group_code: string
+          legacy_write_mode: string
+          organization_id: string
+          reason: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          admin_tab_hidden?: boolean
+          group_code: string
+          legacy_write_mode?: string
+          organization_id: string
+          reason?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          admin_tab_hidden?: boolean
+          group_code?: string
+          legacy_write_mode?: string
+          organization_id?: string
+          reason?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_cutover_groups_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -9767,6 +10749,52 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "web_orders"
             referencedColumns: ["id", "organization_id", "branch_id"]
+          },
+        ]
+      }
+      storefront_stock_capture: {
+        Row: {
+          enabled_at: string
+          organization_id: string
+        }
+        Insert: {
+          enabled_at?: string
+          organization_id: string
+        }
+        Update: {
+          enabled_at?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_stock_capture_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      storefront_stock_projection: {
+        Row: {
+          enabled_at: string
+          organization_id: string
+        }
+        Insert: {
+          enabled_at?: string
+          organization_id: string
+        }
+        Update: {
+          enabled_at?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "storefront_stock_projection_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -11072,6 +12100,13 @@ export type Database = {
             foreignKeyName: "trade_ins_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "trade_ins_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -11088,6 +12123,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "trade_ins_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "trade_ins_variant_fk"
@@ -11302,11 +12344,14 @@ export type Database = {
           line_number: number
           line_total: number
           location_id: string
+          net_subtotal_amount: number | null
           organization_id: string
+          pricing_version: string
           product_id: string
           quantity: number
           tax_amount: number
           tax_rate_percent: number
+          unit_gross_price: number | null
           unit_price: number
           variant_id: string | null
           web_order_id: string
@@ -11320,11 +12365,14 @@ export type Database = {
           line_number: number
           line_total: number
           location_id: string
+          net_subtotal_amount?: number | null
           organization_id: string
+          pricing_version?: string
           product_id: string
           quantity: number
           tax_amount: number
           tax_rate_percent: number
+          unit_gross_price?: number | null
           unit_price: number
           variant_id?: string | null
           web_order_id: string
@@ -11338,11 +12386,14 @@ export type Database = {
           line_number?: number
           line_total?: number
           location_id?: string
+          net_subtotal_amount?: number | null
           organization_id?: string
+          pricing_version?: string
           product_id?: string
           quantity?: number
           tax_amount?: number
           tax_rate_percent?: number
+          unit_gross_price?: number | null
           unit_price?: number
           variant_id?: string | null
           web_order_id?: string
@@ -11373,6 +12424,13 @@ export type Database = {
             foreignKeyName: "web_order_lines_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "web_order_lines_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -11389,6 +12447,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "web_order_lines_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "web_order_lines_variant_fk"
@@ -11412,6 +12477,7 @@ export type Database = {
           id: string
           idempotency_key: string
           organization_id: string
+          pricing_version: string
           request_hash: string
           reservation_batch_id: string | null
           total_amount: number
@@ -11428,6 +12494,7 @@ export type Database = {
           id?: string
           idempotency_key: string
           organization_id: string
+          pricing_version?: string
           request_hash: string
           reservation_batch_id?: string | null
           total_amount: number
@@ -11444,6 +12511,7 @@ export type Database = {
           id?: string
           idempotency_key?: string
           organization_id?: string
+          pricing_version?: string
           request_hash?: string
           reservation_batch_id?: string | null
           total_amount?: number
@@ -11609,6 +12677,343 @@ export type Database = {
       }
     }
     Views: {
+      active_catalog_products: {
+        Row: {
+          admission_date: string | null
+          allow_online_sale: boolean | null
+          base_sale_price: number | null
+          brand_id: string | null
+          can_sell: boolean | null
+          can_use_as_repair_part: boolean | null
+          capacity: string | null
+          category_id: string | null
+          condition: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string | null
+          internal_code: string | null
+          internal_description: string | null
+          internal_image_path: string | null
+          internal_name: string | null
+          inventory_tracking:
+            | Database["erp"]["Enums"]["inventory_tracking_mode"]
+            | null
+          is_active: boolean | null
+          item_kind: Database["erp"]["Enums"]["catalog_item_kind"] | null
+          media_initialized: boolean | null
+          minimum_stock: number | null
+          model_id: string | null
+          normalized_internal_code: string | null
+          organization_id: string | null
+          product_type_id: string | null
+          public_description: string | null
+          public_name: string | null
+          publish_on_web: boolean | null
+          service_price_mode:
+            | Database["erp"]["Enums"]["service_price_mode"]
+            | null
+          sheet_fields_initialized: boolean | null
+          sheet_template: string | null
+          tags: string[] | null
+          tax_rate_percent: number | null
+          unit_id: string | null
+          updated_at: string | null
+          updated_by: string | null
+          warranty_days: number | null
+          web_image_path: string | null
+          web_status: string | null
+          zero_stock_behavior:
+            | Database["erp"]["Enums"]["zero_stock_behavior"]
+            | null
+        }
+        Insert: {
+          admission_date?: string | null
+          allow_online_sale?: boolean | null
+          base_sale_price?: number | null
+          brand_id?: string | null
+          can_sell?: boolean | null
+          can_use_as_repair_part?: boolean | null
+          capacity?: string | null
+          category_id?: string | null
+          condition?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string | null
+          internal_code?: string | null
+          internal_description?: string | null
+          internal_image_path?: string | null
+          internal_name?: string | null
+          inventory_tracking?:
+            | Database["erp"]["Enums"]["inventory_tracking_mode"]
+            | null
+          is_active?: boolean | null
+          item_kind?: Database["erp"]["Enums"]["catalog_item_kind"] | null
+          media_initialized?: boolean | null
+          minimum_stock?: number | null
+          model_id?: string | null
+          normalized_internal_code?: string | null
+          organization_id?: string | null
+          product_type_id?: string | null
+          public_description?: string | null
+          public_name?: string | null
+          publish_on_web?: boolean | null
+          service_price_mode?:
+            | Database["erp"]["Enums"]["service_price_mode"]
+            | null
+          sheet_fields_initialized?: boolean | null
+          sheet_template?: string | null
+          tags?: string[] | null
+          tax_rate_percent?: number | null
+          unit_id?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+          warranty_days?: number | null
+          web_image_path?: string | null
+          web_status?: string | null
+          zero_stock_behavior?:
+            | Database["erp"]["Enums"]["zero_stock_behavior"]
+            | null
+        }
+        Update: {
+          admission_date?: string | null
+          allow_online_sale?: boolean | null
+          base_sale_price?: number | null
+          brand_id?: string | null
+          can_sell?: boolean | null
+          can_use_as_repair_part?: boolean | null
+          capacity?: string | null
+          category_id?: string | null
+          condition?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string | null
+          internal_code?: string | null
+          internal_description?: string | null
+          internal_image_path?: string | null
+          internal_name?: string | null
+          inventory_tracking?:
+            | Database["erp"]["Enums"]["inventory_tracking_mode"]
+            | null
+          is_active?: boolean | null
+          item_kind?: Database["erp"]["Enums"]["catalog_item_kind"] | null
+          media_initialized?: boolean | null
+          minimum_stock?: number | null
+          model_id?: string | null
+          normalized_internal_code?: string | null
+          organization_id?: string | null
+          product_type_id?: string | null
+          public_description?: string | null
+          public_name?: string | null
+          publish_on_web?: boolean | null
+          service_price_mode?:
+            | Database["erp"]["Enums"]["service_price_mode"]
+            | null
+          sheet_fields_initialized?: boolean | null
+          sheet_template?: string | null
+          tags?: string[] | null
+          tax_rate_percent?: number | null
+          unit_id?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+          warranty_days?: number | null
+          web_image_path?: string | null
+          web_status?: string | null
+          zero_stock_behavior?:
+            | Database["erp"]["Enums"]["zero_stock_behavior"]
+            | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_brand_organization_fk"
+            columns: ["brand_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "products_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "product_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_category_organization_fk"
+            columns: ["category_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "product_categories"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "products_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "product_models"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_model_organization_fk"
+            columns: ["model_id", "organization_id", "brand_id"]
+            isOneToOne: false
+            referencedRelation: "product_models"
+            referencedColumns: ["id", "organization_id", "brand_id"]
+          },
+          {
+            foreignKeyName: "products_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_product_type_fk"
+            columns: ["product_type_id", "organization_id", "item_kind"]
+            isOneToOne: false
+            referencedRelation: "product_types"
+            referencedColumns: ["id", "organization_id", "item_kind"]
+          },
+          {
+            foreignKeyName: "products_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units_of_measure"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_unit_organization_fk"
+            columns: ["unit_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "units_of_measure"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      active_catalog_variants: {
+        Row: {
+          attributes: Json | null
+          code: string | null
+          color_id: string | null
+          created_at: string | null
+          final_price_ars: number | null
+          id: string | null
+          image_path: string | null
+          is_active: boolean | null
+          name: string | null
+          organization_id: string | null
+          price_delta: number | null
+          product_id: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_variants_color_fk"
+            columns: ["color_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "colors"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_variants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_variants_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_variants_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "product_variants_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_profitability_by_line"
+            referencedColumns: ["product_id", "organization_id"]
+          },
+        ]
+      }
+      active_stock_balances: {
+        Row: {
+          branch_id: string | null
+          id: string | null
+          location_id: string | null
+          organization_id: string | null
+          product_id: string | null
+          quantity_on_hand: number | null
+          quantity_reserved: number | null
+          updated_at: string | null
+          variant_id: string | null
+          variant_key: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_balances_location_fk"
+            columns: ["location_id", "organization_id", "branch_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id", "organization_id", "branch_id"]
+          },
+          {
+            foreignKeyName: "stock_balances_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_balances_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_balances_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_balances_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_profitability_by_line"
+            referencedColumns: ["product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_balances_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "stock_balances_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
+          },
+        ]
+      }
       pc_build_projects_overview: {
         Row: {
           branch_id: string | null
@@ -11696,6 +13101,7 @@ export type Database = {
           order_code: string | null
           order_number: number | null
           organization_id: string | null
+          public_tracking_code: string | null
           qc_passed: boolean | null
           recipient_document_suffix: string | null
           recipient_name: string | null
@@ -11706,6 +13112,7 @@ export type Database = {
           status_is_terminal: boolean | null
           status_name: string | null
           status_public_message: string | null
+          status_public_stage: string | null
           status_requires_final_tests: boolean | null
           status_updated_at: string | null
           warranty_ends_at: string | null
@@ -11815,6 +13222,13 @@ export type Database = {
             foreignKeyName: "trade_ins_product_fk"
             columns: ["product_id", "organization_id"]
             isOneToOne: false
+            referencedRelation: "active_catalog_products"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "trade_ins_product_fk"
+            columns: ["product_id", "organization_id"]
+            isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id", "organization_id"]
           },
@@ -11831,6 +13245,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "inventory_units"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "trade_ins_variant_fk"
+            columns: ["variant_id", "product_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "active_catalog_variants"
+            referencedColumns: ["id", "product_id", "organization_id"]
           },
           {
             foreignKeyName: "trade_ins_variant_fk"
@@ -11944,6 +13365,26 @@ export type Database = {
       }
     }
     Functions: {
+      activate_storefront_bridge: {
+        Args: { p_organization_id: string }
+        Returns: number
+      }
+      activate_storefront_stock_capture: {
+        Args: { p_organization_id: string }
+        Returns: undefined
+      }
+      activate_storefront_stock_projection: {
+        Args: { p_organization_id: string }
+        Returns: number
+      }
+      add_repair_note: {
+        Args: {
+          p_content: string
+          p_is_public: boolean
+          p_repair_order_id: string
+        }
+        Returns: string
+      }
       apply_price_change: {
         Args: {
           operation_key: string
@@ -11998,6 +13439,10 @@ export type Database = {
         }
         Returns: string
       }
+      assign_profile_role: {
+        Args: { p_profile_id: string; p_role_id: string }
+        Returns: undefined
+      }
       assign_repair_order: {
         Args: {
           operation_key: string
@@ -12008,6 +13453,10 @@ export type Database = {
         Returns: string
       }
       bootstrap_chart_of_accounts: { Args: never; Returns: undefined }
+      bootstrap_first_owner: {
+        Args: { p_profile_id: string }
+        Returns: undefined
+      }
       bootstrap_owner: {
         Args: { auth_user_id: string; target_organization_id: string }
         Returns: undefined
@@ -12016,6 +13465,7 @@ export type Database = {
         Args: { target_contract_id: string }
         Returns: Database["erp"]["Enums"]["financing_status"]
       }
+      can_manage_promotions: { Args: { p_org: string }; Returns: boolean }
       cancel_sale: {
         Args: {
           operation_key: string
@@ -12035,6 +13485,15 @@ export type Database = {
           target_quote_currency: string
         }
         Returns: string
+      }
+      capture_storefront_stock_delta: {
+        Args: {
+          p_current: number
+          p_previous: number
+          p_product_id: string
+          p_variant_id: string
+        }
+        Returns: undefined
       }
       claim_due_integration_retries: {
         Args: { batch_limit?: number; lease_seconds?: number }
@@ -12397,6 +13856,23 @@ export type Database = {
         }
         Returns: string
       }
+      create_sale_core: {
+        Args: {
+          p_lines: Json
+          p_operation_key: string
+          p_operation_reason: string
+          p_origin: string
+          p_payment_lines?: Json
+          p_pricing_version: string
+          p_raw_request_hash?: string
+          p_sale_currency: string
+          p_target_branch_id: string
+          p_target_customer_id: string
+          p_target_exchange_snapshot_id: string
+          p_target_reservation_batch_id?: string
+        }
+        Returns: string
+      }
       create_sale_with_fiscal_document: {
         Args: {
           lines: Json
@@ -12492,6 +13968,10 @@ export type Database = {
         }
         Returns: string
       }
+      enable_storefront_reference_sync: {
+        Args: { p_organization_id: string }
+        Returns: undefined
+      }
       ensure_default_accounting_setup: {
         Args: { target_organization_id: string }
         Returns: undefined
@@ -12508,6 +13988,7 @@ export type Database = {
         Args: { target_organization_id: string }
         Returns: undefined
       }
+      ensure_storefront_ars_exchange_snapshot: { Args: never; Returns: string }
       expire_stock_reservations: {
         Args: { batch_limit?: number; target_branch_id: string }
         Returns: number
@@ -12556,6 +14037,16 @@ export type Database = {
           target_web_order_id: string
         }
         Returns: string
+      }
+      get_catalog_product_variants:
+        | { Args: { p_product_id: string }; Returns: Json }
+        | {
+            Args: { p_include_inactive: boolean; p_product_id: string }
+            Returns: Json
+          }
+      get_catalog_publish_checklist: {
+        Args: { p_product_id: string }
+        Returns: Json
       }
       get_current_erp_context: { Args: never; Returns: Json }
       get_customer_equipment_identifiers: {
@@ -12617,6 +14108,32 @@ export type Database = {
           unit_cost_snapshot: number
         }[]
       }
+      get_product_compatible_models: {
+        Args: { p_product_id: string }
+        Returns: Json
+      }
+      get_repair_by_tracking_code_erp_core: {
+        Args: { search_code: string }
+        Returns: {
+          client_dni: string
+          client_name: string
+          created_at: string
+          device_brand: string
+          device_model: string
+          id: string
+          locality: string
+          notes: string
+          problem_description: string
+          repair_logs: Json
+          status:
+            | "Recibido"
+            | "Diagnóstico"
+            | "Repuestos"
+            | "Reparación"
+            | "Finalizado"
+          tracking_code: string
+        }[]
+      }
       get_repair_credentials: {
         Args: { target_repair_order_id: string }
         Returns: Json
@@ -12649,6 +14166,12 @@ export type Database = {
       has_permission: {
         Args: { permission_code: string; target_branch_id?: string }
         Returns: boolean
+      }
+      import_storefront_catalog_opening: { Args: never; Returns: Json }
+      install_legacy_write_canaries: { Args: never; Returns: undefined }
+      install_repair_public_stages: {
+        Args: { target_org: string }
+        Returns: undefined
       }
       intake_repair_order: {
         Args: {
@@ -12799,8 +14322,21 @@ export type Database = {
           settlement_kind: string
         }[]
       }
+      manage_product_variants: {
+        Args: {
+          p_expected_updated_at?: string
+          p_product_id: string
+          p_variants: Json
+        }
+        Returns: Json
+      }
       move_integration_to_dead_letter: {
         Args: { operation_reason: string; target_outbox_id: string }
+        Returns: string
+      }
+      new_repair_public_code: { Args: never; Returns: string }
+      next_catalog_product_code: {
+        Args: { p_category_id: string }
         Returns: string
       }
       open_cash_session: {
@@ -12830,6 +14366,10 @@ export type Database = {
           operation_reason: string
           target_cash_session_id: string
         }
+        Returns: string
+      }
+      post_confirmed_sale_accounting_v2_exact4: {
+        Args: { target_org_id: string; target_sale_id: string }
         Returns: string
       }
       post_erp_source_event: {
@@ -12991,6 +14531,18 @@ export type Database = {
         Args: { target_document_id: string }
         Returns: undefined
       }
+      project_catalog_sheet: {
+        Args: { p_id: string; p_org: string }
+        Returns: undefined
+      }
+      project_storefront_product_stock: {
+        Args: { p_organization_id: string; p_product_id: string }
+        Returns: undefined
+      }
+      project_storefront_variant_prices: {
+        Args: { p_org: string; p_product: string }
+        Returns: undefined
+      }
       provision_repair_credential_key: {
         Args: {
           new_key_material: string
@@ -12999,6 +14551,7 @@ export type Database = {
         }
         Returns: string
       }
+      publish_catalog_product: { Args: { p_product_id: string }; Returns: Json }
       queue_customer_message: {
         Args: {
           operation_key: string
@@ -13011,6 +14564,10 @@ export type Database = {
           variables: Json
         }
         Returns: string
+      }
+      recode_catalog_product: {
+        Args: { p_new_code: string; p_product_id: string }
+        Returns: Json
       }
       reconcile_account_balance: {
         Args: {
@@ -13442,6 +14999,29 @@ export type Database = {
         }
         Returns: string
       }
+      resolve_catalog_effective_price: {
+        Args: { p_product_id: string; p_variant_id?: string }
+        Returns: Json
+      }
+      resolve_catalog_effective_price_internal: {
+        Args: {
+          p_at?: string
+          p_organization_id: string
+          p_product_id: string
+          p_variant_id?: string
+        }
+        Returns: Json
+      }
+      resolve_catalog_price_for_channel: {
+        Args: {
+          p_at: string
+          p_channel: string
+          p_org: string
+          p_product: string
+          p_variant: string
+        }
+        Returns: Json
+      }
       respond_quote_direct: {
         Args: {
           customer_message?: string
@@ -13484,6 +15064,19 @@ export type Database = {
           operation_key: string
           operation_reason: string
           target_cash_movement_id: string
+        }
+        Returns: string
+      }
+      reverse_pos_v2_journal_entry_exact4: {
+        Args: {
+          internal_command: boolean
+          operation_key: string
+          operation_reason: string
+          target_entry_id: string
+          target_organization_id: string
+          target_reversal_date: string
+          target_source_id: string
+          target_source_type: string
         }
         Returns: string
       }
@@ -13612,8 +15205,52 @@ export type Database = {
         }
         Returns: string
       }
+      save_catalog_color: {
+        Args: {
+          p_color_id?: string
+          p_hex?: string
+          p_is_active?: boolean
+          p_name: string
+        }
+        Returns: Json
+      }
+      save_catalog_product_sheet: {
+        Args: { p_expected_updated_at?: string; payload: Json }
+        Returns: Json
+      }
+      search_repairs_by_document: {
+        Args: { p_document: string }
+        Returns: {
+          repair_order_id: string
+        }[]
+      }
+      set_product_compatible_models: {
+        Args: {
+          p_expected_updated_at?: string
+          p_model_ids: string[]
+          p_product_id: string
+        }
+        Returns: Json
+      }
+      set_promotion_active: {
+        Args: { p_active: boolean; p_id: string }
+        Returns: undefined
+      }
+      set_storefront_cutover_group: {
+        Args: {
+          p_admin_tab_hidden: boolean
+          p_group_code: string
+          p_legacy_write_mode: string
+          p_reason: string
+        }
+        Returns: undefined
+      }
       stage8_json_has_forbidden_key: {
         Args: { forbidden_keys: string[]; value: Json }
+        Returns: boolean
+      }
+      storefront_catalog_write_allowed: {
+        Args: { p_organization_id: string }
         Returns: boolean
       }
       transfer_customer_equipment: {
@@ -13636,6 +15273,10 @@ export type Database = {
         }
         Returns: string
       }
+      unpublish_catalog_product: {
+        Args: { p_product_id: string }
+        Returns: Json
+      }
       upsert_customer_private_details: {
         Args: {
           new_address?: Json
@@ -13645,6 +15286,20 @@ export type Database = {
           new_internal_notes?: string
           new_tax_id?: string
           target_customer_id: string
+        }
+        Returns: string
+      }
+      upsert_promotion: {
+        Args: {
+          p_channels: string[]
+          p_ends_at: string
+          p_id: string
+          p_is_active: boolean
+          p_kind: string
+          p_name: string
+          p_starts_at: string
+          p_targets: Json
+          p_value: number
         }
         Returns: string
       }
@@ -14039,4 +15694,3 @@ export const Constants = {
     },
   },
 } as const
-

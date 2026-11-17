@@ -8,7 +8,6 @@ import {
   DollarSign,
   Loader2,
   RefreshCw,
-  Edit2,
   ChevronLeft,
   ChevronRight,
   ArrowDownRight,
@@ -34,12 +33,8 @@ import {
   getActiveBarcode,
   getErrorMessage,
 } from "./schemas";
-import { CreateProductModal } from "./CreateProductModal";
-import { ProductEditModal } from "./ProductEditModal";
+import { CatalogSheetModal } from "./CatalogSheetModal";
 import { StockIntakeModal } from "./StockIntakeModal";
-import { ProductDetailModal } from "./ProductDetailModal";
-import { ProductCompatibilityModal } from "./ProductCompatibilityModal";
-import { ProductVariantsModal } from "./ProductVariantsModal";
 
 export interface CatalogWorkspaceProps {
   activeModuleId?: "catalog" | "pricing";
@@ -59,6 +54,8 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
+  const [showInactive, setShowInactive] = useState(false);
+  const [legacyDatabase, setLegacyDatabase] = useState(false);
 
   // Master reference data
   const [categories, setCategories] = useState<MasterCategory[]>([]);
@@ -70,10 +67,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
 
   // Modals & Feedback
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
-  const [detailProduct, setDetailProduct] = useState<DbCatalogProduct | null>(null);
   const [editingProduct, setEditingProduct] = useState<DbCatalogProduct | null>(null);
-  const [compatibilityProduct, setCompatibilityProduct] = useState<DbCatalogProduct | null>(null);
-  const [variantsProduct, setVariantsProduct] = useState<DbCatalogProduct | null>(null);
   const [stockIntakeTarget, setStockIntakeTarget] = useState<{
     product: DbCatalogProduct;
     variantId?: string | null;
@@ -119,48 +113,48 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
       setLoading(true);
       setError(null);
 
-      let query = supabase
-        .from("products")
-        .select(
-          `
-          id, internal_code, internal_name, public_name, base_sale_price,
+      const loadProducts = async (legacy: boolean) => {
+        const sheetFields = legacy ? "" : "sheet_template, web_status, tags, condition, capacity, media_initialized, sheet_fields_initialized,";
+        const variantFields = legacy ? "" : "color_id, final_price_ars,";
+        let query = supabase.from("products").select<string, DbCatalogProduct>(
+          `id, internal_code, internal_name, public_name, public_description, internal_description, base_sale_price,
+          ${sheetFields}
           tax_rate_percent, is_active, item_kind, inventory_tracking, created_at, updated_at,
           category_id, brand_id, model_id,
           product_categories:product_categories!products_category_id_fkey(name),
           brands:brands!products_brand_id_fkey(name),
           product_models:product_models!products_model_id_fkey(name),
-          product_variants(id, code, name, price_delta, final_price_ars, is_active, product_identifiers(id, kind, value, is_primary, is_active)),
-          stock_balances(quantity_on_hand, quantity_reserved, variant_id, location_id)
-        `,
+          product_variants(id, code, name, ${variantFields} price_delta, is_active, product_identifiers(id, kind, value, is_primary, is_active)),
+          stock_balances(quantity_on_hand, quantity_reserved, variant_id, location_id)`,
           { count: "exact" },
         );
+        if (!showInactive) query = query.eq("is_active", true);
+        if (selectedCategoryId !== "all") query = query.eq("category_id", selectedCategoryId);
+        if (search.trim()) {
+          const term = search.trim().replace(/[,()]/g, "");
+          if (term) query = query.or(`internal_name.ilike.%${term}%,internal_code.ilike.%${term}%`);
+        }
+        return query.order("created_at", { ascending: false })
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      };
 
-      // Server-side category filter before count and range
-      if (selectedCategoryId !== "all") {
-        query = query.eq("category_id", selectedCategoryId);
-      }
-
-      if (search.trim()) {
-        const term = search.trim();
-        query = query.or(`internal_name.ilike.%${term}%,internal_code.ilike.%${term}%`);
-      }
-
-      query = query
-        .order("created_at", { ascending: false })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-      const { data, error: dbErr, count } = await query;
-
+      let result = await loadProducts(false);
+      const code = result.error?.code ?? "";
+      const missingSchema = /^(PGRST202|42703|42883)$/.test(code)
+        || /schema cache|column .* does not exist/i.test(result.error?.message ?? "");
+      setLegacyDatabase(missingSchema);
+      if (missingSchema) result = await loadProducts(true);
+      const { data, error: dbErr, count } = result;
       if (dbErr) throw dbErr;
-      setProducts((data as DbCatalogProduct[]) ?? []);
+      setProducts(data ?? []);
       setTotalCount(count ?? 0);
     } catch (err: unknown) {
       const msg = getErrorMessage(err, "Error al cargar catálogo ERP");
-      setError(msg);
+      setError(/schema cache|does not exist|column .* does not exist/i.test(msg) ? "La base no tiene las migraciones de la ficha de catálogo. Aplicalas primero en un entorno autorizado." : msg);
     } finally {
       setLoading(false);
     }
-  }, [page, search, selectedCategoryId]);
+  }, [page, search, selectedCategoryId, showInactive]);
 
   useEffect(() => {
     fetchProducts();
@@ -226,6 +220,8 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           onClose={() => setFeedback(null)}
         />
       )}
+
+      {legacyDatabase && <FeedbackAlert type="error" message="La ficha nueva requiere actualizar la base. El listado sigue disponible." onClose={() => setLegacyDatabase(false)} />}
 
       {masterError && (
         <FeedbackAlert
@@ -330,6 +326,8 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           </div>
         </div>
 
+        <label><input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(0); }} /> Ver inactivos</label>
+
         {/* Filter Pills */}
         <div className="horizontal-scroll-pills" style={{ marginBottom: "16px" }}>
           {categoryPills.map((cat) => (
@@ -390,18 +388,18 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                       </td>
                       <td>
                         <div>
-                          <strong
+                          <button type="button"
                             style={{
                               fontSize: "13px",
                               color: "var(--text-main)",
                               display: "block",
                               cursor: "pointer",
                             }}
-                            onClick={() => setDetailProduct(item)}
-                            title="Ver ficha compacta"
+                            onClick={() => setEditingProduct(item)}
+                            title="Abrir ficha"
                           >
                             {item.internal_name}
-                          </strong>
+                          </button>
                           {item.brands?.name && (
                             <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
                               {item.brands.name} {item.product_models?.name ? `• ${item.product_models.name}` : ""}
@@ -417,7 +415,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                               const barcode = getActiveBarcode(v.product_identifiers);
 
                               return (
-                                <span
+                                <button type="button"
                                   key={v.id}
                                   className="module-state-badge"
                                   style={{
@@ -430,7 +428,6 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                                   }}
                                   title={barcode ? `Código de barras: ${barcode}` : undefined}
                                   onClick={() => {
-                                    setDetailProduct(null);
                                     setStockIntakeTarget({ product: item, variantId: v.id });
                                   }}
                                 >
@@ -441,7 +438,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                                       [{vSummary.reserved}r]
                                     </span>
                                   )}
-                                </span>
+                                </button>
                               );
                             })}
                           </div>
@@ -483,22 +480,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                         )}
                       </td>
                       <td>
-                        {item.is_active === false ? (
-                          <span
-                            className="flow-status-pill pending"
-                            style={{
-                              background: "var(--rose-soft)",
-                              color: "var(--rose-accent)",
-                              borderColor: "var(--rose-border)",
-                            }}
-                          >
-                            Pausado
-                          </span>
-                        ) : totalSummary.available > 0 ? (
-                          <span className="flow-status-pill completed">Disponible</span>
-                        ) : (
-                          <span className="flow-status-pill pending">Agotado</span>
-                        )}
+                        <span className="flow-status-pill pending">{item.web_status === "published" ? "Publicado" : item.web_status === "paused" ? "Pausado" : item.web_status === "draft" ? "Borrador" : "Estado web no disponible"}{!item.is_active ? " · Inactivo" : ""}</span>
                       </td>
                       <td className="text-right">
                         <div style={{ display: "inline-flex", gap: "6px" }}>
@@ -506,8 +488,8 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                             type="button"
                             className="pag-btn"
                             style={{ padding: "4px 8px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                            onClick={() => setDetailProduct(item)}
-                            title="Ver ficha compacta"
+                            onClick={() => setEditingProduct(item)}
+                            title="Abrir ficha"
                           >
                             <FileText size={11} /> Ficha
                           </button>
@@ -516,24 +498,11 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                             className="pag-btn"
                             style={{ padding: "4px 8px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}
                             onClick={() => {
-                              setDetailProduct(null);
                               setStockIntakeTarget({ product: item });
                             }}
                             title="Cargar stock"
                           >
                             <ArrowDownRight size={11} /> Stock
-                          </button>
-                          <button
-                            type="button"
-                            className="pag-btn"
-                            style={{ padding: "4px 8px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                            onClick={() => {
-                              setDetailProduct(null);
-                              setEditingProduct(item);
-                            }}
-                            title="Editar datos"
-                          >
-                            <Edit2 size={11} /> Editar
                           </button>
                         </div>
                       </td>
@@ -580,92 +549,10 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* Modal: Create Product with Variants */}
-      <CreateProductModal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        categories={categories}
-        brands={brands}
-        models={models}
-        locations={locations}
-        onSuccess={(msg) => {
-          setFeedback({ type: "success", message: msg });
-          fetchProducts();
-        }}
-      />
-
-      {/* Modal: Compact Product Ficha */}
-      {detailProduct && (
-        <ProductDetailModal
-          isOpen={Boolean(detailProduct)}
-          onClose={() => setDetailProduct(null)}
-          product={detailProduct}
-          onOpenEdit={() => {
-            const current = detailProduct;
-            setDetailProduct(null);
-            setEditingProduct(current);
-          }}
-          onOpenStockIntake={(variantId) => {
-            const current = detailProduct;
-            setDetailProduct(null);
-            setStockIntakeTarget({ product: current, variantId });
-          }}
-          onOpenCompatibility={() => {
-            const current = detailProduct;
-            setDetailProduct(null);
-            setCompatibilityProduct(current);
-          }}
-          onOpenManageVariants={() => {
-            const current = detailProduct;
-            setDetailProduct(null);
-            setVariantsProduct(current);
-          }}
-        />
-      )}
-
-      {/* Modal: N:M Compatibility Management */}
-      {compatibilityProduct && (
-        <ProductCompatibilityModal
-          isOpen={Boolean(compatibilityProduct)}
-          onClose={() => setCompatibilityProduct(null)}
-          product={compatibilityProduct}
-          brands={brands}
-          models={models}
-          onSuccess={(msg) => {
-            setFeedback({ type: "success", message: msg });
-            fetchProducts();
-          }}
-        />
-      )}
-
-      {/* Modal: Product Variants & States Management */}
-      {variantsProduct && (
-        <ProductVariantsModal
-          isOpen={Boolean(variantsProduct)}
-          onClose={() => setVariantsProduct(null)}
-          product={variantsProduct}
-          onSuccess={(msg) => {
-            setFeedback({ type: "success", message: msg });
-            fetchProducts();
-          }}
-        />
-      )}
-
-      {/* Modal: Edit Product Master Data (Safely Preserves Variants and Stock) */}
-      {editingProduct && (
-        <ProductEditModal
-          isOpen={Boolean(editingProduct)}
-          onClose={() => setEditingProduct(null)}
-          product={editingProduct}
-          categories={categories}
-          brands={brands}
-          models={models}
-          onSuccess={(msg) => {
-            setDetailProduct(null);
-            setFeedback({ type: "success", message: msg });
-            fetchProducts();
-          }}
-        />
+      {(isCreateOpen || editingProduct) && (
+        <CatalogSheetModal isOpen onClose={() => { setIsCreateOpen(false); setEditingProduct(null); }}
+          product={editingProduct} categories={categories} brands={brands} models={models} locations={locations}
+          onSuccess={(message) => { setFeedback({ type: "success", message }); void fetchProducts(); }} />
       )}
 
       {/* Modal: Dedicated Formal Stock Intake */}
@@ -677,7 +564,6 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           initialVariantId={stockIntakeTarget.variantId}
           locations={locations}
           onSuccess={(msg) => {
-            setDetailProduct(null);
             setFeedback({ type: "success", message: msg });
             fetchProducts();
           }}

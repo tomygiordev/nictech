@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { repairNoteSchema, type RepairNoteInput } from "./schemas";
 import {
   Wrench,
   Search,
@@ -47,6 +50,10 @@ import {
   getRepairStatusLabel,
   listRepairOrders,
   listRepairStateEvents,
+  listRepairNotes,
+  searchRepairsByDocument,
+  addRepairNote,
+  type RepairNote,
   listAvailableTransitions,
   intakeRepairOrder,
   transitionRepairOrder,
@@ -137,6 +144,7 @@ const createRepairCustomer = async (input: {
 const STATUS_MAP: Record<string, { label: string; pillClass: string }> = {
   received: { label: "Recibido", pillClass: "flow-status-pill pending" },
   diagnosis: { label: "Diagnóstico", pillClass: "flow-status-pill processing" },
+  waiting_parts: { label: "Esperando repuestos", pillClass: "flow-status-pill processing" },
   repair: { label: "En Reparación", pillClass: "flow-status-pill processing" },
   ready: { label: "Listo para Retirar", pillClass: "flow-status-pill completed" },
   delivered: { label: "Entregado", pillClass: "flow-status-pill completed" },
@@ -162,10 +170,30 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>("active");
   const [search, setSearch] = useState<string>("");
+  const [documentMatches, setDocumentMatches] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    const document = search.trim();
+    setDocumentMatches([]);
+    if (!/^[0-9]{7,8}$/.test(document) || !hasPermission("customers.view_sensitive")) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void searchRepairsByDocument(document).then((ids) => {
+        if (!cancelled) setDocumentMatches(ids);
+      }).catch(() => {
+        if (!cancelled) setFeedback({ type: "error", message: "No se pudo buscar por DNI." });
+      });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [search, hasPermission]);
 
   // Selected Ticket Detail & Tabs
   const [selectedTicket, setSelectedTicket] = useState<RepairOrderOverview | null>(null);
+  const detailRequest = useRef(0);
+  const [ticketNotes, setTicketNotes] = useState<RepairNote[]>([]);
+  const noteForm = useForm<RepairNoteInput>({ resolver: zodResolver(repairNoteSchema), defaultValues: { content: "", isPublic: false } });
+  const { reset: resetNoteForm } = noteForm;
   const [ticketEvents, setTicketEvents] = useState<RepairStateEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState<boolean>(false);
   const [availableTransitions, setAvailableTransitions] = useState<RepairTransitionOption[]>([]);
@@ -175,6 +203,10 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const [loadingParts, setLoadingParts] = useState<boolean>(false);
   const [loadingWork, setLoadingWork] = useState<boolean>(false);
   const [detailTab, setDetailTab] = useState<"info" | "parts" | "work" | "history">("info");
+
+  useEffect(() => {
+    resetNoteForm({ content: "", isPublic: false });
+  }, [selectedTicket?.id, resetNoteForm]);
 
   // New Repair Intake Modal & Form
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
@@ -353,36 +385,44 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
   // Fetch ticket details when selecting a ticket
   const loadTicketDetails = useCallback(async (ticket: RepairOrderOverview) => {
+    const requestId = ++detailRequest.current;
     try {
       setLoadingEvents(true);
       setLoadingParts(true);
       setLoadingWork(true);
-      const [events, transitions, parts, labor, payments] = await Promise.all([
+      const [events, notes, transitions, parts, labor, payments] = await Promise.all([
         listRepairStateEvents(ticket.id),
+        listRepairNotes(ticket.id),
         listAvailableTransitions(ticket.status_id),
         listRepairParts(ticket.id),
         hasPermission("costs.view") ? listRepairLabor(ticket.id) : Promise.resolve([]),
         listRepairPayments(ticket.id),
       ]);
+      if (requestId !== detailRequest.current) return;
       setTicketEvents(events);
+      setTicketNotes(notes);
       setAvailableTransitions(transitions);
       setTicketParts(parts);
       setTicketLabor(labor);
       setTicketPayments(payments);
     } catch (e) {
+      if (requestId !== detailRequest.current) return;
       setFeedback({
         type: "error",
         message: e instanceof Error ? e.message : "No se pudo cargar el detalle de la reparación.",
       });
     } finally {
-      setLoadingEvents(false);
-      setLoadingParts(false);
-      setLoadingWork(false);
+      if (requestId === detailRequest.current) {
+        setLoadingEvents(false);
+        setLoadingParts(false);
+        setLoadingWork(false);
+      }
     }
   }, [hasPermission]);
 
   const handleSelectTicket = (ticket: RepairOrderOverview) => {
     setTicketEvents([]);
+    setTicketNotes([]);
     setTicketParts([]);
     setTicketLabor([]);
     setTicketPayments([]);
@@ -461,7 +501,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
       setFeedback({
         type: "success",
-        message: `¡Orden de Servicio ingresada con éxito! Código: ${result.order_code}`,
+        message: `Orden ${result.order_code} ingresada. Código de seguimiento: ${result.public_tracking_code}`,
       });
       setIsNewModalOpen(false);
       // Reset form
@@ -889,10 +929,12 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           ? r.status_code === "ready" && !r.delivery_id
           : r.status_code === activeFilter;
 
-      const q = search.toLowerCase();
+      const q = search.trim().toLowerCase();
       const matchSearch =
         !search.trim() ||
         r.order_code.toLowerCase().includes(q) ||
+        r.public_tracking_code.toLowerCase().includes(q) ||
+        documentMatches.includes(r.id) ||
         r.customer_name.toLowerCase().includes(q) ||
         (r.customer_phone && r.customer_phone.includes(q)) ||
         r.model_snapshot.toLowerCase().includes(q) ||
@@ -900,10 +942,10 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
       return matchFilter && matchSearch;
     });
-  }, [repairs, activeFilter, search]);
+  }, [repairs, activeFilter, search, documentMatches]);
 
   // KPIs
-  const activeTallerCount = repairs.filter((r) => !r.delivery_id && r.status_code !== "ready").length;
+  const activeTallerCount = repairs.filter((r) => !r.delivery_id && r.status_code !== "ready" && r.status_code !== "delivered").length;
   const readyCount = repairs.filter((r) => r.status_code === "ready" && !r.delivery_id).length;
   const qcPassedCount = repairs.filter((r) => r.qc_passed).length;
   const deliveredCount = repairs.filter((r) => Boolean(r.delivery_id)).length;
@@ -997,7 +1039,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   <Search size={16} />
                   <input
                     type="text"
-                    placeholder="Buscar orden, cliente, modelo o falla..."
+                    placeholder={hasPermission("customers.view_sensitive") ? "Buscar seguimiento, DNI, orden o cliente..." : "Buscar seguimiento, orden o cliente..."}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
@@ -1019,6 +1061,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 { id: "active", label: "Activas" },
                 { id: "received", label: "Recibidos" },
                 { id: "diagnosis", label: "En Diagnóstico" },
+                { id: "waiting_parts", label: "Esperando repuestos" },
                 { id: "repair", label: "En Reparación" },
                 { id: "ready", label: "Listos para Retirar" },
                 { id: "delivered", label: "Entregados" },
@@ -1086,7 +1129,10 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                           }}
                         >
                           <td style={{ fontWeight: 700, color: "var(--accent-mint)" }}>
-                            {r.order_code}
+                            <div>{r.order_code}</div>
+                            <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 500, fontFamily: "monospace" }}>
+                              {r.public_tracking_code}
+                            </div>
                           </td>
                           <td style={{ fontSize: "12px" }}>
                             {formatDate(r.opened_at)}
@@ -1352,7 +1398,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       {selectedTicket && (
         <Modal
           isOpen={Boolean(selectedTicket)}
-          onClose={() => setSelectedTicket(null)}
+          onClose={() => { detailRequest.current++; setSelectedTicket(null); setTicketNotes([]); }}
           title={`Ficha de Reparación: ${selectedTicket.order_code}`}
           maxWidth="780px"
         >
@@ -1374,6 +1420,86 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               </div>
             </div>
 
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "12px 16px", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid var(--border-line)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  Código de seguimiento web:{" "}
+                  <strong style={{ fontFamily: "monospace", fontSize: "14px", color: "var(--accent-mint)", letterSpacing: "0.04em" }}>
+                    {selectedTicket.public_tracking_code}
+                  </strong>
+                </div>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  El cliente verá en <code style={{ fontSize: "11px" }}>/seguimiento</code>:{" "}
+                  <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "999px", background: "rgba(0, 168, 232, 0.14)", color: "#38bdf8", fontWeight: 600 }}>
+                    {selectedTicket.status_public_stage ?? "Sin etapa pública"}
+                  </span>
+                </div>
+              </div>
+              <button type="button" className="btn-ghost" onClick={() => window.print()}>
+                <FileText size={14} /> Imprimir comprobante de ingreso
+              </button>
+              <div className="repair-print-receipt">
+                <h1>Comprobante de ingreso — NicTech</h1>
+                <p><strong>Orden:</strong> {selectedTicket.order_code}</p>
+                <p><strong>Fecha de ingreso:</strong> {formatDateTime(selectedTicket.opened_at)}</p>
+                <p><strong>Cliente:</strong> {selectedTicket.customer_name}</p>
+                <p><strong>Equipo:</strong> {selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</p>
+                <p><strong>Falla declarada:</strong> {selectedTicket.reported_fault}</p>
+                <p><strong>Código de seguimiento:</strong> <strong>{selectedTicket.public_tracking_code}</strong></p>
+                <p><strong>Estado web actual:</strong> {selectedTicket.status_public_stage ?? "Recibido"}</p>
+                <p>Consultá el estado en /seguimiento con este código o tu DNI.</p>
+              </div>
+              <style>{` .repair-print-receipt { display: none; } @media print { body * { visibility: hidden !important; } .repair-print-receipt, .repair-print-receipt * { visibility: visible !important; } .repair-print-receipt { display: block; position: fixed; inset: 0; padding: 24px; color: black; background: white; z-index: 99999; } } `}</style>
+            </div>
+            <section aria-label="Notas de reparación" style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "12px 16px", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid var(--border-line)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 700 }}>Notas de taller y seguimiento ({ticketNotes.length})</h3>
+              </div>
+              {ticketNotes.length === 0 ? (
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>Todavía no hay notas cargadas en esta orden.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "180px", overflowY: "auto" }}>
+                  {ticketNotes.map((note) => (
+                    <div key={note.id} style={{ padding: "8px 10px", borderRadius: "6px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-line)", fontSize: "12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 600, background: note.is_public ? "rgba(16, 185, 129, 0.16)" : "rgba(148, 163, 184, 0.16)", color: note.is_public ? "#10b981" : "var(--text-muted)" }}>
+                          {note.is_public ? "Pública · visible en /seguimiento" : "Interna · solo taller"}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{formatDateTime(note.created_at)}</span>
+                      </div>
+                      <p style={{ margin: 0 }}>{note.content}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {hasPermission("repairs.manage") && <form style={{ display: "flex", flexDirection: "column", gap: "8px" }} onSubmit={noteForm.handleSubmit(async (values) => {
+                const requestId = detailRequest.current;
+                try {
+                  await addRepairNote(selectedTicket.id, values.content, values.isPublic);
+                  const notes = await listRepairNotes(selectedTicket.id);
+                  if (requestId !== detailRequest.current) return;
+                  setTicketNotes(notes);
+                  noteForm.reset({ content: "", isPublic: false });
+                } catch (error) {
+                  if (requestId !== detailRequest.current) return;
+                  setFeedback({ type: "error", message: error instanceof Error ? error.message : "No se pudo guardar la nota." });
+                }
+              })}>
+                <label className="erp-form-group" style={{ margin: 0 }}>
+                  Nueva nota
+                  <textarea className="erp-form-input" rows={2} placeholder="Escribí una observación técnica o para el cliente..." {...noteForm.register("content")} />
+                </label>
+                {noteForm.formState.errors.content && <p role="alert" style={{ margin: 0, fontSize: "12px", color: "#ef4444" }}>{noteForm.formState.errors.content.message}</p>}
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer" }}>
+                    <input type="checkbox" {...noteForm.register("isPublic")} /> El cliente la ve en la web
+                  </label>
+                  <button type="submit" className="btn-primary" disabled={noteForm.formState.isSubmitting}>
+                    {noteForm.formState.isSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />} Guardar nota
+                  </button>
+                </div>
+              </form>}
+            </section>
             {/* Status Workflow Action Bar */}
             {!selectedTicket.delivery_id && (
               <div style={{ padding: "16px", background: "rgba(0, 168, 232, 0.05)", borderRadius: "8px", border: "1px solid rgba(0, 168, 232, 0.2)" }}>

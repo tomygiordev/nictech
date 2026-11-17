@@ -1,4 +1,6 @@
 import { supabase } from "../../lib/supabase";
+import type { ErpDatabase } from "../../lib/supabase";
+import { isManualRepairTransition } from "./transitions";
 import type { Database, Json } from "../../types/supabase";
 
 const client = () => {
@@ -12,6 +14,8 @@ export interface RepairOrderOverview {
   branch_id: string;
   order_number: number;
   order_code: string;
+  public_tracking_code: string;
+  status_public_stage: string | null;
   opened_at: string;
   customer_id: string;
   customer_code: string;
@@ -135,17 +139,19 @@ const parseIntakeRepairResult = (value: Json): {
   order_code: string;
   tracking_token: string;
   equipment_id: string;
+  public_tracking_code: string;
 } => {
   if (!isJsonObject(value)) {
     throw new Error("La recepción de la reparación devolvió una respuesta inválida.");
   }
 
-  const { repair_order_id: repairOrderId, order_code: orderCode, tracking_token: trackingToken, equipment_id: equipmentId } = value;
+  const { repair_order_id: repairOrderId, order_code: orderCode, tracking_token: trackingToken, equipment_id: equipmentId, public_tracking_code: publicCode } = value;
   if (
     typeof repairOrderId !== "string" ||
     typeof orderCode !== "string" ||
     typeof trackingToken !== "string" ||
-    typeof equipmentId !== "string"
+    typeof equipmentId !== "string" ||
+    typeof publicCode !== "string"
   ) {
     throw new Error("La recepción de la reparación devolvió identificadores incompletos.");
   }
@@ -155,6 +161,7 @@ const parseIntakeRepairResult = (value: Json): {
     order_code: orderCode,
     tracking_token: trackingToken,
     equipment_id: equipmentId,
+    public_tracking_code: publicCode,
   };
 };
 
@@ -207,7 +214,7 @@ export interface ConsumedPartRecord {
   occurred_at: string;
 }
 
-type RepairOrderOverviewRow = Database["erp"]["Views"]["repair_orders_overview"]["Row"];
+type RepairOrderOverviewRow = ErpDatabase["erp"]["Views"]["repair_orders_overview"]["Row"];
 
 type JsonObject = { [key: string]: Json | undefined };
 
@@ -268,6 +275,8 @@ const mapRepairOrderOverview = (row: RepairOrderOverviewRow): RepairOrderOvervie
   branch_id: requireViewValue(row.branch_id, "branch_id"),
   order_number: requireViewValue(row.order_number, "order_number"),
   order_code: requireViewValue(row.order_code, "order_code"),
+  public_tracking_code: requireViewValue(row.public_tracking_code, "public_tracking_code"),
+  status_public_stage: row.status_public_stage,
   opened_at: requireViewValue(row.opened_at, "opened_at"),
   customer_id: requireViewValue(row.customer_id, "customer_id"),
   customer_code: requireViewValue(row.customer_code, "customer_code"),
@@ -417,7 +426,7 @@ export const listAvailableTransitions = async (fromStatusId: string): Promise<Re
       requires_final_tests: status.requires_final_tests,
       is_terminal: status.is_terminal,
     };
-  });
+  }).filter((transition) => isManualRepairTransition(transition.to_status_code));
 };
 
 // 4. Atomic repair intake
@@ -426,6 +435,7 @@ export const intakeRepairOrder = async (input: IntakeRepairInput): Promise<{
   order_code: string;
   tracking_token: string;
   equipment_id: string;
+  public_tracking_code: string;
 }> => {
   const { data, error } = await client().rpc("intake_repair_order", {
     target_branch_id: input.branchId,
@@ -853,4 +863,21 @@ export const openWarrantyClaim = async (
 
   if (error) throw error;
   return data;
+};
+
+export type RepairNote = ErpDatabase["erp"]["Tables"]["repair_notes"]["Row"];
+export const listRepairNotes = async (repairOrderId: string): Promise<RepairNote[]> => {
+  const { data, error } = await client().from("repair_notes").select("*").eq("repair_order_id", repairOrderId).order("created_at");
+  if (error) throw error;
+  return data ?? [];
+};
+export const addRepairNote = async (repairOrderId: string, content: string, isPublic: boolean): Promise<void> => {
+  const { error } = await client().rpc("add_repair_note", { p_repair_order_id: repairOrderId, p_content: content, p_is_public: isPublic });
+  if (error) throw error;
+};
+
+export const searchRepairsByDocument = async (document: string): Promise<string[]> => {
+  const { data, error } = await client().rpc("search_repairs_by_document", { p_document: document });
+  if (error) throw error;
+  return (data ?? []).map((item) => item.repair_order_id);
 };
