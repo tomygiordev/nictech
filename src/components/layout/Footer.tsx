@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Phone, Mail, Facebook, Instagram, Youtube, Video, RotateCcw, CheckCircle2, MessageCircle } from 'lucide-react';
+import { MapPin, Phone, Mail, Facebook, Instagram, Youtube, Video, RotateCcw, CheckCircle2, MessageCircle, FileCheck2 } from 'lucide-react';
+import { BUSINESS_INFO } from '@/config/business-info';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,7 +60,7 @@ export const Footer = () => {
       return;
     }
     const subject = `Botón de Arrepentimiento - ${regretForm.name.trim()}`;
-    const mailtoUrl = `mailto:nictech.urdi@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(buildRegretMessage())}`;
+    const mailtoUrl = `mailto:${BUSINESS_INFO.contactEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(buildRegretMessage())}`;
     window.location.href = mailtoUrl;
     setSubmitted(true);
     toast.success('Solicitud preparada en tu correo');
@@ -189,10 +190,10 @@ export const Footer = () => {
               <li className="flex items-center gap-3">
                 <Mail className="h-4 w-4 text-sky-300 shrink-0" />
                 <a
-                  href="mailto:nictech.urdi@gmail.com"
+                  href={`mailto:${BUSINESS_INFO.contactEmail}`}
                   className="text-sm text-secondary-foreground/80 hover:text-white transition-colors"
                 >
-                  nictech.urdi@gmail.com
+                  {BUSINESS_INFO.contactEmail}
                 </a>
               </li>
             </ul>
@@ -205,6 +206,11 @@ export const Footer = () => {
               <p className="text-sm text-secondary-foreground/60 mb-1">
                 © 2026 Nictech. Todos los derechos reservados.
               </p>
+              {(BUSINESS_INFO.legalName || BUSINESS_INFO.cuit) && (
+                <p className="text-sm text-secondary-foreground/50">
+                  {[BUSINESS_INFO.legalName, BUSINESS_INFO.cuit && `CUIT ${BUSINESS_INFO.cuit}`].filter(Boolean).join(' · ')}
+                </p>
+              )}
               <p className="text-sm text-secondary-foreground/50">
                 Desarrollado por{' '}
                 <a
@@ -241,6 +247,17 @@ export const Footer = () => {
               >
                 Términos y Condiciones
               </Link>
+              {BUSINESS_INFO.dataFiscalUrl && (
+                <a
+                  href={BUSINESS_INFO.dataFiscalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm text-secondary-foreground/60 hover:text-secondary-foreground transition-colors"
+                >
+                  <FileCheck2 className="h-4 w-4" />
+                  Data Fiscal (ARCA)
+                </a>
+              )}
             </div>
           </div>
         </div>

@@ -38,6 +38,7 @@ import { hasValidDiscount } from '@/lib/pricing';
 import { pickPrimaryImage } from '@/lib/product-gallery';
 import { useStorefrontPromotionPrices } from '@/hooks/use-storefront-promotion-prices';
 import { resolveDisplayPrice } from '@/lib/promo-pricing';
+import { BUSINESS_INFO } from '@/config/business-info';
 
 interface Category {
   id: string;
@@ -85,30 +86,6 @@ interface Brand {
   id: string;
   name: string;
 }
-
-const LOCAL_REVIEWS = [
-  {
-    id: 'maria-garcia',
-    name: 'María García',
-    role: 'Estudiante',
-    content:
-      'La verdad que me salvaron las papas. Se me murió la compu justo antes de una entrega y en un toque me la dejaron 0km. Super recomendables chicos.',
-  },
-  {
-    id: 'carlos-lopez',
-    name: 'Carlos López',
-    role: 'Estudiante',
-    content:
-      'Un genio Nico. Le llevé mi PC para un upgrade y limpieza, quedó volando. Sin vueltas. Precio acorde.',
-  },
-  {
-    id: 'ana-martinez',
-    name: 'Ana Martínez',
-    role: 'Cliente',
-    content:
-      'Pensé que había perdido todas las fotos de mis nenes cuando el celular dejó de prender de la nada, pero por suerte pudieron recuperar todo el contenido. La atención de 10, muy amables y profesionales.',
-  },
-] as const;
 
 const slugifyProductName = (name: string): string =>
   name
@@ -985,13 +962,13 @@ const Tienda = () => {
           </div>
         </section>
 
-        {/* Confianza local y opiniones de clientes */}
+        {/* Confianza local */}
         <section className="py-10 sm:py-12 border-t border-border bg-muted/30">
           <div className="container-main">
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-1.5">
-                  Confianza local y opiniones de clientes
+                  Confianza local
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   Atención presencial y servicio técnico propio en Urdinarrain y Gilbert, Entre Ríos.
@@ -1014,31 +991,15 @@ const Tienda = () => {
                     Consultar por WhatsApp
                   </a>
                 </Button>
+                {BUSINESS_INFO.googleReviewsUrl && (
+                  <Button asChild variant="outline" className="min-h-[44px] rounded-xl gap-2 text-xs sm:text-sm">
+                    <a href={BUSINESS_INFO.googleReviewsUrl} target="_blank" rel="noopener noreferrer">
+                      <Star className="h-4 w-4 text-primary shrink-0" />
+                      Ver opiniones en Google
+                    </a>
+                  </Button>
+                )}
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-8">
-              {LOCAL_REVIEWS.map((review) => (
-                <article
-                  key={review.id}
-                  className="bg-card border border-border rounded-2xl p-5 shadow-sm flex flex-col justify-between gap-4"
-                >
-                  <div>
-                    <div className="flex items-center gap-1 mb-3" aria-label="Calificación de 5 estrellas">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star key={i} className="h-4 w-4 fill-warning text-warning" />
-                      ))}
-                    </div>
-                    <p className="text-sm text-foreground/90 leading-relaxed">
-                      "{review.content}"
-                    </p>
-                  </div>
-                  <div className="pt-3 border-t border-border/60">
-                    <p className="text-sm font-semibold text-foreground">{review.name}</p>
-                    <p className="text-xs text-muted-foreground">{review.role}</p>
-                  </div>
-                </article>
-              ))}
             </div>
 
             <div className="rounded-2xl bg-card border border-border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm text-muted-foreground">
