@@ -4,8 +4,11 @@ import type { Session } from "@supabase/supabase-js";
 export type ErpAuthContextValue = {
   session: Session | null;
   organizationId: string | null;
+  branchIds: string[];
+  permissions: string[];
   loading: boolean;
   error: string | null;
+  retry?: () => void;
   hasPermission: (permission: string) => boolean;
 };
 

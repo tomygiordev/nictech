@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(30);
+select plan(32);
 
 -- Setup test user with owner permissions
 insert into auth.users (
@@ -26,14 +26,14 @@ values (
   '87000000-0000-0000-0000-000000000099',
   '40000000-0000-0000-0000-000000000001',
   '87000000-0000-0000-0000-000000000099'
-);
+) on conflict do nothing;
 
 create temporary table d_ids(kind text primary key, id uuid, text_val text);
 grant all on d_ids to authenticated;
 
 -- Setup test customer
 insert into erp.customers(id, organization_id, code, display_name, phone, email)
-values('c1000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','40123456','Carlos Cliente Taller','+5491144445555','carlos@test.com');
+values('c1000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','CLI-REPAIR-0001','Carlos Cliente Taller','+5491144445555','carlos@test.com');
 
 -- Setup test replacement part product
 insert into erp.products(id, organization_id, product_type_id, item_kind, unit_id, internal_code, internal_name, inventory_tracking, can_use_as_repair_part)
@@ -289,6 +289,16 @@ select is(
   'Quote decision is recorded as approved'
 );
 
+select throws_ok(
+  $$select erp.transition_repair_order(
+    (select id from d_ids where kind = 'repair_order'),
+    (select id from erp.repair_statuses where code = 'delivered' and organization_id = erp.current_organization_id()),
+    'Entregado', 'op-delivered-without-delivery', 'Intento sin entrega formal'
+  )$$,
+  '55000', 'formal delivery is required',
+  'No se puede marcar entregado sin entrega formal'
+);
+
 -- 10. Test formal delivery and derived warranty (Finding H05, H08)
 select lives_ok(
   $$insert into d_ids(kind, id)
@@ -351,10 +361,18 @@ select ok(
 );
 
 -- 13. Test erp.repair_orders_overview view
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'erp.repair_latest_final_test_passes(uuid,uuid)',
+    'EXECUTE'
+  ),
+  'Authenticated operators can read the repair overview QC helper'
+);
 select is(
   (select status_code from erp.repair_orders_overview where id = (select id from d_ids where kind = 'repair_order')),
-  'ready',
-  'Overview view returns current status code ready'
+  'delivered',
+  'Overview view returns delivered after formal delivery'
 );
 
 select ok(

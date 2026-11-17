@@ -111,7 +111,7 @@ insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_co
 values('00000000-0000-0000-0000-000000000000','b9200000-0000-0000-0000-000000000001','authenticated','authenticated','stage8-owner@nictech.local','not-used',now(),'{"provider":"email","providers":["email"]}'::jsonb,'{"display_name":"Stage 8 Owner"}'::jsonb,now(),now());
 update erp.profiles set organization_id='10000000-0000-0000-0000-000000000001' where id='b9200000-0000-0000-0000-000000000001';
 insert into erp.profile_roles(organization_id,profile_id,role_id,created_by)
-values('10000000-0000-0000-0000-000000000001','b9200000-0000-0000-0000-000000000001','40000000-0000-0000-0000-000000000001','b9200000-0000-0000-0000-000000000001');
+values('10000000-0000-0000-0000-000000000001','b9200000-0000-0000-0000-000000000001','40000000-0000-0000-0000-000000000001','b9200000-0000-0000-0000-000000000001') on conflict do nothing;
 
 insert into erp.exchange_rates(id,organization_id,base_currency,quote_currency,rate_to_base,source,quoted_at,idempotency_key,request_hash)
 values('b9300000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','ARS','ARS',1,'stage8-local',now(),'stage8-rate',repeat('a',64));
@@ -150,7 +150,7 @@ select throws_ok(
   '23000','idempotency key is already used by another request','Changed document retry is rejected'
 );
 reset role;
-select is((select private_object_path from erp.documents where id=(select value from stage8_ids where key='document')),'documents/10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000001/sale/b9500000-0000-0000-0000-000000000001/'||repeat('2',64)||'.pdf','Document path is server-canonical');
+select is((select private_object_path from erp.documents where id=(select value from stage8_ids where key='document')),null::text,'No private path is stored until a PDF object actually exists');
 set local role authenticated;
 
 select lives_ok(

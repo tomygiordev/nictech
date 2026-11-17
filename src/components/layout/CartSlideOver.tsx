@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Plus, Minus, Trash2, ShoppingBag, Loader2, AlertTriangle } from 'lucide-react';
+import { X, Plus, Minus, Trash2, ShoppingBag, Loader2, AlertTriangle, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -19,19 +19,27 @@ export const CartSlideOver = () => {
   const navigate = useNavigate();
   const { items, isOpen, closeCart, updateQuantity, removeFromCart, totalPrice, clearCart, validateCart, isValidating } = useCart();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const hasValidatedOpenRef = useRef(false);
 
-  // Validate stock every time the cart is opened
+  // Validate stock once each time the cart is opened
   useEffect(() => {
-    if (isOpen && items.length > 0) {
-      validateCart().then(({ removedItems, adjustedItems }) => {
-        if (removedItems.length > 0) {
-          toast.error(`Productos sin stock removidos: ${removedItems.join(', ')}`);
-        }
-        if (adjustedItems.length > 0) {
-          toast.info(`Stock ajustado para: ${adjustedItems.join(', ')}`);
-        }
-      });
+    if (!isOpen) {
+      hasValidatedOpenRef.current = false;
+      return;
     }
+    if (items.length === 0 || hasValidatedOpenRef.current) {
+      return;
+    }
+
+    hasValidatedOpenRef.current = true;
+    validateCart().then(({ removedItems, adjustedItems }) => {
+      if (removedItems.length > 0) {
+        toast.error(`Productos sin stock removidos: ${removedItems.join(', ')}`);
+      }
+      if (adjustedItems.length > 0) {
+        toast.info(`Stock ajustado para: ${adjustedItems.join(', ')}`);
+      }
+    });
   }, [isOpen, items.length, validateCart]);
 
   if (!isOpen) return null;
@@ -117,7 +125,7 @@ export const CartSlideOver = () => {
                           variant="outline"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                          onClick={() => updateQuantity(item.id, item.quantity - 1, item.variant?.id)}
                           aria-label="Disminuir cantidad"
                         >
                           <Minus className="h-4 w-4" />
@@ -129,7 +137,7 @@ export const CartSlideOver = () => {
                           variant="outline"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          onClick={() => updateQuantity(item.id, item.quantity + 1, item.variant?.id)}
                           disabled={item.quantity >= item.maxStock}
                           aria-label="Aumentar cantidad"
                         >
@@ -139,7 +147,7 @@ export const CartSlideOver = () => {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 ml-auto text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => removeFromCart(item.id)}
+                          onClick={() => removeFromCart(item.id, item.variant?.id)}
                           aria-label="Eliminar producto"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -155,6 +163,12 @@ export const CartSlideOver = () => {
           {/* Footer */}
           {items.length > 0 && (
             <div className="p-4 border-t border-border space-y-3">
+              <div className="flex items-start gap-2 rounded-lg bg-muted/60 border border-border/60 px-3 py-2 text-xs text-muted-foreground">
+                <Truck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <p>
+                  Retiro sin cargo en sucursales Urdinarrain y Gilbert · Envíos a todo el país (coordinamos el correo al finalizar).
+                </p>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Subtotal:</span>
                 <span className="text-xl font-bold text-primary">

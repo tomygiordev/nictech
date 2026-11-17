@@ -26,7 +26,7 @@ values (
   '86000000-0000-0000-0000-000000000099',
   '40000000-0000-0000-0000-000000000001',
   '86000000-0000-0000-0000-000000000099'
-);
+) on conflict do nothing;
 
 -- Ensure supplier exists
 insert into erp.suppliers (
@@ -254,7 +254,7 @@ insert into erp.customers (
 
 -- Test 9: Create sale for 1 Negro case
 create temporary table _sale_result as
-select erp.create_sale(
+select (erp.create_sale_with_invoice(
   '20000000-0000-0000-0000-000000000001'::uuid,
   '71000000-0000-0000-0000-000000000099'::uuid,
   'ARS',
@@ -270,13 +270,15 @@ select erp.create_sale(
       'description', 'Funda Silicona iPhone 13 Pro Negro',
       'quantity', 1,
       'unit_price', 7500,
+      'expected_unit_price', 7500,
       'discount_amount', 0,
       'tax_rate_percent', 21,
       'tax_amount', 1575
     )
   ),
+  'non_fiscal',
   '[]'::jsonb
-) as sale_id;
+)->>'sale_id')::uuid as sale_id;
 
 select ok(
   ((select sale_id from _sale_result) is not null),

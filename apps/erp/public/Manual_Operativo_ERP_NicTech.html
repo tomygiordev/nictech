@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Manual Operativo Oficial - ERP NicTech</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 15mm 18mm 15mm;
+      @bottom-right {
+        content: counter(page);
+      }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #0f172a;
+      line-height: 1.55;
+      font-size: 10.5pt;
+      margin: 0;
+      padding: 0;
+      background: #fff;
+    }
+    .cover {
+      page-break-after: always;
+      text-align: center;
+      padding-top: 50px;
+    }
+    .logo-badge {
+      display: inline-block;
+      background: #032068;
+      color: #fff;
+      font-size: 26pt;
+      font-weight: 900;
+      padding: 15px 35px;
+      border-radius: 12px;
+      letter-spacing: 2px;
+      margin-bottom: 25px;
+    }
+    h1.doc-title {
+      font-size: 26pt;
+      color: #032068;
+      margin: 0 0 10px 0;
+      font-weight: 800;
+    }
+    .subtitle {
+      font-size: 13pt;
+      color: #005bd5;
+      font-weight: 600;
+      margin-bottom: 30px;
+    }
+    .meta-box {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 15px 25px;
+      display: inline-block;
+      text-align: left;
+      font-size: 10pt;
+      color: #475569;
+      background: #f8fafc;
+      margin-top: 40px;
+    }
+    .toc {
+      page-break-after: always;
+      padding-top: 20px;
+    }
+    .toc h2 {
+      color: #032068;
+      border-bottom: 2px solid #005bd5;
+      padding-bottom: 6px;
+      font-size: 18pt;
+    }
+    .toc-item {
+      display: flex;
+      justify-content: space-between;
+      margin: 6px 0;
+      border-bottom: 1px dotted #cbd5e1;
+      padding-bottom: 2px;
+      font-size: 10pt;
+    }
+    .toc-item a {
+      text-decoration: none;
+      color: #0f172a;
+      font-weight: 500;
+    }
+    .toc-item a:hover {
+      color: #005bd5;
+    }
+    .toc-item .page-num {
+      color: #005bd5;
+      font-weight: 700;
+    }
+    .chapter {
+      page-break-before: always;
+      padding-top: 15px;
+    }
+    h2.chapter-title {
+      color: #032068;
+      border-bottom: 2px solid #005bd5;
+      padding-bottom: 6px;
+      font-size: 15pt;
+      margin-top: 0;
+    }
+    h3.section-title {
+      color: #005bd5;
+      font-size: 12pt;
+      margin-top: 16px;
+      margin-bottom: 6px;
+    }
+    p, li {
+      font-size: 10pt;
+      color: #334155;
+    }
+    ul, ol {
+      margin-top: 6px;
+      padding-left: 22px;
+    }
+    .warning-box {
+      background: #fffbeb;
+      border-left: 4px solid #f59e0b;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin: 12px 0;
+      font-size: 9.5pt;
+      color: #92400e;
+    }
+    .warning-box strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #b45309;
+    }
+    .info-box {
+      background: #eff6ff;
+      border-left: 4px solid #005bd5;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin: 12px 0;
+      font-size: 9.5pt;
+      color: #1e40af;
+    }
+    .info-box strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #032068;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 9pt;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 7px 9px;
+      text-align: left;
+    }
+    th {
+      background: #f1f5f9;
+      color: #032068;
+      font-weight: 700;
+    }
+    kbd {
+      background: #f8fafc;
+      border: 1px solid #94a3b8;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-weight: bold;
+      font-size: 8.5pt;
+      color: #005bd5;
+    }
+    @media print {
+      body { background: transparent; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- PORTADA -->
+  <div class="cover">
+    <div class="logo-badge">NICTECH</div>
+    <h1 class="doc-title">MANUAL OPERATIVO DEL SISTEMA ERP</h1>
+    <div class="subtitle">Guía Integral End-to-End: Procedimientos de Mostrador, Taller, Almacén y Finanzas</div>
+    <p style="color: #64748b; font-size: 11pt; max-width: 520px; margin: 0 auto 30px auto;">
+      Manual exhaustivo de consulta obligatoria para operadores, técnicos, vendedores y encargados de NicTech. Explicación punto por punto de cada módulo, sentido del negocio y resolución de dudas operativas.
+    </p>
+    <div class="meta-box">
+      <div><strong>Organización:</strong> NicTech Store & Service</div>
+      <div><strong>Sucursales:</strong> Urdinarrain & Gilbert (Entre Ríos)</div>
+      <div><strong>Versión del Sistema:</strong> NicTech ERP 2.0 (Etapa Producción)</div>
+      <div><strong>Módulos Documentados:</strong> 19 Workspaces Integrados</div>
+      <div><strong>Vigencia:</strong> 2026 - Documento Oficial Interno Confidencial</div>
+    </div>
+  </div>
+
+  <!-- ÍNDICE FUNCIONAL -->
+  <div class="toc">
+    <h2>Índice Funcional</h2>
+    <div class="toc-item"><a href="#cap1">1. Acceso, Seguridad de Terminal y Bloqueos de Seguridad</a><span class="page-num">Pág. 3</span></div>
+    <div class="toc-item"><a href="#cap2">2. Filosofía Operativa: El Sentido del ERP</a><span class="page-num">Pág. 3</span></div>
+    <div class="toc-item"><a href="#cap3">3. Módulo 1: Centro Operativo (Dashboard)</a><span class="page-num">Pág. 4</span></div>
+    <div class="toc-item"><a href="#cap4">4. Módulo 2: Punto de Venta (POS) & Mostrador</a><span class="page-num">Pág. 4</span></div>
+    <div class="toc-item"><a href="#cap5">5. Módulo 3: Caja, Turnos y Arqueo Ciego</a><span class="page-num">Pág. 6</span></div>
+    <div class="toc-item"><a href="#cap6">6. Módulo 4: Servicio Técnico (Reparaciones, Pruebas QC y Garantías)</a><span class="page-num">Pág. 7</span></div>
+    <div class="toc-item"><a href="#cap7">7. Módulo 5: Stock, Almacén, Depósitos y Etiquetas</a><span class="page-num">Pág. 9</span></div>
+    <div class="toc-item"><a href="#cap8">8. Módulo 6: Pedidos Online (E-Commerce y Retiro Seguro)</a><span class="page-num">Pág. 10</span></div>
+    <div class="toc-item"><a href="#cap9">9. Módulo 7: Catálogo y Precios: Multidivisa y Reglas en Dólares</a><span class="page-num">Pág. 11</span></div>
+    <div class="toc-item"><a href="#cap10">10. Módulo 8: Armados de PC & Equipos Usados (Trade-ins)</a><span class="page-num">Pág. 12</span></div>
+    <div class="toc-item"><a href="#cap11">11. Módulo 9: Compras y Proveedores Mayoristas</a><span class="page-num">Pág. 13</span></div>
+    <div class="toc-item"><a href="#cap12">12. Módulo 10: Clientes y Directorio Unificado por DNI</a><span class="page-num">Pág. 13</span></div>
+    <div class="toc-item"><a href="#cap13">13. Módulo 11: Presupuestos y Cotizaciones Comerciales</a><span class="page-num">Pág. 14</span></div>
+    <div class="toc-item"><a href="#cap14">14. Módulo 12: Cuentas Corrientes & Financiación en Cuotas</a><span class="page-num">Pág. 14</span></div>
+    <div class="toc-item"><a href="#cap15">15. Módulo 13: Contabilidad, Rentabilidad Neta y Reportes</a><span class="page-num">Pág. 15</span></div>
+    <div class="toc-item"><a href="#cap16">16. Módulo 14: Documentos, Facturas y Comprobantes</a><span class="page-num">Pág. 15</span></div>
+    <div class="toc-item"><a href="#cap17">17. Módulo 15: WhatsApp y Notificaciones Automáticas</a><span class="page-num">Pág. 16</span></div>
+    <div class="toc-item"><a href="#cap18">18. Módulo 16: Salud de Integraciones y Webhooks</a><span class="page-num">Pág. 16</span></div>
+    <div class="toc-item"><a href="#cap19">19. Módulo 17: Configuración, Usuarios, Sucursales y Auditoría</a><span class="page-num">Pág. 17</span></div>
+    <div class="toc-item"><a href="#cap20">20. Tabla Maestra de Aclaraciones, Faltantes y Atajos</a><span class="page-num">Pág. 18</span></div>
+  </div>
+
+  <!-- CAPÍTULO 1 Y 2 -->
+  <div class="chapter" id="cap1">
+    <h2 class="chapter-title">1. Acceso, Seguridad de Terminal y Bloqueos de Seguridad</h2>
+    <p>Para ingresar al ERP de NicTech, cada operador debe autenticarse con su usuario y contraseña asignados por la administración.</p>
+    <ul>
+      <li><strong>Protección de 5 Intentos:</strong> Si un operador se equivoca 5 veces consecutivas en la clave, la terminal se bloqueará automáticamente por 5 minutos por razones de seguridad anti-fuerza bruta.</li>
+      <li><strong>Sesión Nominal:</strong> Nunca operes con la sesión abierta de otro compañero. Todas las ventas, ingresos de caja y modificaciones de stock quedan grabadas con tu nombre en la Auditoría inmutable.</li>
+      <li><strong>Cierre de Sesión al dejar el puesto:</strong> Al levantarte del mostrador o terminar tu horario, presioná el botón <em>'Cerrar Sesión'</em> abajo a la izquierda.</li>
+    </ul>
+
+    <h2 class="chapter-title" id="cap2" style="margin-top: 25px;">2. Filosofía Operativa: El Sentido del ERP</h2>
+    <p>El ERP de NicTech no es un simple programa de facturación. Es un sistema integral en tiempo real donde cada acción repercute de inmediato en todas las áreas del negocio:</p>
+    <div class="info-box">
+      <strong>Regla de Oro NicTech:</strong>
+      'Nada se entrega sin registrarse, nada entra sin remito, y ningún peso sale del cajón sin comprobante.'
+    </div>
+    <p>Si vendés un cable en mostrador y no lo cobrás por el sistema, suceden tres problemas graves:</p>
+    <ol>
+      <li><strong>Desfasaje de Stock:</strong> El cable sigue figurando disponible y alguien lo comprará en la tienda online. Cuando vengan a retirarlo, no va a estar.</li>
+      <li><strong>Faltante de Caja:</strong> La plata en el cajón no va a coincidir con el balance teórico del turno.</li>
+      <li><strong>Pérdida de Margen:</strong> No se asientan las ganancias reales para reponer mercadería.</li>
+    </ol>
+  </div>
+
+  <!-- CAPÍTULO 3 Y 4 -->
+  <div class="chapter" id="cap3">
+    <h2 class="chapter-title">3. Centro Operativo (Dashboard)</h2>
+    <p>Es la primera pantalla que se ve al abrir el sistema. Su propósito es brindar un resumen gerencial instantáneo de cómo viene la jornada sin tener que navegar por todos los módulos.</p>
+    <h3 class="section-title">Métricas Principales</h3>
+    <ul>
+      <li><strong>Facturación del Día:</strong> Suma acumulada de cobros en mostrador, reparaciones finalizadas y ventas web despachadas hoy.</li>
+      <li><strong>Estado de Cajas:</strong> Indica de forma visual si la terminal de caja del local está abierta o cerrada, qué operador la abrió y cuánto dinero debería haber.</li>
+      <li><strong>Reparaciones en Curso:</strong> Muestra cuántos equipos están en diagnóstico, cuántos esperando repuesto y cuántos terminados listos para entregar.</li>
+      <li><strong>Alertas de Stock Crítico:</strong> Lista de accesorios o repuestos que se quedaron en 0 o 1 unidad para pedir al distribuidor.</li>
+    </ul>
+
+    <h2 class="chapter-title" id="cap4" style="margin-top: 25px;">4. Punto de Venta (POS): Cobro en Mostrador</h2>
+    <p>El Punto de Venta es la pantalla más utilizada en el salón comercial. Diseñada para operar a máxima velocidad con clientes delante.</p>
+
+    <div class="warning-box">
+      <strong>⚠️ Aclaración Fundamental sobre el Escáner de Barras:</strong>
+      En el campo de búsqueda de productos verás el texto: <em>'Escanear código de barras o buscar por nombre...'</em>.
+      Actualmente el lector óptico USB físico NO está integrado de forma automática en el navegador.
+      <strong>El operador debe tipear el nombre o código interno del producto con el teclado.</strong>
+    </div>
+
+    <h3 class="section-title">Flujo Paso a Paso de una Venta:</h3>
+    <ol>
+      <li><strong>Búsqueda:</strong> Escribí en el buscador el nombre del producto (ej: 'Cargador 20W' o 'Funda iPhone 13'). Presioná <em>Enter</em> o hacé clic para agregarlo al carrito.</li>
+      <li><strong>Variantes:</strong> Si el producto tiene variantes de color o capacidad, el ERP te obligará a seleccionar cuál te estás llevando (ej: Negro o Blanco). Esto evita que se venda un color cuando físicamente se entrega otro.</li>
+      <li><strong>Selección del Medio de Pago:</strong>
+        <ul>
+          <li><strong>Efectivo:</strong> El sistema suma el dinero al arqueo del turno actual de Caja.</li>
+          <li><strong>Tarjeta de Débito/Crédito:</strong> Se cobra en el posnet físico y se registra la venta en el ERP.</li>
+          <li><strong>QR Mercado Pago:</strong> El cliente escanea el QR en mostrador y paga desde su app.</li>
+          <li><strong>Transferencia:</strong> Verificar en el celular de NicTech que el dinero haya ingresado antes de confirmar.</li>
+        </ul>
+      </li>
+      <li><strong>Cobrar y Emitir Comprobante:</strong> Presioná <em>'Cobrar'</em>. En ese instante, el stock se descuenta de forma atómica y se emite el comprobante de venta.</li>
+    </ol>
+  </div>
+
+  <!-- CAPÍTULO 5 -->
+  <div class="chapter" id="cap5">
+    <h2 class="chapter-title">5. Caja, Turnos y Arqueo Ciego</h2>
+    <p>El módulo de Caja gestiona el dinero físico en efectivo. Funciona bajo el modelo de 'sesiones de turno'.</p>
+
+    <h3 class="section-title">1. Apertura de Turno Obligatoria (A la Mañana)</h3>
+    <p>Antes de registrar cualquier venta en efectivo, el operador que llega al local debe:</p>
+    <ol>
+      <li>Abrir el cajón de dinero y contar físicamente billete por billete el cambio dejado por el turno anterior.</li>
+      <li>Ir al módulo <strong>Caja</strong> y presionar <strong>'Abrir Turno'</strong>.</li>
+      <li>Ingresar el <strong>Fondo Inicial</strong> exacto (ej: $20.000) y confirmar.</li>
+    </ol>
+    <p>A partir de ese momento, la caja está enlazada al operador activo.</p>
+
+    <h3 class="section-title">2. Movimientos Manuales (Ingresos y Egresos)</h3>
+    <p>Todo dinero que entra o sale del cajón sin ser una venta formal DEBE asentarse como movimiento manual:</p>
+    <ul>
+      <li><strong>Egreso (-) :</strong> Pago de flete a moto-mandado, compra de artículos de limpieza, café o gastos de librería. Es OBLIGATORIO escribir el motivo claro.</li>
+      <li><strong>Ingreso (+) :</strong> Aporte de cambio adicional traído del banco por los dueños.</li>
+    </ul>
+
+    <h3 class="section-title">3. Arqueo Ciego y Cierre de Turno (A la Noche)</h3>
+    <p>Al terminar la jornada laboral, el operador debe cerrar la caja:</p>
+    <ol>
+      <li>Retirar todos los billetes del cajón y contarlos sin mirar lo que dice la pantalla (Arqueo ciego).</li>
+      <li>Presionar <strong>'Cerrar Turno'</strong> e ingresar el monto contado.</li>
+      <li>El ERP comparará el dinero real contado contra el saldo teórico que debió recaudarse (Fondo Inicial + Ventas Efectivo - Egresos).</li>
+      <li>Si hay diferencia (sobrante o faltante), el sistema lo dejará asentado con fecha, hora y operador.</li>
+    </ol>
+  </div>
+
+  <!-- CAPÍTULO 6 -->
+  <div class="chapter" id="cap6">
+    <h2 class="chapter-title">6. Servicio Técnico (Reparaciones, Pruebas QC y Garantías)</h2>
+    <p>Este módulo es el corazón del taller de reparaciones de celulares, tablets y computadoras.</p>
+
+    <h3 class="section-title">El Código de Seguimiento (Tracking Code)</h3>
+    <p>Cada vez que un cliente deja un equipo en mostrador, el sistema genera automáticamente un <strong>Código de 8 caracteres alfanuméricos</strong> (ejemplo: <code>NT-8492-X</code> o <code>B8C9-11D2</code>).</p>
+    <div class="info-box">
+      <strong>Para qué sirve el Código:</strong>
+      Se le entrega al cliente en un comprobante o por WhatsApp. El cliente puede ingresar desde su casa o trabajo a <strong>nictech.com.ar/seguimiento</strong>, colocar su DNI o este código, y ver exactamente en qué estado está su celular sin necesidad de llamar al local.
+    </div>
+
+    <h3 class="section-title">Ciclo de Vida de una Reparación (Estados):</h3>
+    <table>
+      <thead>
+        <tr><th>Estado</th><th>Significado Operativo</th><th>Acción del Técnico</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>1. Recibido</strong></td><td>Equipo ingresado en mostrador.</td><td>Verificar encendido y registrar estado estético.</td></tr>
+        <tr><td><strong>2. Diagnóstico</strong></td><td>El técnico está desarmando o testeando.</td><td>Determinar repuestos necesarios y presupuesto.</td></tr>
+        <tr><td><strong>3. Presupuestado</strong></td><td>Esperando respuesta del cliente.</td><td>Se avisa al cliente el precio. Si acepta, avanza.</td></tr>
+        <tr><td><strong>4. En Taller</strong></td><td>Reparación activa.</td><td>Instalación de repuestos y soldaduras.</td></tr>
+        <tr><td><strong>5. Control QC</strong></td><td>Pruebas de calidad post-reparación.</td><td>Testear táctil, señal, cámaras, micrófono y carga.</td></tr>
+        <tr><td><strong>6. Listo p/ Entrega</strong></td><td>El equipo está reparado.</td><td>Se guarda en gaveta y se notifica al cliente.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="section-title">Garantía Técnica Oficial NicTech</h3>
+    <p>Todas las reparaciones de módulo o batería cuentan con <strong>90 días de garantía corrida</strong>. La garantía cubre fallas de fabricación del repuesto, excluyendo golpes, humedad o roturas físicas provocadas por el usuario.</p>
+  </div>
+
+  <!-- CAPÍTULO 7 Y 8 -->
+  <div class="chapter" id="cap7">
+    <h2 class="chapter-title">7. Stock, Almacén, Depósitos y Etiquetas</h2>
+    <p>El módulo de Stock refleja la mercadería física en los depósitos de NicTech.</p>
+
+    <h3 class="section-title">Diferencia entre Stock Físico y Stock Comprometido (Reservas)</h3>
+    <ul>
+      <li><strong>Stock Físico Real:</strong> La cantidad exacta de unidades que están apoyadas en las estanterías del depósito.</li>
+      <li><strong>Stock Reservado:</strong> Unidades que ya están vendidas por la web pendientes de retiro, o repuestos asignados a una orden de taller en curso.</li>
+      <li><strong>Stock Disponible:</strong> Lo que realmente se puede vender en el mostrador (Físico menos Reservado).</li>
+    </ul>
+
+    <div class="warning-box">
+      <strong>⚠️ Aclaración sobre 'Conteo Físico Masivo':</strong>
+      En el menú superior de Stock verás la pestaña <em>'Conteo físico (pendiente)'</em>. Esta función se encuentra en desarrollo de backend para la Etapa 3.
+      Para regularizar mercadería hoy, utilizá siempre la opción <strong>'Ajuste de Stock'</strong>.
+    </div>
+
+    <h2 class="chapter-title" id="cap8" style="margin-top: 25px;">8. Pedidos Online (E-Commerce y Retiro Seguro)</h2>
+    <p>Administra las compras realizadas por clientes a través de la tienda web pública (nictech.com.ar/tienda) con cobros en Mercado Pago.</p>
+
+    <h3 class="section-title">Protocolo Anti-Fraude en Mostrador (Retiro en Local):</h3>
+    <ol>
+      <li>Al recibir un pedido pagado, el personal debe apartar el producto inmediatamente y colocarle una etiqueta con el nombre del cliente.</li>
+      <li>Cuando el comprador se presente al mostrador a retirar:
+        <ul>
+          <li><strong>Exigir el DNI físico original del titular.</strong></li>
+          <li>Corroborar que el número de documento y nombre coincidan con la orden.</li>
+          <li>Hacerle firmar el comprobante de entrega en mostrador.</li>
+        </ul>
+      </li>
+      <li>Marcar el pedido como <strong>'Entregado'</strong> en el ERP para cerrar la orden.</li>
+    </ol>
+  </div>
+
+  <!-- CAPÍTULO 9 Y 10 -->
+  <div class="chapter" id="cap9">
+    <h2 class="chapter-title">9. Catálogo y Precios: Multidivisa y Reglas en Dólares</h2>
+    <p>El rubro de tecnología cotiza sus repuestos y accesorios en dólares estadounidenses. El ERP cuenta con un sistema multidivisa inteligente:</p>
+    <ul>
+      <li><strong>Costo Base en USD:</strong> Cada producto se carga con su costo de compra en dólares (ej: Módulo iPhone $25 USD).</li>
+      <li><strong>Dólar del Sistema:</strong> La administración actualiza la cotización general en el módulo de Configuración.</li>
+      <li><strong>Cálculo Automático:</strong> El sistema recalcula todos los precios en pesos al instante multiplicando por la tasa del día, sumando el margen de ganancia y el IVA correspondiente.</li>
+    </ul>
+
+    <h2 class="chapter-title" id="cap10" style="margin-top: 25px;">10. Armados de PC & Equipos Usados (Trade-ins)</h2>
+    <h3 class="section-title">Armados de PC a Medida</h3>
+    <p>El configurador valida la compatibilidad de hardware entre procesador, motherboard, placa de video y fuente de poder. Al guardar el presupuesto, los componentes quedan apartados en stock por 48 horas para que nadie los venda por separado mientras se arma la máquina.</p>
+
+    <h3 class="section-title">Equipos Usados en Parte de Pago (Trade-Ins)</h3>
+    <p>Cuando un cliente desea entregar su celular usado para abaratar la compra de uno nuevo:</p>
+    <ol>
+      <li>Verificar que las cuentas de <strong>iCloud (Apple)</strong> o <strong>Google (Android)</strong> estén 100% cerradas y restablecidas de fábrica. <strong>¡Nunca tomes un teléfono bloqueado!</strong></li>
+      <li>Revisar salud de batería, estado de cámaras y condición estética.</li>
+      <li>El sistema calcula el voucher de descuento aplicable en el mostrador.</li>
+    </ol>
+  </div>
+
+  <!-- CAPÍTULO 11 A 16 -->
+  <div class="chapter" id="cap11">
+    <h2 class="chapter-title">11. Compras y Proveedores Mayoristas</h2>
+    <p>Permite registrar los remitos y facturas de los mayoristas. Al ingresar una compra, el stock sube automáticamente en el depósito seleccionado sin tener que cargar los artículos uno por uno.</p>
+
+    <h2 class="chapter-title" id="cap12" style="margin-top: 20px;">12. Clientes y Directorio Unificado por DNI</h2>
+    <p>Al buscar un cliente por su DNI, ves su ficha unificada: todas las reparaciones históricas, compras en mostrador, equipos vinculados y si tiene saldo deudor pendiente.</p>
+
+    <h2 class="chapter-title" id="cap13" style="margin-top: 20px;">13. Presupuestos y Cotizaciones Comerciales</h2>
+    <p>Emisión de presupuestos formales para empresas con fecha de vencimiento fija (ej: 5 días corridos) protegiendo el margen comercial ante saltos del dólar.</p>
+
+    <h2 class="chapter-title" id="cap14" style="margin-top: 20px;">14. Cuentas Corrientes & Financiación en Cuotas</h2>
+    <p>Permite financiar compras de equipos en cuotas fijas o abrir cuentas corrientes a clientes habituales de confianza con un límite estricto de crédito en pesos. Los pagos a cuenta emiten recibos oficiales.</p>
+
+    <h2 class="chapter-title" id="cap15" style="margin-top: 20px;">15. Contabilidad, Rentabilidad Neta y Reportes</h2>
+    <p>El motor contable del ERP genera asientos automáticos por partida doble en el Libro Diario. Permite analizar el margen bruto y neto de ganancia limpio por familia de producto.</p>
+
+    <h2 class="chapter-title" id="cap16" style="margin-top: 20px;">16. Documentos, Facturas y Comprobantes</h2>
+    <div class="warning-box">
+      <strong>⚠️ Aclaración sobre Facturación Fiscal AFIP:</strong>
+      Los comprobantes emitidos en el ERP tienen validez legal y operativa interna. La conexión automática por webservice directo con AFIP/ARCA para Factura Electrónica con CAE se encuentra desarrollada a nivel código y pendiente de vinculación de certificados fiscales en producción.
+    </div>
+  </div>
+
+  <!-- CAPÍTULO 17 A 20 -->
+  <div class="chapter" id="cap17">
+    <h2 class="chapter-title">17. WhatsApp y Notificaciones Automáticas</h2>
+    <p>Envía mensajes automáticos al cliente vía WhatsApp cuando su equipo pasa a 'Listo para retirar' o su compra web fue embalada, reduciendo llamados y mensajes al local.</p>
+
+    <h2 class="chapter-title" id="cap18" style="margin-top: 20px;">18. Salud de Integraciones y Webhooks</h2>
+    <p>Monitor técnico de eventos entrantes de Mercado Pago. Si un pago no impacta en un pedido web, acá se visualiza el motivo técnico y se puede forzar el reintento.</p>
+
+    <h2 class="chapter-title" id="cap19" style="margin-top: 20px;">19. Configuración, Usuarios, Sucursales y Auditoría</h2>
+    <p>Administración de roles (Vendedor, Técnico, Administrador) y auditoría inmutable de base de datos que registra quién modificó cada precio, borró o cobró con fecha e IP.</p>
+
+    <h2 class="chapter-title" id="cap20" style="margin-top: 20px;">20. Tabla Maestra de Aclaraciones, Faltantes y Atajos</h2>
+    <table>
+      <thead>
+        <tr><th>Módulo</th><th>Texto en Pantalla</th><th>Situación Real / Procedimiento Operativo</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>POS Mostrador</strong></td>
+          <td>'Escanear con barra o buscar'</td>
+          <td>El lector óptico físico no está conectado. Tipear nombre o código con teclado.</td>
+        </tr>
+        <tr>
+          <td><strong>Stock</strong></td>
+          <td>'Conteo físico (pendiente)'</td>
+          <td>Backend masivo en desarrollo. Usar botón 'Ajuste de Stock' para mermas o sobrantes.</td>
+        </tr>
+        <tr>
+          <td><strong>Caja</strong></td>
+          <td>'Turno Abierto'</td>
+          <td>No se puede vender en efectivo sin abrir caja con fondo inicial contado a mano.</td>
+        </tr>
+        <tr>
+          <td><strong>Documentos</strong></td>
+          <td>'Facturas y Comprobantes'</td>
+          <td>Emite comprobantes y tickets locales. Conexión fiscal AFIP pendiente de certificado.</td>
+        </tr>
+        <tr>
+          <td><strong>WhatsApp</strong></td>
+          <td>'Mensajería'</td>
+          <td>Depende de que el servidor de mensajería Evolution esté en línea con el QR escaneado.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3 class="section-title">Atajos de Teclado del Operador:</h3>
+    <table>
+      <thead>
+        <tr><th>Atajo de Teclado</th><th>Acción Rápida en el Sistema</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><kbd>F2</kbd> o <kbd>Ctrl + K</kbd></td><td>Abrir buscador general de módulos o clientes</td></tr>
+        <tr><td><kbd>Escape</kbd></td><td>Cerrar modal activo, salir del tutorial o cancelar búsqueda</td></tr>
+        <tr><td><kbd>Alt + P</kbd> o Botón <strong>'+'</strong></td><td>Ir instantáneamente al Punto de Venta (POS)</td></tr>
+        <tr><td><kbd>Alt + C</kbd></td><td>Abrir módulo de Caja y Arqueo de fondos</td></tr>
+        <tr><td><kbd>Alt + T</kbd></td><td>Abrir Servicio Técnico / Taller de Reparaciones</td></tr>
+        <tr><td><kbd>Alt + S</kbd></td><td>Abrir Stock y Consulta de Almacén</td></tr>
+      </tbody>
+    </table>
+
+    <div style="text-align: center; margin-top: 40px; border-top: 1px solid #cbd5e1; padding-top: 15px; color: #94a3b8; font-size: 8.5pt;">
+      NicTech ERP 2.0 • Documentación Oficial Interna • Confidencial
+    </div>
+  </div>
+
+</body>
+</html>

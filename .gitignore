@@ -10,7 +10,16 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+apps/erp/release/
 *.local
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Local browser/QA session artifacts (screenshots, profiles, downloads)
+.codex-browser-erp/
 
 # Editor directories and files
 .vscode/*
@@ -30,3 +39,5 @@ supabase/.temp/cli-latest
 
 # Supabase local temp/secrets (nunca commitear)
 supabase/.temp/
+
+image-backup/

@@ -29,12 +29,12 @@ const TerminosCondiciones = () => {
 
                         <h2 className="text-xl font-semibold mt-8 mb-4 text-foreground">3. Tienda y Compras</h2>
                         <p className="text-muted-foreground mb-4">
-                            Los precios expresados en la tienda están en Pesos Argentinos (ARS). El stock y los precios están sujetos a modificaciones sin previo aviso. En caso de no poder cumplir con la entrega de un producto abonado por falta de stock imprevista, se realizará el reembolso total de la compra.
+                            Los precios expresados en la tienda están en Pesos Argentinos (ARS), salvo los equipos señalados expresamente en dólares estadounidenses (USD). El stock y los precios están sujetos a modificaciones sin previo aviso hasta la confirmación del pago. En caso de no poder cumplir con la entrega de un producto abonado por falta de stock imprevista, se realizará el reembolso total e inmediato de la compra. Todos los productos cuentan con garantía legal: los equipos nuevos disponen de garantía oficial y los equipos usados seleccionados cuentan con 90 días (3 meses) de garantía escrita emitida por el servicio técnico de Nictech.
                         </p>
 
                         <h2 className="text-xl font-semibold mt-8 mb-4 text-foreground">4. Envíos y Retiros</h2>
                         <p className="text-muted-foreground mb-4">
-                            En Nictech ofrecemos servicio local en Urdinarrain, Entre Ríos. Las compras en tienda o equipos dejados a reparar pueden ser retirados en nuestro domicilio comercial acordando previamente. Los envíos a otras localidades corren por cuenta y riesgo del comprador mediante el servicio postal seleccionado.
+                            Ofrecemos retiro sin cargo en nuestras sucursales de Urdinarrain (Héroes de Malvinas 08) y Gilbert (C.5 y C.19), Entre Ríos, coordinando previamente el horario de entrega. Para el resto del país realizamos envíos con despacho estimado dentro de las 24 a 48 hs hábiles posteriores a la acreditación del pago, con código de seguimiento y coordinación previa del correo y costo según la localidad del comprador.
                         </p>
 
                         <h2 className="text-xl font-semibold mt-8 mb-4 text-foreground">5. Equipos Abandonados</h2>
@@ -44,7 +44,12 @@ const TerminosCondiciones = () => {
 
                         <h2 className="text-xl font-semibold mt-8 mb-4 text-foreground">6. Medios de Pago</h2>
                         <p className="text-muted-foreground mb-4">
-                            Se aceptan pagos en efectivo, transferencia bancaria y MercadoPago según las condiciones indicadas al momento del checkout.
+                            Se aceptan pagos en efectivo, transferencia bancaria (con 10% de descuento en los productos indicados) y MercadoPago según las condiciones vigentes al momento del checkout.
+                        </p>
+
+                        <h2 className="text-xl font-semibold mt-8 mb-4 text-foreground">7. Derecho de Arrepentimiento y Devoluciones (Ley 24.240)</h2>
+                        <p className="text-muted-foreground mb-4">
+                            Conforme al Artículo 34 de la Ley de Defensa del Consumidor (Ley 24.240) y al Artículo 1110 del Código Civil y Comercial de la Nación, el comprador tiene derecho a revocar la aceptación de toda compra realizada a distancia dentro del plazo de 10 días corridos contados a partir de la recepción del producto o de la celebración del contrato, sin responsabilidad ni penalidad alguna. Para ejercer este derecho, puede utilizar el Botón de Arrepentimiento disponible en el pie de página del sitio web, escribirnos por WhatsApp al +54 9 3446 35-3769 o enviar un correo a nictech.urdi@gmail.com.
                         </p>
 
                     </div>

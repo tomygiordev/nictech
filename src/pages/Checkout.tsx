@@ -1,24 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CreditCard, Wallet, Loader2, ArrowLeft, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { CreditCard, Wallet, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, MapPin, Truck } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { useCart } from '@/contexts/CartContext';
+import { useCart, type AuthoritativeCartPrice } from '@/contexts/CartContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 type PaymentMethod = 'mercadopago' | 'card';
+type DeliveryMethod = 'pickup_urdinarrain' | 'pickup_gilbert' | 'shipping';
+
+const PICKUP_BRANCH_ADDRESSES: Record<Exclude<DeliveryMethod, 'shipping'>, string> = {
+  pickup_urdinarrain: 'Retiro en sucursal Urdinarrain (Héroes de Malvinas 08)',
+  pickup_gilbert: 'Retiro en sucursal Gilbert (C.5 y C.19)',
+};
 
 const Checkout = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { items, totalPrice, clearCart, validateCart, isValidating } = useCart();
+  const { items, totalPrice, clearCart, validateCart, applyAuthoritativePrices, isValidating } = useCart();
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mercadopago');
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('pickup_urdinarrain');
   const [loading, setLoading] = useState(false);
+  const checkoutIdRef = useRef(crypto.randomUUID());
   const [initialValidationDone, setInitialValidationDone] = useState(false);
   const [payerInfo, setPayerInfo] = useState({
     name: '',
@@ -45,13 +53,14 @@ const Checkout = () => {
   // Validate cart on checkout page load (catch stale cached items)
   useEffect(() => {
     if (!paymentStatus && items.length > 0 && !initialValidationDone) {
-      validateCart().then(({ removedItems, adjustedItems }) => {
+      validateCart().then(({ removedItems, adjustedItems, validationError }) => {
         setInitialValidationDone(true);
+        if (validationError) toast.error(validationError);
         if (removedItems.length > 0) {
           toast.error(`Productos sin stock removidos: ${removedItems.join(', ')}`);
         }
         if (adjustedItems.length > 0) {
-          toast.info(`Stock ajustado para: ${adjustedItems.join(', ')}`);
+          toast.info(`Se actualizó el precio o la cantidad de: ${adjustedItems.join(', ')}. Revisá antes de pagar.`);
         }
       });
     }
@@ -129,15 +138,35 @@ const Checkout = () => {
   }
 
   const handleCheckout = async () => {
-    if (!payerInfo.name || !payerInfo.email || !payerInfo.phone || !payerInfo.dni || !payerInfo.address) {
+    const requiresShippingAddress = deliveryMethod === 'shipping';
+    if (
+      !payerInfo.name.trim() ||
+      !payerInfo.email.trim() ||
+      !payerInfo.phone.trim() ||
+      !payerInfo.dni.trim() ||
+      (requiresShippingAddress && !payerInfo.address.trim())
+    ) {
       toast.error('Por favor completa todos los campos obligatorios');
       return;
     }
 
+    const addressNote = payerInfo.address.trim();
+    const resolvedAddress =
+      deliveryMethod === 'shipping'
+        ? addressNote
+        : addressNote
+          ? `${PICKUP_BRANCH_ADDRESSES[deliveryMethod]} (${addressNote})`
+          : PICKUP_BRANCH_ADDRESSES[deliveryMethod];
+
     setLoading(true);
     try {
       // ── Final stock validation before payment ──
-      const { removedItems, adjustedItems } = await validateCart();
+      const { removedItems, adjustedItems, validationError } = await validateCart();
+
+      if (validationError) {
+        toast.error(validationError);
+        return;
+      }
 
       if (removedItems.length > 0) {
         toast.error(`Algunos productos se agotaron y fueron removidos: ${removedItems.join(', ')}. Revisa tu carrito.`);
@@ -146,7 +175,7 @@ const Checkout = () => {
       }
 
       if (adjustedItems.length > 0) {
-        toast.info(`Se ajustó la cantidad de: ${adjustedItems.join(', ')}. Revisa antes de pagar.`);
+        toast.info(`Se actualizó el precio o la cantidad de: ${adjustedItems.join(', ')}. Revisá antes de pagar.`);
         setLoading(false);
         return;
       }
@@ -154,19 +183,34 @@ const Checkout = () => {
       // All stock is valid — proceed with payment
       const { data, error } = await supabase.functions.invoke('create-mercadopago-preference', {
         body: {
+          checkout_id: checkoutIdRef.current,
+          expected_total: totalPrice,
           items: items.map(item => ({
             id: item.id,
-            name: item.name,
-            price: item.price,
+            variant_id: item.variant?.id ?? null,
             quantity: item.quantity,
             image_url: item.image_url,
           })),
-          payer: payerInfo,
+          payer: {
+            ...payerInfo,
+            address: resolvedAddress,
+          },
           origin: window.location.origin,
         },
       });
 
       if (error) throw error;
+
+      if (typeof data.total === 'number' && Math.round(data.total * 100) !== Math.round(totalPrice * 100)) {
+        checkoutIdRef.current = crypto.randomUUID();
+        const refreshed = await validateCart();
+        if (refreshed.validationError) {
+          toast.error(refreshed.validationError);
+          return;
+        }
+        toast.info('El precio cambió. Revisá el total actualizado antes de pagar.');
+        return;
+      }
 
       // Redirect to MercadoPago checkout
       if (data.init_point) {
@@ -177,20 +221,39 @@ const Checkout = () => {
     } catch (error: unknown) {
       console.error('Checkout error object:', error);
 
-      const errorMessage = 'Error al procesar el pago. Intenta nuevamente.';
-
-      if (typeof error === 'object' && error !== null) {
-        // Avoid exposing raw database or network error messages to the client
-        // if (error.message) errorMessage = error.message;
-
+      let errorMessage = 'No se pudo iniciar el pago. Intentá nuevamente o contactá al local.';
+      if (typeof error === 'object' && error !== null && 'context' in error && error.context instanceof Response) {
         try {
-          if (error.context && typeof error.context.json === 'function') {
-            const body = await error.context.json();
-            console.error('Checkout error body:', body);
-            // We intentionally do NOT set errorMessage = body.error here to prevent exposing backend/MP logs
+          const body: unknown = await error.context.json();
+          if (error.context.status === 409 && body && typeof body === 'object' && 'items' in body && Array.isArray(body.items)) {
+            const prices: AuthoritativeCartPrice[] = [];
+            for (const item of body.items as unknown[]) {
+              if (!item || typeof item !== 'object' || !('product_id' in item) || typeof item.product_id !== 'string' ||
+                !('variant_id' in item) || (item.variant_id !== null && typeof item.variant_id !== 'string') ||
+                !('unit_price' in item) || typeof item.unit_price !== 'number') {
+                throw new Error('Respuesta de precios inválida');
+              }
+              prices.push({
+                product_id: item.product_id,
+                variant_id: typeof item.variant_id === 'string' ? item.variant_id : null,
+                unit_price: item.unit_price,
+              });
+            }
+            if (!applyAuthoritativePrices(prices)) throw new Error('El carrito cambió durante la validación');
+            checkoutIdRef.current = crypto.randomUUID();
+            toast.info('El precio cambió. Revisá el total actualizado antes de pagar.');
+            return;
           }
-        } catch (e) {
-          console.error('Error parsing error context:', e);
+          const safeMessages = new Set([
+            'No se pudo obtener el precio vigente. Intentá nuevamente o contactá al local.',
+            'El precio del producto tiene más de dos decimales o está fuera de rango. Contactá al local.',
+            'Los pagos están momentáneamente pausados. Intentá nuevamente en unos minutos.',
+          ]);
+          if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' && safeMessages.has(body.error)) {
+            errorMessage = body.error;
+          }
+        } catch (parseError) {
+          console.error('Error parsing error context:', parseError);
         }
       }
 
@@ -268,23 +331,121 @@ const Checkout = () => {
                         placeholder="+54 9 11 1234-5678"
                       />
                     </div>
+                    <div className="pt-4 border-t border-border/60">
+                      <Label className="text-base font-semibold mb-3 block">Modalidad de Entrega *</Label>
+                      <RadioGroup
+                        value={deliveryMethod}
+                        onValueChange={(value) => setDeliveryMethod(value as DeliveryMethod)}
+                        className="space-y-2.5"
+                      >
+                        <label
+                          htmlFor="delivery-urdinarrain"
+                          className={`flex items-start gap-3 p-3.5 rounded-xl border transition-colors cursor-pointer ${
+                            deliveryMethod === 'pickup_urdinarrain'
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:border-primary/40'
+                          }`}
+                        >
+                          <RadioGroupItem value="pickup_urdinarrain" id="delivery-urdinarrain" className="mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-medium text-sm text-foreground flex items-center gap-1.5">
+                                <MapPin className="h-4 w-4 text-primary shrink-0" />
+                                Retiro en sucursal Urdinarrain
+                              </span>
+                              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                Gratis
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Héroes de Malvinas 08, Entre Ríos
+                            </p>
+                          </div>
+                        </label>
+
+                        <label
+                          htmlFor="delivery-gilbert"
+                          className={`flex items-start gap-3 p-3.5 rounded-xl border transition-colors cursor-pointer ${
+                            deliveryMethod === 'pickup_gilbert'
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:border-primary/40'
+                          }`}
+                        >
+                          <RadioGroupItem value="pickup_gilbert" id="delivery-gilbert" className="mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-medium text-sm text-foreground flex items-center gap-1.5">
+                                <MapPin className="h-4 w-4 text-primary shrink-0" />
+                                Retiro en sucursal Gilbert
+                              </span>
+                              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                Gratis
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              C.5 y C.19, Entre Ríos
+                            </p>
+                          </div>
+                        </label>
+
+                        <label
+                          htmlFor="delivery-shipping"
+                          className={`flex items-start gap-3 p-3.5 rounded-xl border transition-colors cursor-pointer ${
+                            deliveryMethod === 'shipping'
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:border-primary/40'
+                          }`}
+                        >
+                          <RadioGroupItem value="shipping" id="delivery-shipping" className="mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium text-sm text-foreground flex items-center gap-1.5">
+                              <Truck className="h-4 w-4 text-primary shrink-0" />
+                              Envío a domicilio (a todo el país)
+                            </span>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Despacho en 24 a 48 hs hábiles · costo según correo y localidad
+                            </p>
+                          </div>
+                        </label>
+                      </RadioGroup>
+                    </div>
+
                     <div>
-                      <Label htmlFor="address">Dirección de Envío o Facturación *</Label>
+                      <Label htmlFor="address">
+                        {deliveryMethod === 'shipping'
+                          ? 'Dirección de Envío (Calle, altura, localidad y provincia) *'
+                          : 'Localidad o aclaraciones para el retiro (opcional)'}
+                      </Label>
                       <Input
                         id="address"
                         type="text"
-                        required
+                        required={deliveryMethod === 'shipping'}
                         value={payerInfo.address}
                         onChange={(e) => setPayerInfo(prev => ({ ...prev, address: e.target.value }))}
-                        placeholder="Calle, Número, Localidad, Provincia"
+                        placeholder={
+                          deliveryMethod === 'shipping'
+                            ? 'Calle, altura, localidad, provincia'
+                            : 'Opcional: horario estimado o quién retira'
+                        }
                       />
+                      {deliveryMethod !== 'shipping' && (
+                        <p className="text-xs text-muted-foreground mt-1.5">
+                          Retirás sin cargo en{' '}
+                          {deliveryMethod === 'pickup_urdinarrain'
+                            ? 'Héroes de Malvinas 08, Urdinarrain'
+                            : 'C.5 y C.19, Gilbert'}
+                          . Te avisamos por WhatsApp cuando esté listo.
+                        </p>
+                      )}
                     </div>
                   </div>
 
                   <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                    <h3 className="text-sm font-semibold text-blue-500 mb-1">¡Importante sobre los envíos!</h3>
+                    <h3 className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-1">Información sobre entrega y envíos</h3>
                     <p className="text-xs text-muted-foreground">
-                      El monto a pagar no incluye costos de envío. Al finalizar tu compra nos pondremos en contacto con vos al número o email que proporcionaste para coordinar el método de entrega y los costos asociados según tu localidad.
+                      {deliveryMethod === 'shipping'
+                        ? 'El total abonado no incluye el costo del correo. Al acreditarse el pago, coordinamos con vos por WhatsApp o email el envío (despacho en 24 a 48 hs hábiles) y su seguimiento.'
+                        : 'El retiro en nuestras sucursales de Urdinarrain y Gilbert es totalmente gratuito. Una vez acreditado el pago, te contactamos para confirmar que tu pedido está listo.'}
                     </p>
                   </div>
                 </div>
@@ -297,7 +458,7 @@ const Checkout = () => {
 
                   <div className="space-y-4">
                     {items.map((item) => (
-                      <div key={item.id} className="flex gap-4">
+                      <div key={`${item.id}:${item.variant?.id ?? 'base'}`} className="flex gap-4">
                         <div className="h-16 w-16 rounded-lg bg-background border overflow-hidden flex-shrink-0">
                           {item.image_url ? (
                             <img
@@ -312,6 +473,9 @@ const Checkout = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm truncate">{item.name}</p>
+                          {item.variant && (
+                            <p className="text-muted-foreground text-xs">Color: {item.variant.color}</p>
+                          )}
                           <p className="text-muted-foreground text-sm">
                             Cantidad: {item.quantity}
                           </p>
@@ -354,7 +518,7 @@ const Checkout = () => {
 
                   <Button
                     onClick={handleCheckout}
-                    disabled={loading}
+                    disabled={loading || isValidating}
                     size="lg"
                     className="w-full h-12 text-base"
                   >

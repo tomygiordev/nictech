@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { repairNoteSchema, type RepairNoteInput } from "./schemas";
 import {
   Wrench,
   Search,
@@ -25,6 +29,8 @@ import {
   User,
   CheckCircle,
   XCircle,
+  Banknote,
+  BriefcaseBusiness,
 } from "lucide-react";
 import {
   WorkspaceHeader,
@@ -39,9 +45,15 @@ import { type ErpModuleId } from "@nictech/domain";
 import { formatCurrency, formatDate, formatDateTime } from "../../lib/formatters";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import { supabase } from "../../lib/supabase";
+import { listOpenCashSessions } from "../cash/api";
 import {
+  getRepairStatusLabel,
   listRepairOrders,
   listRepairStateEvents,
+  listRepairNotes,
+  searchRepairsByDocument,
+  addRepairNote,
+  type RepairNote,
   listAvailableTransitions,
   intakeRepairOrder,
   transitionRepairOrder,
@@ -55,6 +67,13 @@ import {
   listWarranties,
   listWarrantyClaims,
   openWarrantyClaim,
+  listRepairLabor,
+  recordRepairLabor,
+  listRepairPayments,
+  listRepairPaymentMethods,
+  listRepairExchangeSnapshots,
+  recordRepairPayment,
+  reverseRepairPayment,
   type RepairOrderOverview,
   type RepairStateEvent,
   type RepairTransitionOption,
@@ -63,11 +82,69 @@ import {
   type WarrantyClaimRecord,
   type ConsumedPartRecord,
   type TestTemplateVersion,
+  type RepairLaborRecord,
+  type RepairPaymentRecord,
+  type RepairPaymentMethod,
+  type RepairExchangeSnapshot,
 } from "./api";
+
+const intakeSchema = z.object({
+  branchId: z.string().uuid("Seleccioná una sucursal válida."),
+  customerId: z.string().uuid("Seleccioná un cliente válido."),
+  model: z.string().trim().min(2, "Indicá el modelo del equipo.").max(160),
+  reportedFault: z.string().trim().min(5, "Describí la falla con al menos 5 caracteres.").max(1000),
+  serialNumber: z.string().trim().max(120).optional(),
+  imei: z.string().trim().max(30).optional(),
+}).superRefine((value, context) => {
+  if (value.serialNumber || value.imei) return;
+  context.addIssue({
+    code: "custom",
+    path: ["serialNumber"],
+    message: "Ingresá el número de serie o el IMEI del equipo.",
+  });
+});
+
+const laborSchema = z.object({
+  description: z.string().trim().min(5, "Describí el trabajo realizado.").max(1000),
+  hours: z.coerce.number().positive("Las horas deben ser mayores a cero.").max(1000),
+  unitCost: z.coerce.number().min(0, "El costo no puede ser negativo.").max(1_000_000_000),
+});
+
+const paymentSchema = z.object({
+  paymentMethodId: z.string().uuid("Seleccioná un medio de pago."),
+  amount: z.coerce.number().positive("El importe debe ser mayor a cero."),
+  currency: z.string().trim().min(3).max(3),
+  exchangeSnapshotId: z.string().uuid("Seleccioná una cotización registrada."),
+  reason: z.string().trim().min(5, "Indicá el motivo del cobro.").max(300),
+});
+
+const operationKey = (prefix: string): string => `${prefix}-${crypto.randomUUID()}`;
+
+const createRepairCustomer = async (input: {
+  displayName: string;
+  phone: string | null;
+  identityDocument: string | null;
+}): Promise<string> => {
+  const { data, error } = await supabase.rpc("create_customer_with_private_details", {
+    new_kind: "person",
+    new_display_name: input.displayName,
+    new_legal_name: undefined,
+    new_email: undefined,
+    new_phone: input.phone ?? undefined,
+    new_tax_id: undefined,
+    new_identity_document: input.identityDocument ?? undefined,
+    new_address: {},
+    new_internal_notes: undefined,
+  });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("La base no devolvió el identificador del cliente creado.");
+  return data;
+};
 
 const STATUS_MAP: Record<string, { label: string; pillClass: string }> = {
   received: { label: "Recibido", pillClass: "flow-status-pill pending" },
   diagnosis: { label: "Diagnóstico", pillClass: "flow-status-pill processing" },
+  waiting_parts: { label: "Esperando repuestos", pillClass: "flow-status-pill processing" },
   repair: { label: "En Reparación", pillClass: "flow-status-pill processing" },
   ready: { label: "Listo para Retirar", pillClass: "flow-status-pill completed" },
   delivered: { label: "Entregado", pillClass: "flow-status-pill completed" },
@@ -82,29 +159,58 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   activeModuleId = "repairs",
   onSelectModule,
 }) => {
-  const { organizationId } = useErpAuth();
-  const currentBranchId = "20000000-0000-0000-0000-000000000001";
+  const { organizationId, hasPermission } = useErpAuth();
+  const [branches, setBranches] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [locations, setLocations] = useState<Array<{ id: string; branch_id: string; name: string; code: string }>>([]);
+  const [currentBranchId, setCurrentBranchId] = useState<string>("");
 
   // Repairs list state
   const [repairs, setRepairs] = useState<RepairOrderOverview[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [activeFilter, setActiveFilter] = useState<string>("active");
   const [search, setSearch] = useState<string>("");
+  const [documentMatches, setDocumentMatches] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    const document = search.trim();
+    setDocumentMatches([]);
+    if (!/^[0-9]{7,8}$/.test(document) || !hasPermission("customers.view_sensitive")) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void searchRepairsByDocument(document).then((ids) => {
+        if (!cancelled) setDocumentMatches(ids);
+      }).catch(() => {
+        if (!cancelled) setFeedback({ type: "error", message: "No se pudo buscar por DNI." });
+      });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [search, hasPermission]);
 
   // Selected Ticket Detail & Tabs
   const [selectedTicket, setSelectedTicket] = useState<RepairOrderOverview | null>(null);
+  const detailRequest = useRef(0);
+  const [ticketNotes, setTicketNotes] = useState<RepairNote[]>([]);
+  const noteForm = useForm<RepairNoteInput>({ resolver: zodResolver(repairNoteSchema), defaultValues: { content: "", isPublic: false } });
+  const { reset: resetNoteForm } = noteForm;
   const [ticketEvents, setTicketEvents] = useState<RepairStateEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState<boolean>(false);
   const [availableTransitions, setAvailableTransitions] = useState<RepairTransitionOption[]>([]);
   const [ticketParts, setTicketParts] = useState<ConsumedPartRecord[]>([]);
+  const [ticketLabor, setTicketLabor] = useState<RepairLaborRecord[]>([]);
+  const [ticketPayments, setTicketPayments] = useState<RepairPaymentRecord[]>([]);
   const [loadingParts, setLoadingParts] = useState<boolean>(false);
-  const [detailTab, setDetailTab] = useState<"info" | "parts" | "history">("info");
+  const [loadingWork, setLoadingWork] = useState<boolean>(false);
+  const [detailTab, setDetailTab] = useState<"info" | "parts" | "work" | "history">("info");
+
+  useEffect(() => {
+    resetNoteForm({ content: "", isPublic: false });
+  }, [selectedTicket?.id, resetNoteForm]);
 
   // New Repair Intake Modal & Form
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
-  const [customers, setCustomers] = useState<Array<{ id: string; display_name: string; code: string; phone: string | null }>>([]);
+  const [customers, setCustomers] = useState<Array<{ id: string; display_name: string; phone: string | null }>>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [isNewCustomer, setIsNewCustomer] = useState<boolean>(false);
   const [newCustomerName, setNewCustomerName] = useState<string>("");
@@ -136,7 +242,31 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [partQuantity, setPartQuantity] = useState<number>(1);
   const [partReason, setPartReason] = useState<string>("Reemplazo de módulo por reparación");
+  const [partLocationId, setPartLocationId] = useState<string>("");
   const [submittingPart, setSubmittingPart] = useState<boolean>(false);
+
+  // Labor and repair payments
+  const [isLaborModalOpen, setIsLaborModalOpen] = useState<boolean>(false);
+  const [laborDescription, setLaborDescription] = useState<string>("");
+  const [laborHours, setLaborHours] = useState<string>("1");
+  const [laborUnitCost, setLaborUnitCost] = useState<string>("");
+  const [laborOperationKey, setLaborOperationKey] = useState<string>(() => operationKey("repair-labor"));
+  const [submittingLabor, setSubmittingLabor] = useState<boolean>(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
+  const [paymentMethods, setPaymentMethods] = useState<RepairPaymentMethod[]>([]);
+  const [exchangeSnapshots, setExchangeSnapshots] = useState<RepairExchangeSnapshot[]>([]);
+  const [cashSessions, setCashSessions] = useState<Array<{ id: string; branch_id: string }>>([]);
+  const [paymentMethodId, setPaymentMethodId] = useState<string>("");
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentCurrency, setPaymentCurrency] = useState<string>("ARS");
+  const [paymentSnapshotId, setPaymentSnapshotId] = useState<string>("");
+  const [paymentCashSessionId, setPaymentCashSessionId] = useState<string>("");
+  const [paymentReason, setPaymentReason] = useState<string>("Cobro de reparación");
+  const [paymentOperationKey, setPaymentOperationKey] = useState<string>(() => operationKey("repair-payment"));
+  const [submittingPayment, setSubmittingPayment] = useState<boolean>(false);
+  const [paymentToReverse, setPaymentToReverse] = useState<RepairPaymentRecord | null>(null);
+  const [reversingPayment, setReversingPayment] = useState(false);
+  const [reversalOperationKey, setReversalOperationKey] = useState(() => operationKey("repair-payment-reversal"));
 
   // Delivery Modal
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState<boolean>(false);
@@ -176,39 +306,74 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     void fetchRepairsData();
   }, [fetchRepairsData]);
 
+  useEffect(() => {
+    if (!organizationId) return;
+    let cancelled = false;
+    const loadOperatingContext = async () => {
+      try {
+        const [branchResult, locationResult] = await Promise.all([
+          supabase.from("branches").select("id,name,code").eq("is_active", true).order("name"),
+          supabase.from("locations").select("id,branch_id,name,code").eq("is_active", true).order("name"),
+        ]);
+        if (branchResult.error) throw branchResult.error;
+        if (locationResult.error) throw locationResult.error;
+        if (cancelled) return;
+        const nextBranches = (branchResult.data || []) as Array<{ id: string; name: string; code: string }>;
+        const nextLocations = (locationResult.data || []) as Array<{ id: string; branch_id: string; name: string; code: string }>;
+        setBranches(nextBranches);
+        setLocations(nextLocations);
+        setCurrentBranchId((current) => current || nextBranches[0]?.id || "");
+      } catch (contextError) {
+        if (!cancelled) {
+          setError(contextError instanceof Error ? contextError.message : "No se pudo cargar sucursales y ubicaciones.");
+        }
+      }
+    };
+    void loadOperatingContext();
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId]);
+
   // Load customers for intake
   const loadCustomers = useCallback(async () => {
     try {
-      const { data } = await supabase
+      const { data, error: customerError } = await supabase
         .from("customers")
-        .select("id, display_name, code, phone")
+        .select("id, display_name, phone")
         .eq("is_active", true)
         .order("display_name", { ascending: true });
+      if (customerError) throw customerError;
       setCustomers(data || []);
       if (data && data.length > 0 && !selectedCustomerId) {
         setSelectedCustomerId(data[0].id);
       }
     } catch (e) {
-      console.warn("Aviso al cargar clientes:", e);
+      setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudieron cargar los clientes. Cerrá y volvé a abrir el ingreso para reintentar." });
     }
   }, [selectedCustomerId]);
 
   // Load products for parts consumption
   const loadProducts = useCallback(async () => {
     try {
-      const { data } = await supabase
+      const { data, error: productError } = await supabase
         .from("products")
         .select("id, internal_name, internal_code")
         .eq("is_active", true)
         .order("internal_name", { ascending: true });
+      if (productError) throw productError;
       setAvailableProducts(data || []);
       if (data && data.length > 0 && !selectedProductId) {
         setSelectedProductId(data[0].id);
       }
+      if (selectedTicket) {
+        const branchLocations = locations.filter((location) => location.branch_id === selectedTicket.branch_id);
+        setPartLocationId((current) => branchLocations.some((location) => location.id === current) ? current : branchLocations[0]?.id || "");
+      }
     } catch (e) {
-      console.warn("Aviso al cargar repuestos:", e);
+      setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudieron cargar los repuestos." });
     }
-  }, [selectedProductId]);
+  }, [locations, selectedProductId, selectedTicket]);
 
   useEffect(() => {
     if (isNewModalOpen) void loadCustomers();
@@ -220,26 +385,48 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
   // Fetch ticket details when selecting a ticket
   const loadTicketDetails = useCallback(async (ticket: RepairOrderOverview) => {
+    const requestId = ++detailRequest.current;
     try {
       setLoadingEvents(true);
       setLoadingParts(true);
-      const [events, transitions, parts] = await Promise.all([
+      setLoadingWork(true);
+      const [events, notes, transitions, parts, labor, payments] = await Promise.all([
         listRepairStateEvents(ticket.id),
+        listRepairNotes(ticket.id),
         listAvailableTransitions(ticket.status_id),
         listRepairParts(ticket.id),
+        hasPermission("costs.view") ? listRepairLabor(ticket.id) : Promise.resolve([]),
+        listRepairPayments(ticket.id),
       ]);
+      if (requestId !== detailRequest.current) return;
       setTicketEvents(events);
+      setTicketNotes(notes);
       setAvailableTransitions(transitions);
       setTicketParts(parts);
+      setTicketLabor(labor);
+      setTicketPayments(payments);
     } catch (e) {
-      console.error("Error al cargar detalles de la orden:", e);
+      if (requestId !== detailRequest.current) return;
+      setFeedback({
+        type: "error",
+        message: e instanceof Error ? e.message : "No se pudo cargar el detalle de la reparación.",
+      });
     } finally {
-      setLoadingEvents(false);
-      setLoadingParts(false);
+      if (requestId === detailRequest.current) {
+        setLoadingEvents(false);
+        setLoadingParts(false);
+        setLoadingWork(false);
+      }
     }
-  }, []);
+  }, [hasPermission]);
 
   const handleSelectTicket = (ticket: RepairOrderOverview) => {
+    setTicketEvents([]);
+    setTicketNotes([]);
+    setTicketParts([]);
+    setTicketLabor([]);
+    setTicketPayments([]);
+    setAvailableTransitions([]);
     setSelectedTicket(ticket);
     setDetailTab("info");
     void loadTicketDetails(ticket);
@@ -248,8 +435,21 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   // Handle Intake
   const handleIntakeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!deviceModel.trim() || !reportedFault.trim()) {
-      setFeedback({ type: "error", message: "Modelo del equipo y falla reportada son obligatorios." });
+    if (!organizationId) {
+      setFeedback({ type: "error", message: "La sesión no tiene una organización activa. Volvé a iniciar sesión." });
+      return;
+    }
+    const selectedIntakeCustomer = isNewCustomer ? crypto.randomUUID() : selectedCustomerId;
+    const intakeValidation = intakeSchema.safeParse({
+      branchId: currentBranchId,
+      customerId: selectedIntakeCustomer,
+      model: deviceModel,
+      reportedFault,
+      serialNumber: deviceSerial,
+      imei: deviceImei,
+    });
+    if (!intakeValidation.success) {
+      setFeedback({ type: "error", message: intakeValidation.error.issues[0]?.message ?? "Revisá los datos de ingreso." });
       return;
     }
 
@@ -263,23 +463,20 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           setFeedback({ type: "error", message: "Ingrese el nombre del nuevo cliente." });
           return;
         }
-        const { data: newCust, error: custErr } = await supabase
-          .from("customers")
-          .insert([
-            {
-              organization_id: "10000000-0000-0000-0000-000000000001",
-              code: newCustomerDni.trim() || `CLI-${Date.now().toString().slice(-6)}`,
-              kind: "person",
-              display_name: newCustomerName.trim(),
-              phone: newCustomerPhone.trim() || null,
-              is_active: true,
-            },
-          ])
-          .select("id")
-          .single();
-
-        if (custErr) throw custErr;
-        custId = newCust.id;
+        const normalizedIdentityDocument = newCustomerDni.replace(/\D/g, "");
+        if (normalizedIdentityDocument && (normalizedIdentityDocument.length < 7 || normalizedIdentityDocument.length > 8)) {
+          setFeedback({ type: "error", message: "El DNI debe tener 7 u 8 dígitos." });
+          return;
+        }
+        if (normalizedIdentityDocument && !hasPermission("customers.view_sensitive")) {
+          setFeedback({ type: "error", message: "Tu rol no permite registrar documentos privados." });
+          return;
+        }
+        custId = await createRepairCustomer({
+          displayName: newCustomerName.trim(),
+          phone: newCustomerPhone.trim() || null,
+          identityDocument: normalizedIdentityDocument || null,
+        });
       }
 
       const accessoriesArray = intakeAccessories
@@ -288,23 +485,23 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         .filter(Boolean);
 
       const result = await intakeRepairOrder({
-        branchId: currentBranchId,
+        branchId: intakeValidation.data.branchId,
         customerId: custId,
         equipmentType: deviceType,
         brandName: deviceBrand,
-        modelName: deviceModel.trim(),
+        modelName: intakeValidation.data.model,
         serialNumber: deviceSerial.trim() || undefined,
         imei: deviceImei.trim() || undefined,
         accessories: accessoriesArray,
         intakeCondition: intakeCondition.trim() || "Recibido en taller",
         intakeDamage: intakeDamage.trim() || undefined,
         intakeNotes: intakeNotes.trim() || undefined,
-        reportedFault: reportedFault.trim(),
+        reportedFault: intakeValidation.data.reportedFault,
       });
 
       setFeedback({
         type: "success",
-        message: `¡Orden de Servicio ingresada con éxito! Código: ${result.order_code}`,
+        message: `Orden ${result.order_code} ingresada. Código de seguimiento: ${result.public_tracking_code}`,
       });
       setIsNewModalOpen(false);
       // Reset form
@@ -335,7 +532,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     if (transition.requires_final_tests && !selectedTicket.qc_passed) {
       setFeedback({
         type: "error",
-        message: "Para avanzar a este estado es obligatorio realizar y aprobar el Protocolo QC (Pruebas Finales).",
+        message: "Para avanzar a este estado es obligatorio completar y aprobar el control de calidad final.",
       });
       openQcModal(selectedTicket);
       return;
@@ -368,11 +565,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     try {
       const template = await getActiveTestTemplate("final");
       setActiveTemplate(template);
-      const initialChecks: Record<string, "pass" | "fail"> = {};
-      (template?.definition || []).forEach((item) => {
-        initialChecks[item.key] = "pass";
-      });
-      setQcChecks(initialChecks);
+      setQcChecks({});
       setQcNotes("");
       setIsQcModalOpen(true);
     } catch (err) {
@@ -385,21 +578,38 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     e.preventDefault();
     if (!qcTargetTicket || !activeTemplate) return;
 
+    const requiredItems = activeTemplate.definition.filter((item) => item.required !== false);
+    const resultsArray: Array<{ item_key: string; result: "pass" | "fail" }> = [];
+    for (const item of requiredItems) {
+      const result = qcChecks[item.key];
+      if (!result) {
+        setFeedback({
+          type: "error",
+          message: "Registrá un resultado para cada control obligatorio antes de confirmar el control de calidad.",
+        });
+        return;
+      }
+      resultsArray.push({ item_key: item.key, result });
+    }
+
+    if (resultsArray.length === 0) {
+      setFeedback({
+        type: "error",
+          message: "La plantilla de control de calidad no tiene controles obligatorios para registrar.",
+      });
+      return;
+    }
+
     try {
       setSubmittingQc(true);
-      const resultsArray = Object.entries(qcChecks).map(([key, res]) => ({
-        item_key: key,
-        result: res,
-      }));
-
       await recordRepairTestRun(qcTargetTicket.id, activeTemplate.id, resultsArray, qcNotes.trim() || undefined);
 
       const allPassed = resultsArray.every((r) => r.result === "pass");
       setFeedback({
         type: allPassed ? "success" : "error",
         message: allPassed
-          ? `¡Protocolo QC completado y APROBADO para ${qcTargetTicket.order_code}!`
-          : `Protocolo QC registrado con fallas para ${qcTargetTicket.order_code}. Se requiere corrección técnica.`,
+          ? `¡Control de calidad aprobado para ${qcTargetTicket.order_code}!`
+          : `Control de calidad registrado con fallas para ${qcTargetTicket.order_code}. Se requiere corrección técnica.`,
       });
       setIsQcModalOpen(false);
       await fetchRepairsData();
@@ -412,7 +622,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         }
       }
     } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al registrar QC." });
+      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al registrar el control de calidad." });
     } finally {
       setSubmittingQc(false);
     }
@@ -421,14 +631,16 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   // Handle Part Consumption
   const handleConsumePartSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTicket || !selectedProductId) return;
+    if (!selectedTicket || !selectedProductId || !partLocationId) {
+      setFeedback({ type: "error", message: "Seleccioná un repuesto y una ubicación de stock." });
+      return;
+    }
 
     try {
       setSubmittingPart(true);
-      const tallerLocationId = "30000000-0000-0000-0000-000000000002"; // Warehouse/Taller
       await consumeRepairPart(
         selectedTicket.id,
-        tallerLocationId,
+        partLocationId,
         selectedProductId,
         undefined,
         partQuantity,
@@ -437,7 +649,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
       setFeedback({
         type: "success",
-        message: `Repuesto consumido e incorporado a la orden ${selectedTicket.order_code}. Nota: cualquier QC previo queda invalidado para garantizar control de calidad.`,
+        message: `Repuesto consumido e incorporado a la orden ${selectedTicket.order_code}. Nota: el control de calidad anterior queda invalidado y debe repetirse.`,
       });
       setIsPartModalOpen(false);
       await fetchRepairsData();
@@ -451,6 +663,142 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al consumir repuesto." });
     } finally {
       setSubmittingPart(false);
+    }
+  };
+
+  const openLaborModal = () => {
+    setLaborOperationKey(operationKey("repair-labor"));
+    setIsLaborModalOpen(true);
+  };
+
+  const handleLaborSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedTicket) return;
+    const parsed = laborSchema.safeParse({
+      description: laborDescription,
+      hours: laborHours,
+      unitCost: laborUnitCost,
+    });
+    if (!parsed.success) {
+      setFeedback({ type: "error", message: parsed.error.issues[0]?.message ?? "Revisá la mano de obra." });
+      return;
+    }
+    try {
+      setSubmittingLabor(true);
+      await recordRepairLabor(
+        selectedTicket.id,
+        parsed.data.description,
+        parsed.data.hours,
+        parsed.data.unitCost,
+        laborOperationKey,
+      );
+      setFeedback({ type: "success", message: "Mano de obra registrada con trazabilidad de costos." });
+      setIsLaborModalOpen(false);
+      setLaborDescription("");
+      setLaborHours("1");
+      setLaborUnitCost("");
+      setLaborOperationKey(operationKey("repair-labor"));
+      await loadTicketDetails(selectedTicket);
+    } catch (laborError) {
+      setFeedback({ type: "error", message: laborError instanceof Error ? laborError.message : "No se pudo registrar la mano de obra." });
+    } finally {
+      setSubmittingLabor(false);
+    }
+  };
+
+  const openPaymentModal = async () => {
+    if (!selectedTicket) return;
+    try {
+      const [methods, snapshots, sessions] = await Promise.all([
+        listRepairPaymentMethods(),
+        listRepairExchangeSnapshots(),
+        listOpenCashSessions(),
+      ]);
+      setPaymentMethods(methods);
+      setExchangeSnapshots(snapshots);
+      setCashSessions(
+        sessions
+          .filter((session) => session.branch_id === selectedTicket.branch_id)
+          .map((session) => ({ id: session.id, branch_id: session.branch_id })),
+      );
+      const firstMethod = methods[0];
+      const preferredCurrency = snapshots.some((snapshot) => snapshot.quote_currency === "ARS") ? "ARS" : snapshots[0]?.quote_currency || "ARS";
+      setPaymentMethodId(firstMethod?.id || "");
+      setPaymentCurrency(preferredCurrency);
+      setPaymentSnapshotId(snapshots.find((snapshot) => snapshot.quote_currency === preferredCurrency)?.id || "");
+      setPaymentCashSessionId("");
+      setPaymentOperationKey(operationKey("repair-payment"));
+      setIsPaymentModalOpen(true);
+    } catch (paymentConfigError) {
+      setFeedback({ type: "error", message: paymentConfigError instanceof Error ? paymentConfigError.message : "No se pudo preparar el cobro." });
+    }
+  };
+
+  const handlePaymentCurrencyChange = (currency: string) => {
+    setPaymentCurrency(currency);
+    setPaymentSnapshotId(exchangeSnapshots.find((snapshot) => snapshot.quote_currency === currency)?.id || "");
+  };
+
+  const handlePaymentSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedTicket) return;
+    const method = paymentMethods.find((candidate) => candidate.id === paymentMethodId);
+    const parsed = paymentSchema.safeParse({
+      paymentMethodId,
+      amount: paymentAmount,
+      currency: paymentCurrency,
+      exchangeSnapshotId: paymentSnapshotId,
+      reason: paymentReason,
+    });
+    if (!parsed.success) {
+      setFeedback({ type: "error", message: parsed.error.issues[0]?.message ?? "Revisá los datos del cobro." });
+      return;
+    }
+    if (method?.requires_cash_session && !paymentCashSessionId) {
+      setFeedback({ type: "error", message: "Este medio de pago requiere una caja abierta de la misma sucursal." });
+      return;
+    }
+    try {
+      setSubmittingPayment(true);
+      await recordRepairPayment({
+        repairOrderId: selectedTicket.id,
+        paymentMethodId: parsed.data.paymentMethodId,
+        cashSessionId: method?.requires_cash_session ? paymentCashSessionId : null,
+        amount: parsed.data.amount,
+        currency: parsed.data.currency,
+        exchangeSnapshotId: parsed.data.exchangeSnapshotId,
+        operationKey: paymentOperationKey,
+        reason: parsed.data.reason,
+      });
+      setFeedback({ type: "success", message: "Cobro registrado y conciliado con la reparación." });
+      setIsPaymentModalOpen(false);
+      setPaymentAmount("");
+      setPaymentOperationKey(operationKey("repair-payment"));
+      await loadTicketDetails(selectedTicket);
+    } catch (paymentError) {
+      setFeedback({ type: "error", message: paymentError instanceof Error ? paymentError.message : "No se pudo registrar el cobro." });
+    } finally {
+      setSubmittingPayment(false);
+    }
+  };
+
+  const handleReversePayment = async (payment: RepairPaymentRecord) => {
+    if (!selectedTicket || reversingPayment) return;
+    try {
+      setReversingPayment(true);
+      await reverseRepairPayment({
+        paymentId: payment.id,
+        refundCashSessionId: payment.cash_session_id,
+        operationKey: reversalOperationKey,
+        reason: "Reversión operativa de cobro de reparación",
+      });
+      setFeedback({ type: "success", message: "Cobro revertido mediante contramovimiento auditable." });
+      setPaymentToReverse(null);
+      await loadTicketDetails(selectedTicket);
+    } catch (reversalError) {
+      setFeedback({ type: "error", message: reversalError instanceof Error ? reversalError.message : "No se pudo revertir el cobro." });
+    } finally {
+      setReversingPayment(false);
     }
   };
 
@@ -476,7 +824,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const openDeliveryModal = () => {
     if (!selectedTicket) return;
     setDeliveryRecipientName(selectedTicket.customer_name);
-    setDeliveryDocumentSuffix(selectedTicket.customer_code?.slice(-4) || "0000");
+    setDeliveryDocumentSuffix("");
     setDeliveryWarrantyDays(90);
     setDeliveryWarrantyTerms("Garantía de 90 días sobre mano de obra y repuestos instalados en NicTech.");
     setIsDeliveryModalOpen(true);
@@ -522,7 +870,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       const data = await listRepairTestRuns();
       setTestRuns(data);
     } catch (e) {
-      console.warn("Aviso al cargar historial QC:", e);
+      setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudo cargar el historial de controles. Volvé a ingresar a la sección para reintentar." });
     } finally {
       setLoadingTests(false);
     }
@@ -539,7 +887,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         setSelectedWarrantyId(wList[0].id);
       }
     } catch (e) {
-      console.warn("Aviso al cargar garantías:", e);
+      setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudieron cargar las garantías. Volvé a ingresar a la sección para reintentar." });
     } finally {
       setLoadingWarranties(false);
     }
@@ -573,18 +921,20 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const filteredRepairs = useMemo(() => {
     return repairs.filter((r) => {
       const matchFilter =
-        activeFilter === "all"
-          ? true
+        activeFilter === "active"
+          ? !r.delivery_id
           : activeFilter === "delivered"
           ? Boolean(r.delivery_id)
           : activeFilter === "ready"
           ? r.status_code === "ready" && !r.delivery_id
           : r.status_code === activeFilter;
 
-      const q = search.toLowerCase();
+      const q = search.trim().toLowerCase();
       const matchSearch =
         !search.trim() ||
         r.order_code.toLowerCase().includes(q) ||
+        r.public_tracking_code.toLowerCase().includes(q) ||
+        documentMatches.includes(r.id) ||
         r.customer_name.toLowerCase().includes(q) ||
         (r.customer_phone && r.customer_phone.includes(q)) ||
         r.model_snapshot.toLowerCase().includes(q) ||
@@ -592,20 +942,23 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
       return matchFilter && matchSearch;
     });
-  }, [repairs, activeFilter, search]);
+  }, [repairs, activeFilter, search, documentMatches]);
 
   // KPIs
-  const activeTallerCount = repairs.filter((r) => !r.delivery_id && r.status_code !== "ready").length;
+  const activeTallerCount = repairs.filter((r) => !r.delivery_id && r.status_code !== "ready" && r.status_code !== "delivered").length;
   const readyCount = repairs.filter((r) => r.status_code === "ready" && !r.delivery_id).length;
   const qcPassedCount = repairs.filter((r) => r.qc_passed).length;
   const deliveredCount = repairs.filter((r) => Boolean(r.delivery_id)).length;
+  const requiredQcItems = activeTemplate?.definition.filter((item) => item.required !== false) ?? [];
+  const completedQcItems = requiredQcItems.filter((item) => Boolean(qcChecks[item.key])).length;
+  const isQcComplete =
+    requiredQcItems.length > 0 && completedQcItems === requiredQcItems.length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       <WorkspaceHeader
         title="Taller & Servicio Técnico"
-        description="Gestión integral de órdenes de reparación, protocolos QC obligatorios, consumo de repuestos y pólizas de garantía."
-        badge="FASE D: Operativo"
+        description="Gestión integral de órdenes de reparación, controles de calidad obligatorios, consumo de repuestos y pólizas de garantía."
         actions={
           <button
             type="button"
@@ -620,7 +973,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       <WorkspaceModuleTabs
         moduleIds={["repairs", "repair-tests", "warranties"] as const}
         activeModuleId={activeModuleId}
-        onSelectModule={(id) => onSelectModule?.(id as any)}
+        onSelectModule={(id) => onSelectModule?.(id)}
       />
 
       {feedback && (
@@ -649,12 +1002,12 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               label="Listos para Retirar"
               value={readyCount}
               trend={{ text: "Esperando cliente", positive: true }}
-              sublabel="Con QC aprobado, pendientes de retiro"
+              sublabel="Con control final aprobado, pendientes de retiro"
             />
             <KpiCard
               icon={ClipboardCheck}
               iconVariant="navy"
-              label="QC Verificados"
+              label="Control final aprobado"
               value={qcPassedCount}
               trend={{ text: "Conformidad técnica", positive: true }}
               sublabel="Equipos que superaron control final"
@@ -672,15 +1025,21 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           <div className="flow-card">
             <div className="flow-card__header">
               <div>
-                <h2 className="flow-card__title">Órdenes de Reparación Activas</h2>
-                <p className="flow-card__subtitle">Trazabilidad completa desde ingreso hasta entrega con control de calidad</p>
+                <h2 className="flow-card__title">
+                  {activeFilter === "delivered" ? "Reparaciones Entregadas" : "Órdenes de Reparación Activas"}
+                </h2>
+                <p className="flow-card__subtitle">
+                  {activeFilter === "delivered"
+                    ? "Órdenes con retiro formal registrado"
+                    : "Trazabilidad completa desde ingreso hasta entrega con control de calidad"}
+                </p>
               </div>
-              <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+              <div className="flow-card__tools">
                 <div className="search-box">
                   <Search size={16} />
                   <input
                     type="text"
-                    placeholder="Buscar orden, cliente, modelo o falla..."
+                    placeholder={hasPermission("customers.view_sensitive") ? "Buscar seguimiento, DNI, orden o cliente..." : "Buscar seguimiento, orden o cliente..."}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
@@ -697,11 +1056,12 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             </div>
 
             {/* Filter Pills */}
-            <div style={{ padding: "12px 24px", borderBottom: "1px solid var(--border-line)", display: "flex", gap: "8px", overflowX: "auto" }}>
+            <div className="flow-filter-bar" role="group" aria-label="Filtrar reparaciones por estado">
               {[
-                { id: "all", label: "Todas" },
+                { id: "active", label: "Activas" },
                 { id: "received", label: "Recibidos" },
                 { id: "diagnosis", label: "En Diagnóstico" },
+                { id: "waiting_parts", label: "Esperando repuestos" },
                 { id: "repair", label: "En Reparación" },
                 { id: "ready", label: "Listos para Retirar" },
                 { id: "delivered", label: "Entregados" },
@@ -711,16 +1071,6 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   type="button"
                   onClick={() => setActiveFilter(f.id)}
                   className={`btn-pill ${activeFilter === f.id ? "btn-pill--active" : ""}`}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: "20px",
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    border: "1px solid var(--border-line)",
-                    background: activeFilter === f.id ? "var(--accent-mint)" : "transparent",
-                    color: activeFilter === f.id ? "#000" : "var(--text-muted)",
-                  }}
                 >
                   {f.label}
                 </button>
@@ -740,7 +1090,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               </div>
             ) : (
               <div className="flow-table-container">
-                <table className="flow-table">
+                <table className="flow-table flow-table--actions">
                   <thead>
                     <tr>
                       <th>Código</th>
@@ -749,7 +1099,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                       <th>Dispositivo</th>
                       <th>Falla Declarada</th>
                       <th>Estado</th>
-                      <th>Control QC</th>
+                      <th>Control de calidad</th>
                       <th>Presupuesto</th>
                       <th>Repuestos</th>
                       <th style={{ textAlign: "right" }}>Acción</th>
@@ -758,14 +1108,31 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   <tbody>
                     {filteredRepairs.map((r) => {
                       const isDelivered = Boolean(r.delivery_id);
-                      const statusInfo = isDelivered
-                        ? STATUS_MAP.delivered
-                        : STATUS_MAP[r.status_code] || { label: r.status_name, pillClass: "flow-status-pill pending" };
+                      const statusPillClass = isDelivered
+                        ? STATUS_MAP.delivered.pillClass
+                        : STATUS_MAP[r.status_code]?.pillClass || "flow-status-pill pending";
 
                       return (
-                        <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => handleSelectTicket(r)}>
+                        <tr
+                          key={r.id}
+                          className="interactive-row"
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Abrir reparación ${r.order_code} de ${r.customer_name}`}
+                          onClick={() => handleSelectTicket(r)}
+                          onKeyDown={(event) => {
+                            if (event.target !== event.currentTarget) return;
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              handleSelectTicket(r);
+                            }
+                          }}
+                        >
                           <td style={{ fontWeight: 700, color: "var(--accent-mint)" }}>
-                            {r.order_code}
+                            <div>{r.order_code}</div>
+                            <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 500, fontFamily: "monospace" }}>
+                              {r.public_tracking_code}
+                            </div>
                           </td>
                           <td style={{ fontSize: "12px" }}>
                             {formatDate(r.opened_at)}
@@ -773,7 +1140,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                           <td>
                             <div style={{ fontWeight: 600 }}>{r.customer_name}</div>
                             <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                              {r.customer_phone || r.customer_code}
+                              {r.customer_phone || "Sin teléfono registrado"}
                             </div>
                           </td>
                           <td>
@@ -786,7 +1153,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                             {r.reported_fault}
                           </td>
                           <td>
-                            <span className={statusInfo.pillClass}>{statusInfo.label}</span>
+                            <span className={statusPillClass}>{getRepairStatusLabel(r)}</span>
                           </td>
                           <td>
                             {r.qc_passed ? (
@@ -847,7 +1214,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         <div className="flow-card">
           <div className="flow-card__header">
             <div>
-              <h2 className="flow-card__title">Protocolos Técnicos & QC Final</h2>
+              <h2 className="flow-card__title">Controles de calidad finales</h2>
               <p className="flow-card__subtitle">Registro inmutable de inspecciones de laboratorio y criterios de conformidad</p>
             </div>
           </div>
@@ -855,7 +1222,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           {loadingTests ? (
             <div style={{ padding: "40px", textAlign: "center" }}>
               <Loader2 className="animate-spin" size={32} style={{ margin: "0 auto 12px" }} />
-              <p>Cargando protocolos QC...</p>
+              <p>Cargando controles de calidad…</p>
             </div>
           ) : testRuns.length === 0 ? (
             <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
@@ -924,7 +1291,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 className="btn-primary"
                 onClick={() => setIsClaimModalOpen(true)}
               >
-                <ShieldAlert size={16} /> Abrir Reclamo RMA
+                <ShieldAlert size={16} /> Abrir reclamo de garantía
               </button>
             </div>
 
@@ -989,20 +1356,20 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           <div className="flow-card">
             <div className="flow-card__header">
               <div>
-                <h3 className="flow-card__title">Reclamos Técnicos (RMA) Registrados</h3>
+                <h3 className="flow-card__title">Reclamos de garantía registrados</h3>
                 <p className="flow-card__subtitle">Historial independiente de reclamos sin alterar la orden de servicio previa</p>
               </div>
             </div>
             {claims.length === 0 ? (
               <div style={{ padding: "24px", textAlign: "center", color: "var(--text-muted)", fontSize: "13px" }}>
-                Sin reclamos de RMA activos. Tasa de conformidad 100%.
+                No se encontraron reclamos de garantía en esta consulta.
               </div>
             ) : (
               <div className="flow-table-container">
                 <table className="flow-table">
                   <thead>
                     <tr>
-                      <th>Código RMA</th>
+                      <th>Código de reclamo</th>
                       <th>Orden Origen</th>
                       <th>Cliente</th>
                       <th>Fecha Apertura</th>
@@ -1031,7 +1398,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       {selectedTicket && (
         <Modal
           isOpen={Boolean(selectedTicket)}
-          onClose={() => setSelectedTicket(null)}
+          onClose={() => { detailRequest.current++; setSelectedTicket(null); setTicketNotes([]); }}
           title={`Ficha de Reparación: ${selectedTicket.order_code}`}
           maxWidth="780px"
         >
@@ -1041,18 +1408,98 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               <div>
                 <div style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Dispositivo</div>
                 <div style={{ fontWeight: 700, fontSize: "16px" }}>{selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</div>
-                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Cliente: <strong>{selectedTicket.customer_name}</strong> ({selectedTicket.customer_phone || selectedTicket.customer_code})</div>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Cliente: <strong>{selectedTicket.customer_name}</strong> ({selectedTicket.customer_phone || "sin teléfono registrado"})</div>
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Estado Actual</div>
                 <div style={{ marginTop: "4px" }}>
-                  <span className={STATUS_MAP[selectedTicket.status_code]?.pillClass || "flow-status-pill pending"}>
-                    {selectedTicket.delivery_id ? "Entregado" : selectedTicket.status_name}
+                  <span className={selectedTicket.delivery_id ? STATUS_MAP.delivered.pillClass : STATUS_MAP[selectedTicket.status_code]?.pillClass || "flow-status-pill pending"}>
+                    {getRepairStatusLabel(selectedTicket)}
                   </span>
                 </div>
               </div>
             </div>
 
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "12px 16px", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid var(--border-line)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  Código de seguimiento web:{" "}
+                  <strong style={{ fontFamily: "monospace", fontSize: "14px", color: "var(--accent-mint)", letterSpacing: "0.04em" }}>
+                    {selectedTicket.public_tracking_code}
+                  </strong>
+                </div>
+                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                  El cliente verá en <code style={{ fontSize: "11px" }}>/seguimiento</code>:{" "}
+                  <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "999px", background: "rgba(0, 168, 232, 0.14)", color: "#38bdf8", fontWeight: 600 }}>
+                    {selectedTicket.status_public_stage ?? "Sin etapa pública"}
+                  </span>
+                </div>
+              </div>
+              <button type="button" className="btn-ghost" onClick={() => window.print()}>
+                <FileText size={14} /> Imprimir comprobante de ingreso
+              </button>
+              <div className="repair-print-receipt">
+                <h1>Comprobante de ingreso — NicTech</h1>
+                <p><strong>Orden:</strong> {selectedTicket.order_code}</p>
+                <p><strong>Fecha de ingreso:</strong> {formatDateTime(selectedTicket.opened_at)}</p>
+                <p><strong>Cliente:</strong> {selectedTicket.customer_name}</p>
+                <p><strong>Equipo:</strong> {selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</p>
+                <p><strong>Falla declarada:</strong> {selectedTicket.reported_fault}</p>
+                <p><strong>Código de seguimiento:</strong> <strong>{selectedTicket.public_tracking_code}</strong></p>
+                <p><strong>Estado web actual:</strong> {selectedTicket.status_public_stage ?? "Recibido"}</p>
+                <p>Consultá el estado en /seguimiento con este código o tu DNI.</p>
+              </div>
+              <style>{` .repair-print-receipt { display: none; } @media print { body * { visibility: hidden !important; } .repair-print-receipt, .repair-print-receipt * { visibility: visible !important; } .repair-print-receipt { display: block; position: fixed; inset: 0; padding: 24px; color: black; background: white; z-index: 99999; } } `}</style>
+            </div>
+            <section aria-label="Notas de reparación" style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "12px 16px", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid var(--border-line)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 700 }}>Notas de taller y seguimiento ({ticketNotes.length})</h3>
+              </div>
+              {ticketNotes.length === 0 ? (
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>Todavía no hay notas cargadas en esta orden.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "180px", overflowY: "auto" }}>
+                  {ticketNotes.map((note) => (
+                    <div key={note.id} style={{ padding: "8px 10px", borderRadius: "6px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-line)", fontSize: "12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 600, background: note.is_public ? "rgba(16, 185, 129, 0.16)" : "rgba(148, 163, 184, 0.16)", color: note.is_public ? "#10b981" : "var(--text-muted)" }}>
+                          {note.is_public ? "Pública · visible en /seguimiento" : "Interna · solo taller"}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{formatDateTime(note.created_at)}</span>
+                      </div>
+                      <p style={{ margin: 0 }}>{note.content}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {hasPermission("repairs.manage") && <form style={{ display: "flex", flexDirection: "column", gap: "8px" }} onSubmit={noteForm.handleSubmit(async (values) => {
+                const requestId = detailRequest.current;
+                try {
+                  await addRepairNote(selectedTicket.id, values.content, values.isPublic);
+                  const notes = await listRepairNotes(selectedTicket.id);
+                  if (requestId !== detailRequest.current) return;
+                  setTicketNotes(notes);
+                  noteForm.reset({ content: "", isPublic: false });
+                } catch (error) {
+                  if (requestId !== detailRequest.current) return;
+                  setFeedback({ type: "error", message: error instanceof Error ? error.message : "No se pudo guardar la nota." });
+                }
+              })}>
+                <label className="erp-form-group" style={{ margin: 0 }}>
+                  Nueva nota
+                  <textarea className="erp-form-input" rows={2} placeholder="Escribí una observación técnica o para el cliente..." {...noteForm.register("content")} />
+                </label>
+                {noteForm.formState.errors.content && <p role="alert" style={{ margin: 0, fontSize: "12px", color: "#ef4444" }}>{noteForm.formState.errors.content.message}</p>}
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer" }}>
+                    <input type="checkbox" {...noteForm.register("isPublic")} /> El cliente la ve en la web
+                  </label>
+                  <button type="submit" className="btn-primary" disabled={noteForm.formState.isSubmitting}>
+                    {noteForm.formState.isSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />} Guardar nota
+                  </button>
+                </div>
+              </form>}
+            </section>
             {/* Status Workflow Action Bar */}
             {!selectedTicket.delivery_id && (
               <div style={{ padding: "16px", background: "rgba(0, 168, 232, 0.05)", borderRadius: "8px", border: "1px solid rgba(0, 168, 232, 0.2)" }}>
@@ -1091,7 +1538,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                       style={{ padding: "6px 12px", fontSize: "12px" }}
                       onClick={() => openQcModal(selectedTicket)}
                     >
-                      <ClipboardCheck size={14} /> {selectedTicket.qc_passed ? "Re-inspeccionar QC" : "Ejecutar QC"}
+                      <ClipboardCheck size={14} /> {selectedTicket.qc_passed ? "Reinspeccionar equipo" : "Iniciar control final"}
                     </button>
                   </div>
                 </div>
@@ -1107,27 +1554,30 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             )}
 
             {/* Tab navigation inside ticket */}
-            <div style={{ display: "flex", borderBottom: "1px solid var(--border-line)", gap: "16px" }}>
+            <div className="flow-detail-tabs" role="tablist" aria-label="Detalle de la reparación">
               <button
                 type="button"
-                className={`btn-pill ${detailTab === "info" ? "btn-pill--active" : ""}`}
-                style={{ padding: "8px 12px", background: "transparent", border: "none", borderBottom: detailTab === "info" ? "2px solid var(--accent-mint)" : "none", color: detailTab === "info" ? "var(--accent-mint)" : "var(--text-muted)", cursor: "pointer", fontWeight: 600 }}
+                role="tab"
+                aria-selected={detailTab === "info"}
+                className={`flow-detail-tab ${detailTab === "info" ? "active" : ""}`}
                 onClick={() => setDetailTab("info")}
               >
                 Información de Ingreso
               </button>
               <button
                 type="button"
-                className={`btn-pill ${detailTab === "parts" ? "btn-pill--active" : ""}`}
-                style={{ padding: "8px 12px", background: "transparent", border: "none", borderBottom: detailTab === "parts" ? "2px solid var(--accent-mint)" : "none", color: detailTab === "parts" ? "var(--accent-mint)" : "var(--text-muted)", cursor: "pointer", fontWeight: 600 }}
+                role="tab"
+                aria-selected={detailTab === "parts"}
+                className={`flow-detail-tab ${detailTab === "parts" ? "active" : ""}`}
                 onClick={() => setDetailTab("parts")}
               >
                 Repuestos & Stock ({ticketParts.length})
               </button>
               <button
                 type="button"
-                className={`btn-pill ${detailTab === "history" ? "btn-pill--active" : ""}`}
-                style={{ padding: "8px 12px", background: "transparent", border: "none", borderBottom: detailTab === "history" ? "2px solid var(--accent-mint)" : "none", color: detailTab === "history" ? "var(--accent-mint)" : "var(--text-muted)", cursor: "pointer", fontWeight: 600 }}
+                role="tab"
+                aria-selected={detailTab === "history"}
+                className={`flow-detail-tab ${detailTab === "history" ? "active" : ""}`}
                 onClick={() => setDetailTab("history")}
               >
                 Historial de Trazabilidad ({ticketEvents.length})
@@ -1246,6 +1696,31 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               </div>
             )}
 
+            <section aria-label="Mano de obra y cobros">
+              <h3>Mano de obra y cobros</h3>
+              <div className="flow-tabs-nav">
+                {hasPermission("repairs.manage") && hasPermission("costs.manage") && <button type="button" className="btn-primary" onClick={openLaborModal}><BriefcaseBusiness size={16} /> Registrar trabajo</button>}
+                {hasPermission("repairs.manage") && <button type="button" className="btn-primary" onClick={() => void openPaymentModal()}><Banknote size={16} /> Registrar cobro o seña</button>}
+              </div>
+              {loadingWork ? <p role="status">Cargando movimientos…</p> : <>
+                {ticketLabor.map((labor) => <p key={labor.id}>{labor.description} · {labor.quantity_hours} h · costo {formatCurrency(labor.total_cost_base)}</p>)}
+                {ticketPayments.map((payment) => <p key={payment.id}>
+                  {formatDateTime(payment.occurred_at)} · {formatCurrency(payment.amount, payment.currency_code)} · {payment.reason}
+                  {hasPermission("repairs.manage") && !payment.reversal_of_payment_id && !ticketPayments.some((entry) => entry.reversal_of_payment_id === payment.id) && <button type="button" className="btn-ghost" onClick={() => { setReversalOperationKey(operationKey("repair-payment-reversal")); setPaymentToReverse(payment); }}>Revertir cobro</button>}
+                </p>)}
+                {ticketLabor.length === 0 && ticketPayments.length === 0 && <p>No hay trabajos ni cobros registrados.</p>}
+              </>}
+            </section>
+            <ConfirmDialog
+              isOpen={paymentToReverse !== null}
+              title="Revertir cobro"
+              message={`Se registrará una devolución de ${paymentToReverse ? formatCurrency(paymentToReverse.amount, paymentToReverse.currency_code) : ""}. El cobro original se conservará en el historial. La caja debe estar abierta.`}
+              confirmLabel="Confirmar reversión"
+              isPending={reversingPayment}
+              onCancel={() => { if (!reversingPayment) setPaymentToReverse(null); }}
+              onConfirm={() => { if (paymentToReverse) void handleReversePayment(paymentToReverse); }}
+            />
+
             {/* TAB CONTENT: HISTORY */}
             {detailTab === "history" && (
               <div>
@@ -1258,7 +1733,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                     {ticketEvents.map((ev) => (
-                      <div key={ev.id} style={{ display: "flex", gap: "12px", padding: "10px 14px", background: "rgba(255,255,255,0.02)", borderRadius: "6px", borderLeft: "3px solid var(--accent-mint)" }}>
+                      <div key={ev.id} style={{ display: "flex", gap: "12px", padding: "10px 14px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
                         <Clock size={16} style={{ color: "var(--accent-mint)", marginTop: "2px", flexShrink: 0 }} />
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1277,6 +1752,26 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         </Modal>
       )}
 
+      <Modal isOpen={isLaborModalOpen} onClose={() => setIsLaborModalOpen(false)} title="Registrar mano de obra">
+        <form onSubmit={handleLaborSubmit}>
+          <label className="erp-form-group">Trabajo realizado<input className="erp-form-input" required value={laborDescription} onChange={(event) => setLaborDescription(event.target.value)} /></label>
+          <label className="erp-form-group">Horas<input className="erp-form-input" type="number" min="0.01" step="0.01" required value={laborHours} onChange={(event) => setLaborHours(event.target.value)} /></label>
+          <label className="erp-form-group">Costo por hora en moneda base<input className="erp-form-input" type="number" min="0" step="0.01" required value={laborUnitCost} onChange={(event) => setLaborUnitCost(event.target.value)} /></label>
+          <button className="btn-primary" type="submit" disabled={submittingLabor}>Registrar trabajo</button>
+        </form>
+      </Modal>
+      <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Cobro o seña de reparación">
+        <form onSubmit={handlePaymentSubmit}>
+          <label className="erp-form-group">Medio de pago<select className="erp-form-input" required value={paymentMethodId} onChange={(event) => setPaymentMethodId(event.target.value)}><option value="">Seleccionar</option>{paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}</select></label>
+          <label className="erp-form-group">Moneda<select className="erp-form-input" value={paymentCurrency} onChange={(event) => handlePaymentCurrencyChange(event.target.value)}>{Array.from(new Set(exchangeSnapshots.map((snapshot) => snapshot.quote_currency))).map((currency) => <option key={currency}>{currency}</option>)}</select></label>
+          <label className="erp-form-group">Cotización<select className="erp-form-input" required value={paymentSnapshotId} onChange={(event) => setPaymentSnapshotId(event.target.value)}><option value="">Seleccionar</option>{exchangeSnapshots.filter((snapshot) => snapshot.quote_currency === paymentCurrency).map((snapshot) => <option key={snapshot.id} value={snapshot.id}>{snapshot.rate_to_base} · {snapshot.source} · {formatDateTime(snapshot.quoted_at)}</option>)}</select></label>
+          <label className="erp-form-group">Importe<input className="erp-form-input" type="number" min="0.01" step="0.01" required value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} /></label>
+          {paymentMethods.find((method) => method.id === paymentMethodId)?.requires_cash_session && <label className="erp-form-group">Caja abierta<select className="erp-form-input" required value={paymentCashSessionId} onChange={(event) => setPaymentCashSessionId(event.target.value)}><option value="">Seleccionar</option>{cashSessions.map((session) => <option key={session.id} value={session.id}>{session.id}</option>)}</select></label>}
+          <label className="erp-form-group">Motivo<input className="erp-form-input" required value={paymentReason} onChange={(event) => setPaymentReason(event.target.value)} /></label>
+          <button className="btn-primary" type="submit" disabled={submittingPayment}>Registrar cobro</button>
+        </form>
+      </Modal>
+
       {/* MODAL: NEW REPAIR INTAKE */}
       <Modal
         isOpen={isNewModalOpen}
@@ -1285,6 +1780,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         maxWidth="720px"
       >
         <form onSubmit={handleIntakeSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <label className="erp-form-group">Sucursal<select className="erp-form-input" required value={currentBranchId} onChange={(event) => setCurrentBranchId(event.target.value)}><option value="">Seleccionar</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
           {/* Customer Selection */}
           <div style={{ padding: "12px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-line)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
@@ -1308,12 +1804,12 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               >
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.display_name} — DNI/CUIT: {c.code} {c.phone ? `(${c.phone})` : ""}
+                    {c.display_name}{c.phone ? ` — ${c.phone}` : ""}
                   </option>
                 ))}
               </select>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: hasPermission("customers.view_sensitive") ? "1fr 1fr 1fr" : "1fr 1fr", gap: "10px" }}>
                 <div>
                   <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Nombre Completo *</label>
                   <input
@@ -1325,8 +1821,8 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                     required
                   />
                 </div>
-                <div>
-                  <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>DNI / CUIT</label>
+                {hasPermission("customers.view_sensitive") && <div>
+                  <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>DNI</label>
                   <input
                     type="text"
                     className="form-input"
@@ -1334,7 +1830,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                     onChange={(e) => setNewCustomerDni(e.target.value)}
                     placeholder="Ej. 38123456"
                   />
-                </div>
+                </div>}
                 <div>
                   <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Teléfono / WhatsApp</label>
                   <input
@@ -1399,7 +1895,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
-              <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Número de Serie (opcional)</label>
+                <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Número de Serie (opcional si ingresás IMEI)</label>
               <input
                 type="text"
                 className="form-input"
@@ -1409,7 +1905,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               />
             </div>
             <div>
-              <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>IMEI (opcional)</label>
+                <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>IMEI (opcional si ingresás serie)</label>
               <input
                 type="text"
                 className="form-input"
@@ -1481,7 +1977,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         <Modal
           isOpen={isQcModalOpen}
           onClose={() => setIsQcModalOpen(false)}
-          title={`Protocolo de Control de Calidad (QC): ${qcTargetTicket.order_code}`}
+          title={`Control de calidad: ${qcTargetTicket.order_code}`}
           maxWidth="580px"
         >
           <form onSubmit={handleQcSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1490,7 +1986,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {activeTemplate.definition.map((item) => (
+              {requiredQcItems.map((item) => (
                 <div
                   key={item.key}
                   style={{
@@ -1503,11 +1999,19 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                     border: "1px solid var(--border-line)",
                   }}
                 >
-                  <span style={{ fontWeight: 600, fontSize: "13px" }}>{item.label}</span>
-                  <div style={{ display: "flex", gap: "8px" }}>
+                  <span style={{ fontWeight: 600, fontSize: "13px" }}>
+                    {item.label}
+                    {!qcChecks[item.key] && (
+                      <span style={{ display: "block", color: "var(--text-muted)", fontSize: "11px", fontWeight: 500 }}>
+                        Resultado pendiente
+                      </span>
+                    )}
+                  </span>
+                  <div style={{ display: "flex", gap: "8px" }} role="group" aria-label={`Resultado de ${item.label}`}>
                     <button
                       type="button"
                       onClick={() => setQcChecks((prev) => ({ ...prev, [item.key]: "pass" }))}
+                      aria-pressed={qcChecks[item.key] === "pass"}
                       style={{
                         padding: "4px 12px",
                         borderRadius: "14px",
@@ -1524,6 +2028,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                     <button
                       type="button"
                       onClick={() => setQcChecks((prev) => ({ ...prev, [item.key]: "fail" }))}
+                      aria-pressed={qcChecks[item.key] === "fail"}
                       style={{
                         padding: "4px 12px",
                         borderRadius: "14px",
@@ -1543,8 +2048,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             </div>
 
             <div>
-              <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Notas de Inspección (opcional)</label>
+              <label htmlFor="repair-qc-notes" style={{ fontSize: "12px", color: "var(--text-muted)" }}>Notas de Inspección (opcional)</label>
               <textarea
+                id="repair-qc-notes"
                 className="form-input"
                 rows={2}
                 value={qcNotes}
@@ -1564,10 +2070,12 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               <button
                 type="submit"
                 className="btn-primary"
-                disabled={submittingQc}
+                disabled={submittingQc || !isQcComplete}
               >
                 {submittingQc ? <Loader2 className="animate-spin" size={16} /> : <ClipboardCheck size={16} />}
-                Confirmar Registro QC
+                {isQcComplete
+                  ? "Guardar control de calidad"
+                  : `Completar controles (${completedQcItems}/${requiredQcItems.length})`}
               </button>
             </div>
           </form>
@@ -1583,6 +2091,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           maxWidth="520px"
         >
           <form onSubmit={handleConsumePartSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <label className="erp-form-group">Ubicación de stock<select className="erp-form-input" required value={partLocationId} onChange={(event) => setPartLocationId(event.target.value)}><option value="">Seleccionar</option>{locations.filter((location) => location.branch_id === selectedTicket.branch_id).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
             <div>
               <label style={{ fontSize: "12px", fontWeight: 600 }}>Seleccionar Repuesto del Catálogo *</label>
               <select
@@ -1624,7 +2133,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
             <div style={{ padding: "10px 12px", background: "rgba(245, 158, 11, 0.1)", borderRadius: "6px", fontSize: "12px", color: "#f59e0b" }}>
               <AlertCircle size={14} style={{ display: "inline", marginRight: "6px" }} />
-              El stock se descontará atómicamente del almacén taller. Por política técnica H16, si la orden tenía QC previo, deberá re-inspeccionarse antes de la entrega.
+              El stock se descontará del almacén del taller. Si se agregan repuestos después del control final, habrá que volver a inspeccionar el equipo antes de entregarlo.
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
@@ -1660,7 +2169,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             <div style={{ padding: "12px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "8px", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
               <div style={{ fontWeight: 600, color: "#10b981", fontSize: "13px" }}>Acreditación de Retiro</div>
               <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
-                Dispositivo: <strong>{selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</strong> con QC Aprobado.
+                Dispositivo: <strong>{selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</strong> con control de calidad aprobado.
               </div>
             </div>
 
@@ -1741,7 +2250,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         <Modal
           isOpen={isClaimModalOpen}
           onClose={() => setIsClaimModalOpen(false)}
-          title="Apertura de Reclamo Técnico (RMA)"
+          title="Apertura de reclamo de garantía"
           maxWidth="560px"
         >
           <form onSubmit={handleOpenClaimSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1789,7 +2298,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 disabled={submittingClaim}
               >
                 {submittingClaim ? <Loader2 className="animate-spin" size={16} /> : <ShieldAlert size={16} />}
-                Emitir Reclamo RMA
+                Registrar reclamo
               </button>
             </div>
           </form>

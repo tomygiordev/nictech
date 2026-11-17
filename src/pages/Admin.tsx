@@ -10,10 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag, Trash2, ImagePlay, BarChart3, DollarSign, Pencil, LayoutDashboard } from 'lucide-react';
+import { Package, Wrench, Plus, Loader2, Save, RefreshCcw, Upload, Image as ImageIcon, MessageSquare, Check, X, Smartphone, Search, Tag, Trash2, ImagePlay, BarChart3, DollarSign, Pencil, LayoutDashboard, HelpCircle, ExternalLink } from 'lucide-react';
 import { CreatableResourceSelector } from '@/components/admin/CreatableResourceSelector';
 import { BrandModelSelector } from '@/components/admin/BrandModelSelector';
+import { TutorialOverlay } from '@/components/admin/tutorials/TutorialOverlay';
+import { filterAdminTabs, useAdminCutoverFlags } from '@/hooks/use-admin-cutover-flags';
 import { supabase } from '@/integrations/supabase/client';
+import { optimizeImage, fileExtension, IMAGE_UPLOAD_OPTIONS } from '@/lib/image-upload';
 import { toast } from '@/hooks/use-toast';
 import { generateTrackingCode } from '@/utils/generateTrackingCode';
 import { CaseManagement } from '@/components/admin/CaseManagement';
@@ -291,10 +294,23 @@ const RepairLogsDialog = ({ repair, onQuoteSaved }: RepairLogsDialogProps) => {
 };
 
 
+const ADMIN_TABS = [
+  { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { value: 'repairs', label: 'Reparaciones', icon: Wrench },
+  { value: 'inventory', label: 'Inventario', icon: BarChart3 },
+  { value: 'products', label: 'Productos', icon: Package },
+  { value: 'cases', label: 'Fundas', icon: Smartphone },
+  { value: 'variants', label: 'Variantes', icon: Package },
+  { value: 'promos', label: 'Promos', icon: Tag },
+  { value: 'banners', label: 'Banners', icon: ImagePlay },
+  { value: 'blog', label: 'Blog', icon: MessageSquare },
+] as const;
+
 const Admin = () => {
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('admin_active_tab') || "repairs";
   });
+  const [showTutorial, setShowTutorial] = useState(false);
   const [repairs, setRepairs] = useState<Repair[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -341,6 +357,9 @@ const Admin = () => {
 
   const { session, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
+  const erpUrl = import.meta.env.VITE_ERP_URL?.trim() || '';
+  const { hiddenTabs } = useAdminCutoverFlags({ enabled: Boolean(session) });
+  const { visibleTabs, nextActiveTab } = filterAdminTabs(ADMIN_TABS, hiddenTabs, activeTab);
 
   // Auth protection handled by ProtectedRoute wrapper in App.tsx
 
@@ -352,6 +371,12 @@ const Admin = () => {
       fetchData();
     }
   }, [session]);
+
+  useEffect(() => {
+    if (nextActiveTab !== activeTab) {
+      setActiveTab(nextActiveTab);
+    }
+  }, [activeTab, nextActiveTab]);
 
   useEffect(() => {
     localStorage.setItem('admin_active_tab', activeTab);
@@ -716,12 +741,13 @@ const Admin = () => {
       throw new Error('Extensión de archivo no permitida.');
     }
 
-    const fileName = `${crypto.randomUUID()}.${fileExt}`;
+    const optimized = await optimizeImage(file);
+    const fileName = `${crypto.randomUUID()}.${fileExtension(optimized)}`;
     const filePath = `${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from('product_images')
-      .upload(filePath, file);
+      .upload(filePath, optimized, IMAGE_UPLOAD_OPTIONS);
 
     if (uploadError) {
       throw uploadError;
@@ -854,8 +880,30 @@ const Admin = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {erpUrl && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                  className="gap-1.5 bg-transparent text-secondary-foreground border-secondary-foreground/30 hover:bg-white/10 hover:text-secondary-foreground"
+                >
+                  <a href={erpUrl} target="_blank" rel="noopener noreferrer">
+                    <span>Ir al ERP</span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={() => navigate('/')} className="text-secondary-foreground hidden sm:flex">
                 Ir al Inicio
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setShowTutorial(true)} 
+                className="flex gap-2 bg-primary/20 text-primary-foreground border-primary/30 hover:bg-primary/30 hover:text-primary-foreground"
+              >
+                <HelpCircle className="h-4 w-4" />
+                <span className="hidden sm:inline">Ayuda y atajos</span>
               </Button>
               <Button variant="ghost" size="icon" onClick={fetchData} className="text-secondary-foreground">
                 <RefreshCcw className="h-5 w-5" />
@@ -881,17 +929,7 @@ const Admin = () => {
               className="fixed left-4 top-1/2 -translate-y-1/2 z-40 group hidden md:flex"
             >
               <div className="relative flex flex-col items-stretch bg-secondary text-secondary-foreground rounded-[2rem] py-3 px-2 gap-0.5 shadow-2xl border border-white/10 overflow-hidden transition-all duration-300 ease-in-out w-12 group-hover:w-52">
-                {([
-                  { value: 'dashboard',   label: 'Dashboard',     icon: LayoutDashboard },
-                  { value: 'repairs',     label: 'Reparaciones',  icon: Wrench },
-                  { value: 'inventory',   label: 'Inventario',    icon: BarChart3 },
-                  { value: 'products',    label: 'Productos',     icon: Package },
-                  { value: 'cases',       label: 'Fundas',        icon: Smartphone },
-                  { value: 'variants',    label: 'Variantes',     icon: Package },
-                  { value: 'promos',      label: 'Promos',        icon: Tag },
-                  { value: 'banners',     label: 'Banners',       icon: ImagePlay },
-                  { value: 'blog',        label: 'Blog',          icon: MessageSquare },
-                ] as const).map(({ value, label, icon: Icon }) => (
+                {visibleTabs.map(({ value, label, icon: Icon }) => (
                   <button
                     key={value}
                     onClick={() => setActiveTab(value)}
@@ -899,7 +937,7 @@ const Admin = () => {
                     className={cn(
                       'flex items-center gap-3 rounded-2xl px-2 py-2.5 transition-all duration-200 text-left min-w-0',
                       'hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-                      activeTab === value
+                      nextActiveTab === value
                         ? 'bg-primary text-primary-foreground shadow-inner'
                         : 'text-secondary-foreground/80'
                     )}
@@ -914,25 +952,15 @@ const Admin = () => {
             </nav>
 
             {/* Mobile tabs (small screens only) */}
-            <div className="flex flex-wrap justify-center gap-2 mb-6 md:hidden">
-              {([
-                { value: 'dashboard',   label: 'Dashboard',     icon: LayoutDashboard },
-                { value: 'repairs',     label: 'Reparaciones',  icon: Wrench },
-                { value: 'inventory',   label: 'Inventario',    icon: BarChart3 },
-                { value: 'products',    label: 'Productos',     icon: Package },
-                { value: 'cases',       label: 'Fundas',        icon: Smartphone },
-                { value: 'variants',    label: 'Variantes',     icon: Package },
-                { value: 'promos',      label: 'Promos',        icon: Tag },
-                { value: 'banners',     label: 'Banners',       icon: ImagePlay },
-                { value: 'blog',        label: 'Blog',          icon: MessageSquare },
-              ] as const).map(({ value, label, icon: Icon }) => (
+            <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar pb-2 mb-6 md:hidden px-1 -mx-1 snap-x">
+              {visibleTabs.map(({ value, label, icon: Icon }) => (
                 <button
                   key={value}
                   onClick={() => setActiveTab(value)}
                   className={cn(
-                    'flex items-center gap-2 h-10 px-4 rounded-lg text-sm font-medium transition-all',
-                    activeTab === value
-                      ? 'bg-primary text-primary-foreground'
+                    'flex items-center gap-2 h-10 px-4 rounded-lg text-sm font-medium transition-all shrink-0 snap-start whitespace-nowrap',
+                    nextActiveTab === value
+                      ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'bg-muted/50 text-foreground hover:bg-muted'
                   )}
                 >
@@ -942,7 +970,7 @@ const Admin = () => {
               ))}
             </div>
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <Tabs value={nextActiveTab} onValueChange={setActiveTab} className="space-y-6">
 
               {/* Dashboard Tab */}
               <TabsContent value="dashboard">
@@ -1212,6 +1240,11 @@ const Admin = () => {
             </Tabs>
             </>
           )}
+          
+          <TutorialOverlay 
+            moduleKey={showTutorial ? nextActiveTab : null} 
+            onClose={() => setShowTutorial(false)} 
+          />
         </main>
       </div>
     </>

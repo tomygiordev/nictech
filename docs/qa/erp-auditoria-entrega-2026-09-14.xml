@@ -1,0 +1,760 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<erpAuditPlan
+  id="ERP-AUDIT-2026-09-14"
+  version="1.2"
+  language="es-AR"
+  sourceOfTruth="true"
+  scope="ERP_ONLY"
+  generatedAt="2026-09-16T02:35:00-03:00">
+
+  <metadata>
+    <title>Auditoría integral de entrega — NicTech ERP</title>
+    <purpose>Determinar con evidencia reproducible si el ERP puede entregarse al cliente y operar sobre Supabase sin pérdida, exposición, duplicación ni inconsistencia de datos.</purpose>
+    <decision status="NO_GO" confidence="high">
+      <summary>El ERP local mejoró sustancialmente, pero todavía no está listo para entrega: queda un P0 remoto (no hay propietario ERP asignado), trece P1 abiertos y faltan UAT, cobertura E2E, recuperación y despliegue de seis migraciones validadas solo en local.</summary>
+      <recheckRule>Repetir todos los casos P0/P1, la regresión automatizada completa y el smoke remoto después de corregir los defectos bloqueantes.</recheckRule>
+    </decision>
+    <defectSummary total="35" open="18" fixed="17" openP0="1" openP1="13" openP2="4"/>
+    <owners>
+      <qualityOwner>Responsable QA ERP</qualityOwner>
+      <technicalOwner>Responsable técnico NicTech</technicalOwner>
+      <businessApprover>Cliente / responsable operativo</businessApprover>
+    </owners>
+  </metadata>
+
+  <externalReferences>
+    <reference id="REF-SUPABASE-CHANGELOG" url="https://supabase.com/changelog.md">Changelog oficial revisado el 2026-09-14.</reference>
+    <reference id="REF-DATA-API-EXPOSURE" url="https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically">Cambio de exposición automática; el ERP declara schema/grants explícitamente.</reference>
+    <reference id="REF-LOGS-ENDPOINT" url="https://supabase.com/changelog/48235-migration-of-supabase-management-api-logs-all-analytics-endpoint-to-logs-endpoint">Retiro de logs.all anunciado para 2026-09-23.</reference>
+  </externalReferences>
+
+  <scope>
+    <included path="apps/erp">Aplicación React del ERP, autenticación, navegación, formularios, módulos y adaptadores Supabase.</included>
+    <included path="packages/domain">Taxonomía de módulos, workspaces y resolución RBAC compartida por el ERP.</included>
+    <included path="supabase/migrations">Migraciones que crean o modifican el esquema erp y sus integraciones directas.</included>
+    <included path="supabase/tests">Pruebas pgTAP que validan contratos ERP.</included>
+    <included path="supabase/functions">Solo funciones Edge que entregan operaciones de tienda al ERP, especialmente Mercado Pago.</included>
+    <included environment="remote" projectRef="tuzpcofywkhglkqplhnn">Configuración, esquema, permisos, advisors y smoke no destructivo del proyecto Supabase del cliente.</included>
+    <excluded path="src">Storefront legado, excepto la frontera estricta que alimenta pedidos o pagos al ERP.</excluded>
+    <excluded>Correcciones de código durante esta auditoría; los defectos se diagnostican y priorizan, pero se corrigen en una fase posterior.</excluded>
+  </scope>
+
+  <systemInventory expectedWorkspaces="19" expectedModules="29">
+    <workspace id="dashboard" label="Centro operativo" modules="dashboard"/>
+    <workspace id="pos" label="Punto de venta" modules="pos"/>
+    <workspace id="cash" label="Caja" modules="cash"/>
+    <workspace id="online-orders" label="Pedidos online" modules="online-orders"/>
+    <workspace id="catalog" label="Catálogo y precios" modules="catalog pricing"/>
+    <workspace id="stock" label="Stock y almacén" modules="stock stock-counts labels"/>
+    <workspace id="purchases" label="Compras y proveedores" modules="purchases suppliers"/>
+    <workspace id="customers" label="Clientes" modules="customers"/>
+    <workspace id="quotes" label="Presupuestos" modules="quotes"/>
+    <workspace id="repairs" label="Servicio técnico" modules="repairs repair-tests warranties"/>
+    <workspace id="pc-builds" label="Armados de PC" modules="pc-builds"/>
+    <workspace id="trade-ins" label="Equipos usados" modules="trade-ins"/>
+    <workspace id="accounts" label="Cuentas corrientes" modules="accounts"/>
+    <workspace id="accounting" label="Contabilidad y análisis" modules="accounting profitability reports"/>
+    <workspace id="documents" label="Documentos y ARCA" modules="documents"/>
+    <workspace id="whatsapp" label="WhatsApp" modules="whatsapp"/>
+    <workspace id="integration-health" label="Integraciones" modules="integration-health"/>
+    <workspace id="system" label="Configuración y accesos" modules="users locations settings"/>
+    <workspace id="audit" label="Auditoría" modules="audit"/>
+    <modules>
+      <module id="dashboard" area="operaciones" permission="dashboard.view" stage="10"/>
+      <module id="pos" area="operaciones" permission="sales.create" stage="5"/>
+      <module id="cash" area="operaciones" permission="cash.view" stage="5"/>
+      <module id="online-orders" area="operaciones" permission="orders.view" stage="5"/>
+      <module id="catalog" area="inventario" permission="catalog.view" stage="2"/>
+      <module id="stock" area="inventario" permission="stock.view" stage="3"/>
+      <module id="stock-counts" area="inventario" permission="stock_counts.view" stage="3"/>
+      <module id="labels" area="inventario" permission="labels.print" stage="3"/>
+      <module id="purchases" area="comercial" permission="purchases.view" stage="4"/>
+      <module id="suppliers" area="comercial" permission="suppliers.view" stage="4"/>
+      <module id="customers" area="comercial" permission="customers.view" stage="2"/>
+      <module id="quotes" area="comercial" permission="quotes.view" stage="6"/>
+      <module id="repairs" area="taller" permission="repairs.view" stage="6"/>
+      <module id="repair-tests" area="taller" permission="repair_tests.view" stage="6"/>
+      <module id="pc-builds" area="taller" permission="pc_builds.view" stage="7"/>
+      <module id="trade-ins" area="taller" permission="trade_ins.view" stage="7"/>
+      <module id="warranties" area="taller" permission="warranties.view" stage="6"/>
+      <module id="pricing" area="finanzas" permission="pricing.view" stage="4"/>
+      <module id="accounts" area="finanzas" permission="accounts_receivable.view" stage="9"/>
+      <module id="accounting" area="finanzas" permission="accounting.view" stage="9"/>
+      <module id="profitability" area="finanzas" permission="profitability.view" stage="10"/>
+      <module id="reports" area="finanzas" permission="reports.view" stage="10"/>
+      <module id="documents" area="integraciones" permission="documents.view" stage="8"/>
+      <module id="whatsapp" area="integraciones" permission="messages.view" stage="8"/>
+      <module id="integration-health" area="integraciones" permission="integrations.view" stage="8"/>
+      <module id="users" area="sistema" permission="users.view" stage="1"/>
+      <module id="locations" area="sistema" permission="locations.view" stage="2"/>
+      <module id="settings" area="sistema" permission="configuration.view" stage="1"/>
+      <module id="audit" area="sistema" permission="audit.view" stage="1"/>
+    </modules>
+  </systemInventory>
+
+  <traceabilityModel>
+    <databaseSurface tables="166" views="7" functions="191" policies="191" authenticatedRpc="107" securityDefinerFunctions="158">
+      <coverageClass id="DB-TABLES" objectUnderTest="erp.* tables" requiredCases="TC-SEC-002 TC-SEC-003 TC-SEC-019">Para cada tabla: propietario, RLS habilitada, policies por operación, GRANT efectivo, aislamiento por organización/sucursal, restricciones, triggers, retención y actor de auditoría.</coverageClass>
+      <coverageClass id="DB-RPC" objectUnderTest="erp.* functions" requiredCases="TC-REL-007 TC-SEC-004 TC-SEC-013 TC-SEC-019">Para cada función: firma, rol ejecutor, SECURITY DEFINER/invoker, search_path, permiso de negocio, tenant, idempotencia, atomicidad, concurrencia, errores y efecto de replay.</coverageClass>
+      <coverageClass id="DB-POLICIES" objectUnderTest="erp.* policies" requiredCases="TC-SEC-001 TC-SEC-002 TC-SEC-003 TC-SEC-019">Para cada policy: comando, roles, USING, WITH CHECK, caso positivo, caso cross-tenant y bypass no autorizado.</coverageClass>
+      <coverageClass id="DB-VIEWS" objectUnderTest="erp.* views" requiredCases="TC-SEC-005 TC-SEC-016 TC-FIN-015">Para cada vista: invoker/definer, columnas sensibles, tenant, permiso de costo, filtros, exactitud del agregado y performance.</coverageClass>
+      <coverageClass id="UI-MODULES" objectUnderTest="29 ERP modules / 19 workspaces" requiredCases="TC-UI-001 TC-UI-002 TC-UAT-001 TC-UAT-002 TC-UAT-003 TC-UAT-004">Para cada módulo: permiso, carga, vacío/error, búsqueda/filtros, CRUD/acción principal, validación, persistencia, auditoría, teclado, responsive y degradación de dependencias.</coverageClass>
+    </databaseSurface>
+    <matrixRule id="TRACE-001">Antes de GO se debe adjuntar una matriz generada desde pg_catalog con una fila por cada una de las 166 tablas, 191 funciones y 191 policies, vinculada a al menos un case id, resultado, evidencia y defecto. Los conteos del catálogo son el control de completitud: ninguna fila puede quedar sin resultado.</matrixRule>
+    <matrixRule id="TRACE-002">Cada uno de los 29 módulos declarados en systemInventory debe vincularse a su workspace, permiso de lectura, permisos de mutación, caso feliz, caso negativo, caso cross-tenant y caso UAT.</matrixRule>
+  </traceabilityModel>
+
+  <sourceOfTruthPolicy>
+    <rule>Este XML es el mapa autoritativo de alcance, casos, evidencia, defectos, criterios de aprobación y decisión de entrega.</rule>
+    <rule>Un caso solo figura PASS si fue ejecutado en esta auditoría y existe evidencia concreta; la mera existencia de código o test no equivale a aprobación.</rule>
+    <rule>NOT_RUN significa aún no ejecutado; BLOCKED significa que falta una dependencia o credencial; FAIL significa comportamiento observado distinto del esperado.</rule>
+    <rule>Cada ejecución futura debe actualizar status, executedAt, evidenceRef y defectRef sin eliminar el resultado histórico.</rule>
+  </sourceOfTruthPolicy>
+
+  <caseExecutionContract appliesTo="all-test-cases">
+    <arrangeRule>Preparar exactamente la identidad, organización, sucursal, permisos, datos, reloj y dependencias declarados; guardar conteos/snapshots previos.</arrangeRule>
+    <actRule>Ejecutar los pasos en orden, incluyendo reintentos, concurrencia y llamada directa al backend cuando el caso lo indique; no validar seguridad solo por controles ocultos en UI.</actRule>
+    <assertRule>Comparar UI, respuesta API, tablas fuente, ledgers, auditoría e integración; ninguna capa puede contradecir a otra.</assertRule>
+    <passCriteria>PASS únicamente si todas las aserciones se cumplen, no aparecen errores inesperados y no queda efecto lateral fuera del esperado.</passCriteria>
+    <failCriteria>FAIL ante una aserción falsa, excepción inesperada, timeout, dato ficticio, inconsistencia, duplicado, fuga, efecto parcial o evidencia insuficiente de atomicidad.</failCriteria>
+    <potentialBugPolicy>Todo FAIL genera o referencia un defecto con módulo, prioridad, evidencia, impacto, reproducción, resultado esperado y condición de cierre. Un P0 detiene la certificación de entrega.</potentialBugPolicy>
+    <defectTraceRule>La reproducción y el resultado esperado de cada defecto se obtienen de los casos que lo referencian; requiredFix más la repetición PASS de esos casos define su condición mínima de cierre.</defectTraceRule>
+    <evidencePolicy>Adjuntar comando/log/screenshot/request-id/filas antes-después según el tipo; nunca incluir contraseñas, JWT, service keys, IMEI completo ni PII real.</evidencePolicy>
+  </caseExecutionContract>
+
+  <riskModel>
+    <priority code="P0" releaseBlocking="true">Pérdida/corrupción de datos, exposición entre organizaciones, cobro/stock/contabilidad incorrectos, o flujo principal inutilizable.</priority>
+    <priority code="P1" releaseBlocking="true">Función central incompleta, inconsistencia operativa seria, integración requerida ausente o defecto frecuente sin workaround seguro.</priority>
+    <priority code="P2" releaseBlocking="conditional">Impacto moderado, UX riesgosa, observabilidad insuficiente o workaround manual documentable.</priority>
+    <priority code="P3" releaseBlocking="false">Defecto menor o inconsistencia visual sin impacto en integridad.</priority>
+    <priority code="P4" releaseBlocking="false">Mejora deseable.</priority>
+  </riskModel>
+
+  <qualityGates>
+    <gate id="GATE-EXEC" required="100%">Ejecutar el 100% del conjunto de release marcado mandatory="true".</gate>
+    <gate id="GATE-PASS" required="at-least-80%">Aprobar al menos 80% del total y 100% de los P0.</gate>
+    <gate id="GATE-DEFECTS" required="0-P0-and-max-5-P1">Cero defectos P0 abiertos y no más de cinco P1 aceptados formalmente.</gate>
+    <gate id="GATE-COVERAGE" required="at-least-80%">Cobertura automatizada global y por módulos críticos igual o superior a 80%.</gate>
+    <gate id="GATE-SECURITY" required="at-least-90%-OWASP">Controles OWASP aplicables aprobados, RLS en toda tabla expuesta y sin acceso anon al ERP.</gate>
+    <gate id="GATE-RECOVERY" required="pass">Backup, restore, rollback y reconciliación post-restauración ensayados.</gate>
+    <gate id="GATE-UAT" required="signed">UAT firmado por responsable de caja, stock, taller, administración y dirección.</gate>
+  </qualityGates>
+
+  <environments>
+    <environment id="LOCAL-CLEAN" dataPolicy="synthetic-only">
+      <database>Supabase local reconstruido con db reset y seed.</database>
+      <application>Build actual del ERP servido desde contenedor local.</application>
+      <testIdentity email="qa-erp-owner@nictech.local">Propietario QA local; no existe en producción.</testIdentity>
+    </environment>
+    <environment id="REMOTE-CLIENT" dataPolicy="read-only-smoke">
+      <database>Supabase remoto NicTech, proyecto tuzpcofywkhglkqplhnn.</database>
+      <restriction>No crear ventas, cobros, usuarios, stock, reparaciones ni datos de prueba sin autorización y plan de limpieza.</restriction>
+    </environment>
+  </environments>
+
+  <testDataStrategy>
+    <dataset id="TD-BASE">Organización NicTech, sucursal CENTRAL, roles owner/sales/technician/inventory, permisos seed y plan de cuentas.</dataset>
+    <dataset id="TD-CATALOG">Producto simple, producto con dos variantes y códigos de barras, producto serial, producto IMEI, servicio y producto inactivo.</dataset>
+    <dataset id="TD-STOCK">Dos depósitos, saldos suficientes/insuficientes, reserva activa/expirada, serie/IMEI disponible y movimientos con costos distintos.</dataset>
+    <dataset id="TD-CUSTOMERS">Consumidor final, cliente con DNI, empresa con CUIT, duplicado lógico, cliente inactivo y cliente de otra organización.</dataset>
+    <dataset id="TD-FINANCE">Caja abierta/cerrada, ARS/USD, cotización vigente/vencida, contrato con cuotas, período abierto/cerrado y asiento balanceado/desbalanceado.</dataset>
+    <dataset id="TD-REPAIRS">Orden recibida, diagnóstico, presupuesto, repuestos, reparación, QC aprobado/fallido, retiro, garantía y reingreso.</dataset>
+    <dataset id="TD-SECURITY">Dos organizaciones, cuatro roles, usuario sin perfil, perfil inactivo, rol global y rol limitado a sucursal.</dataset>
+  </testDataStrategy>
+
+  <executedEvidence>
+    <evidence id="EV-001" result="PASS">npm run typecheck:erp finalizó con código 0.</evidence>
+    <evidence id="EV-002" result="PASS">npm run build:erp finalizó con código 0; Vite 7.3.6 transformó 2336 módulos.</evidence>
+    <evidence id="EV-003" result="PASS">npx eslint apps/erp packages/domain --max-warnings=0 finalizó con código 0.</evidence>
+    <evidence id="EV-004" result="PASS_WITH_FLAKY_RISK">Ejecución final dirigida a ERP/domain/Edge helpers: 10 archivos y 40 tests PASS. Antecedente reproducido: sin Supabase local hubo 32/33 y un timeout; queda DEF-ERP-014.</evidence>
+    <evidence id="EV-005" result="PASS">db reset local aplicó todas las migraciones, seed y hardening desde cero.</evidence>
+    <evidence id="EV-006" result="PASS">19 archivos pgTAP, 1297 aserciones, resultado PASS.</evidence>
+    <evidence id="EV-007" result="FAIL">db lint --local --schema erp --fail-on error detectó cinco errores de tipado/ambigüedad.</evidence>
+    <evidence id="EV-008" result="FAIL">db lint remoto del esquema erp reprodujo los mismos cinco errores.</evidence>
+    <evidence id="EV-009" result="PASS">npm audit --workspace @nictech/erp --omit=dev reportó 0 vulnerabilidades de producción.</evidence>
+    <evidence id="EV-010" result="PASS">Login local con propietario QA y apertura de las 19 áreas del ERP.</evidence>
+    <evidence id="EV-011" result="FAIL">POS mostró “Error al cargar catálogo ERP”; REST confirmó 403 por falta de SELECT en erp.inventory_units.</evidence>
+    <evidence id="EV-012" result="PASS">Alta UI local de producto QA con dos variantes y códigos de barras persistió correctamente.</evidence>
+    <evidence id="EV-013" result="PASS">Anon remoto recibió 401 al intentar acceder al esquema/RPC ERP.</evidence>
+    <evidence id="EV-014" result="BLOCKED">Producción contiene una organización, cuatro roles y cero perfiles ERP; no existe propietario operativo.</evidence>
+    <evidence id="EV-015" result="PASS">CLI Supabase fijada exactamente en 2.117.0 y esquema erp expuesto explícitamente en configuración API.</evidence>
+    <evidence id="EV-016" result="NOT_MEASURED">No está instalado un provider de cobertura Vitest; no existe medición porcentual confiable.</evidence>
+    <evidence id="EV-017" result="PASS">Catálogo local efectivo: 166 tablas con RLS sobre 166, 7 vistas, 191 funciones, 158 SECURITY DEFINER, 191 policies, 337 triggers, 545 índices y 1560 constraints.</evidence>
+    <evidence id="EV-018" result="PASS">Privilegios efectivos: anon sin USAGE/CRUD/RPC ERP; authenticated con USAGE; cero funciones definer sin search_path fijo.</evidence>
+    <evidence id="EV-019" result="RISK_ACCEPTANCE_REQUIRED">Advisors remotos: 107 funciones definer ejecutables por authenticated, 2 vistas definer, 0 ejecutables por anon y 0 findings de performance ERP.</evidence>
+    <evidence id="EV-020" result="FAIL">Advisor remoto informa protección contra contraseñas filtradas deshabilitada.</evidence>
+    <evidence id="EV-021" result="PASS">La imagen Docker ERP se reconstruyó, el contenedor fue recreado y el build actual respondió por /health y navegador.</evidence>
+    <evidence id="EV-022" result="PASS">Búsqueda estática en alcance ERP no encontró consumidores de logs.all ni del endpoint Management API de logs.</evidence>
+    <evidence id="EV-023" result="FAIL">Inspección estática y del build confirmó sourcemap=true y archivos .map públicos junto a los chunks de producción.</evidence>
+    <evidence id="EV-024" result="FAIL">El SQL de eventos de pagos web deja un reembolso posterior al fulfillment con applied=false y el mensaje explícito “fulfilled orders require an atomic refund command”.</evidence>
+    <evidence id="EV-025" result="FAIL">supplier_payables y supplier_account_entries registran deuda, pero no existe RPC ni acción UI para aplicar un pago real, caja/banco y asiento contra esa deuda.</evidence>
+    <evidence id="EV-026" result="FAIL">record_receivable_payment solo crea receivable_payments y distribuye capital entre cuotas; no crea payment, movimiento de caja/banco, cuenta corriente ni asiento contable.</evidence>
+    <evidence id="EV-027" result="PARTIAL">Existen tests unitarios Vitest para dominio y firma, pero no ejercitan los handlers HTTP, CORS, llamadas Supabase/Mercado Pago, secretos, idempotencia integral ni despliegue de las Edge Functions.</evidence>
+    <evidence id="EV-028" result="FAIL">El rol seed sales tiene sales.create pero no pricing.manage; PosWorkspace solicita get_or_create_exchange_snapshot y ese RPC exige pricing.manage, por lo que el rol mínimo no puede completar una venta.</evidence>
+    <evidence id="EV-029" result="FAIL">fulfill_online_order permite orders.manage pero llama post_erp_source_event/post_journal_entry, que exige accounting.post; el rol seed sales no posee ese permiso y la operación revierte.</evidence>
+    <evidence id="EV-030" result="FAIL">Clientes y Reparaciones guardan DNI/CUIT en customers.code; customers_select solo exige customers.view y la UI lista code, eludiendo customers.view_sensitive y customer_private_details.</evidence>
+    <evidence id="EV-031" result="FAIL">El alta de clientes ofrece ciudad y crédito inicial pero no los persiste; el mapper fuerza city=CABA y creditBalanceArs=0, y reutiliza legal_name como notas.</evidence>
+    <evidence id="EV-032" result="FAIL">El backend expone post_cash_movement, pero CashWorkspace solo consume apertura/cierre de caja; no existe acción para ingreso/egreso manual, reversa o moneda.</evidence>
+    <evidence id="EV-033" result="FAIL">Etiquetas acepta hasta 500 copias en el formulario, pero el render/impresión limita silenciosamente a 100.</evidence>
+    <evidence id="EV-034" result="FAIL">Pedidos online solo ofrece Cumplir y fulfillment fija delivery_state=dispatched sin despacho físico; no hay preparación, listo, entrega, cancelación ni devolución operable desde UI.</evidence>
+    <evidence id="EV-035" result="FAIL">El workspace Presupuestos solo consulta y crea repair_quotes vinculados a repair_orders; no existe presupuesto comercial independiente ni conversión a venta.</evidence>
+    <evidence id="EV-036" result="FAIL">Garantías solo permite abrir repair_warranty_claim; no existe flujo de evaluación, estado, resolución, nueva orden o cierre.</evidence>
+    <evidence id="EV-037" result="FAIL">Los exportes financieros se habilitan con reports.view sin verificar reports.export; los serializadores CSV de reportes y auditoría no neutralizan prefijos =,+,-,@.</evidence>
+    <evidence id="EV-038" result="FAIL">Integraciones permite mover a DLQ, pero no reintentar, reencolar ni recuperar un evento desde la UI.</evidence>
+    <evidence id="EV-039" result="FAIL">El alta de catálogo fija tracking=quantity, costo=0 e IVA=21; no ofrece alta service/serial/IMEI ni lifecycle completo de variantes e identificadores.</evidence>
+    <evidence id="EV-040" result="FAIL">El submódulo pricing reutiliza el catálogo y no ofrece preview/apply de price_change_previews, listas, vigencias, reglas masivas ni cotizaciones operativas.</evidence>
+    <evidence id="EV-041" result="FAIL">PosWorkspace bloquea el cobro cuando no obtiene dollarRate, incluso si la venta y el medio son ARS y no requieren conversión.</evidence>
+    <evidence id="EV-042" result="FAIL">Inspección del repositorio no encontró workflows de CI para el ERP; el healthcheck Docker solo verifica servicio estático.</evidence>
+    <evidence id="EV-043" result="FAIL">Configuración y accesos informa que el alta Auth/perfil/rol no está disponible, y sucursales/ubicaciones carecen de administración completa.</evidence>
+    <evidence id="EV-044" result="FAIL">App.tsx y DashboardOverview contienen badge 3, alerta, rol, sucursal y caja fija sin consulta que respalde esos hechos.</evidence>
+    <evidence id="EV-045" result="FAIL">Inspección de workspaces confirmó que pricing reutiliza catálogo y stock-counts reutiliza existencias/ajuste sin workflow de precio ni conteo físico.</evidence>
+    <evidence id="EV-046" result="FAIL">Formularios de armados, canjes y documentos requieren UUID o JSON internos, y el flujo de reversa de canje no ofrece operación guiada completa.</evidence>
+    <evidence id="EV-047" result="PASS">Vitest ejecutó 3 archivos y 7 tests de helpers Mercado Pago (agregación/validación de carrito, normalización de webhook y firma HMAC), todos aprobados.</evidence>
+    <evidence id="EV-048" result="PASS">Reinicio limpio final del 2026-09-16 aplicó desde cero todas las migraciones hasta 20260916003000, seed y reinicio de servicios.</evidence>
+    <evidence id="EV-049" result="PASS">Regresión pgTAP final: 20 archivos, 1363 aserciones y cero fallos; incluye reembolso post-fulfillment, cobros, caja manual, pago/reversa de proveedor y roles mínimos.</evidence>
+    <evidence id="EV-050" result="PASS">Supabase db lint final sobre erp/extensions/public devolvió cero errores.</evidence>
+    <evidence id="EV-051" result="PASS">Vitest dirigido a ERP, dominio y Edge helpers: 15 archivos y 57 tests PASS; el helper CSV sumó 8 casos contra fórmulas.</evidence>
+    <evidence id="EV-052" result="PASS">TypeScript strict, ESLint dirigido, build Vite y npm audit ERP finalizaron en cero; el artefacto productivo contiene cero sourcemaps y cero vulnerabilidades de producción.</evidence>
+    <evidence id="EV-053" result="PASS">Smoke browser con propietario sintético verificó dashboard sin alertas ficticias, perfil/permisos reales, POS ARS sin cotización USD, clientes privados y lote de 101 etiquetas sin recorte.</evidence>
+    <evidence id="EV-054" result="PASS">E2E local de proveedor: UI registró pago parcial ARS 2500, actualizó deuda 10000→7500, mostró historial y revirtió; DB reconcilió saldo 10000, 1 pago, 1 reversa y 2 asientos balanceados. El método canje quedó excluido.</evidence>
+    <evidence id="EV-055" result="BLOCKED">Preflight remoto read-only confirmó seis migraciones locales aún no desplegadas (20260915032943..20260916003000) y continúa sin propietario ERP definido; no se realizó ninguna mutación remota.</evidence>
+  </executedEvidence>
+
+  <defects>
+    <defect id="DEF-ERP-001" priority="P0" status="FIXED" module="POS/Stock" evidenceRef="EV-011 EV-049 EV-053">
+      <title>El POS no puede cargar el catálogo por privilegio faltante</title>
+      <observed>La consulta conjunta falla completa porque authenticated no tiene SELECT sobre erp.inventory_units; la pantalla queda sin sucursal, ubicación ni productos.</observed>
+      <impact>No se puede realizar ninguna venta desde el POS.</impact>
+      <requiredFix>Otorgar el privilegio mínimo requerido con RLS efectiva, agregar prueba de contrato Data API autenticada y repetir venta completa.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-002" priority="P0" status="FIXED" module="MercadoPago/Web orders" evidenceRef="EV-007 EV-008 EV-049 EV-050">
+      <title>process_mercadopago_payment compara el enum con un valor inexistente</title>
+      <observed>inventory_tracking_mode admite serial, pero la función compara contra serialized y PostgreSQL reporta 22P02.</observed>
+      <impact>Un pago aprobado puede fallar antes de crear venta, descontar stock y contabilizar.</impact>
+      <requiredFix>Cambiar al valor canónico, cubrir productos quantity/serial/imei e idempotencia del webhook.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-003" priority="P0" status="FIXED" module="Cuentas corrientes" evidenceRef="EV-007 EV-008 EV-026 EV-049">
+      <title>El cobro de cuotas falla por tipo y no completa el circuito monetario</title>
+      <observed>El CASE que establece paid/partially_paid no produce financing_installment_status (42804); además, la función solo crea receivable_payments y asignaciones de capital, sin payment, caja/banco, cuenta corriente ni asiento.</observed>
+      <impact>El cobro puede abortar o, una vez corregido el cast, registrar una cuota sin reflejar el dinero y la contabilidad, dejando subledgers contradictorios.</impact>
+      <requiredFix>Implementar un comando atómico e idempotente que tipifique el enum, distribuya capital/interés/mora y conecte payment, caja/banco, cliente, mayor y auditoría; probar parcial/total/mora/sobrepago/replay/reversa.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-004" priority="P1" status="FIXED" module="Armados de PC" evidenceRef="EV-007 EV-008 EV-049 EV-050">
+      <title>Replay idempotente de complete_pc_build usa equipment_id ambiguo</title>
+      <observed>La rama cmd.result_id referencia equipment_id sin calificar y PostgreSQL reporta 42702.</observed>
+      <impact>Reintentar una finalización ya procesada puede fallar aunque la primera ejecución haya concluido.</impact>
+      <requiredFix>Calificar el campo de la tabla y probar replay idéntico y clave reutilizada con payload distinto.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-005" priority="P1" status="FIXED" module="Trade-ins" evidenceRef="EV-007 EV-008 EV-049 EV-050">
+      <title>Replay idempotente de apply_trade_in_sale_payment usa payment_id ambiguo</title>
+      <observed>La rama cmd.result_id referencia payment_id sin calificar y PostgreSQL reporta 42702.</observed>
+      <impact>El reintento de aplicar un canje a una venta puede fallar y complicar la conciliación.</impact>
+      <requiredFix>Calificar la columna y probar aplicación, replay, reversa y nueva aplicación.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-006" priority="P1" status="FIXED" module="Catálogo" evidenceRef="EV-007 EV-008 EV-049 EV-050">
+      <title>El RPC de alta intenta insertar identifier_kind sku inexistente</title>
+      <observed>identifier_kind admite internal/manufacturer/barcode/additional, pero el RPC usa sku cuando el payload lo incluye.</observed>
+      <impact>Cualquier consumidor que envíe SKU aborta el alta transaccional completa.</impact>
+      <requiredFix>Definir el modelo canónico de SKU y probar rollback total ante identificador inválido.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-007" priority="P0" status="OPEN" module="Producción/Auth" evidenceRef="EV-014">
+      <title>No hay propietario ERP asignado en la base remota</title>
+      <observed>erp.profiles tiene cero filas; existen usuarios Auth pero ninguno fue asociado por decisión del cliente.</observed>
+      <impact>Ningún usuario real puede obtener organización, permisos y sucursal para operar.</impact>
+      <requiredFix>El cliente debe indicar el usuario propietario; crear perfil/rol y ejecutar smoke autenticado remoto.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-008" priority="P1" status="FIXED" module="Dashboard/App shell" evidenceRef="EV-051 EV-053">
+      <title>Notificaciones y ficha del operador contienen datos ficticios</title>
+      <observed>La UI muestra tres alertas fijas, rol Super Administrador, Sucursal Central y Caja 01 Abierta sin leer esos hechos de la base.</observed>
+      <impact>El cliente puede tomar decisiones operativas basadas en información falsa.</impact>
+      <requiredFix>Conectar a datos reales o mostrar estado vacío explícito; agregar tests con base vacía y datos reales.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-009" priority="P1" status="OPEN" module="Inventarios físicos">
+      <title>El submódulo Inventarios físicos no implementa conteo físico</title>
+      <observed>Cambia de pestaña/título pero reutiliza la vista de existencias y ajuste; no hay apertura, captura, congelamiento, diferencias ni cierre de conteo.</observed>
+      <impact>No se puede auditar inventario físico de forma controlada.</impact>
+      <requiredFix>Implementar ciclo de conteo, doble conteo, diferencias, aprobación y asiento de ajuste.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-010" priority="P1" status="OPEN" module="Precios y monedas">
+      <title>El submódulo Precios y monedas no tiene flujo operativo propio</title>
+      <observed>Reutiliza catálogo; no gestiona listas, vigencia, redondeo, márgenes, cambios masivos ni cotizaciones.</observed>
+      <impact>Los precios comerciales y tipos de cambio no pueden administrarse con trazabilidad completa desde UI.</impact>
+      <requiredFix>Definir alcance comercial, implementar gestión y aprobar UAT.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-011" priority="P1" status="OPEN" module="Usuarios/Sucursales">
+      <title>Onboarding y administración RBAC no están disponibles en el ERP</title>
+      <observed>Usuarios, sucursales y ubicaciones son esencialmente de lectura; el alta Auth debe hacerse fuera del producto.</observed>
+      <impact>La instalación y administración diaria dependen de acceso técnico a Supabase.</impact>
+      <requiredFix>Implementar o documentar un procedimiento administrativo seguro, auditable y aceptado por el cliente.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-012" priority="P1" status="OPEN" module="Integraciones">
+      <title>WhatsApp y timbrado fiscal no tienen adaptador productivo conectado</title>
+      <observed>Los mensajes/documentos quedan en outbox y la UI declara que no simula envío; no hay proveedor confirmado en esta auditoría.</observed>
+      <impact>No se completa la entrega externa de mensajes ni la autorización fiscal.</impact>
+      <requiredFix>Conectar proveedor, secretos, callback, reintentos, DLQ y conciliación; o excluir formalmente estas funciones del contrato de entrega.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-013" priority="P2" status="OPEN" module="UX avanzada">
+      <title>Armados, canjes y documentos exigen UUID/JSON manuales</title>
+      <observed>Varios formularios piden identificadores internos o payload JSON en vez de selectores y validaciones de negocio.</observed>
+      <impact>Alta probabilidad de error del operador y baja aptitud para un cliente no técnico.</impact>
+      <requiredFix>Reemplazar campos técnicos por búsquedas/selectores, defaults y validaciones guiadas.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-014" priority="P2" status="OPEN" module="Tests frontend" evidenceRef="EV-004">
+      <title>La suite frontend no está aislada de la red local</title>
+      <observed>Un test agotó 5 segundos cuando Supabase local estaba apagado y pasó al levantarlo; el dashboard emitió errores reales durante tests de navegación.</observed>
+      <impact>CI no determinista y posibilidad de falsos negativos/positivos.</impact>
+      <requiredFix>Mockear frontera de datos o crear harness de integración explícito; separar unit de integration.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-015" priority="P1" status="OPEN" module="Cobertura/E2E" evidenceRef="EV-016">
+      <title>No existe medición de cobertura ni suite E2E automatizada integral</title>
+      <observed>Solo 33 tests TS/React para 19 workspaces; no está instalado provider de coverage y los flujos críticos no se ejecutan en navegador de forma automática.</observed>
+      <impact>No se satisface la puerta de cobertura ni se detectan regresiones de negocio completas.</impact>
+      <requiredFix>Agregar cobertura V8, umbrales, E2E por rol y flujos de release en CI.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-016" priority="P1" status="OPEN" module="Continuidad">
+      <title>No se ejecutó restore/rollback de producción</title>
+      <observed>Existe backup previo a migración, pero no hay evidencia de restauración cronometrada ni reconciliación posterior.</observed>
+      <impact>RTO/RPO y recuperabilidad no están demostrados.</impact>
+      <requiredFix>Restaurar en entorno aislado, validar conteos/hashes/RLS/RPC y documentar tiempos y responsables.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-017" priority="P2" status="OPEN" module="Vistas sensibles" evidenceRef="EV-019">
+      <title>Vistas definer exponen costos y datos sensibles con permisos generales de módulo</title>
+      <observed>trade_ins_overview y pc_build_projects_overview son security_invoker=false con security_barrier, pero entregan IMEI/series, tasaciones, reacondicionamiento y costos sin exigir costs.view ni auditar la lectura sensible.</observed>
+      <impact>Usuarios operativos podrían ver margen/costos o identificadores más allá de su necesidad.</impact>
+      <requiredFix>Decisión comercial explícita; separar columnas o exigir costs.view y registrar acceso sensible.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-018" priority="P2" status="OPEN" module="Supabase Auth" evidenceRef="EV-020">
+      <title>Protección contra contraseñas filtradas deshabilitada</title>
+      <observed>El advisor remoto auth_leaked_password_protection informa el control apagado.</observed>
+      <impact>Una aplicación administrativa puede aceptar credenciales conocidas como comprometidas.</impact>
+      <requiredFix>Activar el control según plan de Supabase y ejecutar alta/cambio/recuperación/revocación de sesión.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-019" priority="P1" status="OPEN" module="CI/CD y healthcheck">
+      <title>No existe pipeline de release y el healthcheck solo comprueba Nginx</title>
+      <observed>No hay .github/workflows; /health confirma contenido estático pero no Supabase, Auth, contexto ERP ni RPC.</observed>
+      <impact>Un despliegue roto puede publicarse o declararse saludable sin capacidad operativa.</impact>
+      <requiredFix>Pipeline reproducible con gates y smoke sintético autenticado de dependencias.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-020" priority="P2" status="FIXED" module="Artefacto web" evidenceRef="EV-023 EV-052">
+      <title>El build productivo publica sourcemaps completos</title>
+      <observed>apps/erp/vite.config.ts habilita sourcemap=true y dist/assets contiene archivos .js.map accesibles junto al bundle.</observed>
+      <impact>Se facilita la reconstrucción del código fuente y el análisis de rutas, contratos y lógica interna.</impact>
+      <requiredFix>Deshabilitar mapas públicos o cargarlos de forma privada al sistema de observabilidad; verificar ausencia en el artefacto entregable.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-021" priority="P0" status="FIXED" module="Pedidos online/Reembolsos" evidenceRef="EV-024 EV-049">
+      <title>No existe reembolso atómico para pedidos online ya cumplidos</title>
+      <observed>Al recibir refunded después de fulfilled, record_web_payment_event conserva el evento como unapplied y no compensa venta, pago, stock, documento ni contabilidad.</observed>
+      <impact>El proveedor puede devolver dinero mientras el ERP mantiene venta/cobro/resultado sin compensar; la conciliación financiera queda incorrecta.</impact>
+      <requiredFix>Crear comando atómico e idempotente de devolución post-entrega con política de retorno físico, reversas financieras/documentales/contables y conciliación de webhook.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-022" priority="P1" status="FIXED" module="Compras/Proveedores" evidenceRef="EV-025 EV-049 EV-054">
+      <title>La deuda a proveedores no tiene comando de pago</title>
+      <observed>Las recepciones originan supplier_payables y movimientos de subledger, pero el ERP solo lee/suma el saldo y no ofrece aplicación de pagos.</observed>
+      <impact>No se puede cancelar deuda, registrar egreso de caja/banco ni conciliar el mayor desde el producto.</impact>
+      <requiredFix>Implementar pago de proveedor atómico e idempotente con aplicaciones parciales, moneda/cambio, caja/banco, asiento, reversa, permisos y auditoría.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-023" priority="P0" status="FIXED" module="POS/RBAC" evidenceRef="EV-028 EV-049 EV-051">
+      <title>El rol de ventas no puede completar una venta por dependencia de pricing.manage</title>
+      <observed>sales.create habilita el POS, pero la UI solicita un snapshot de cambio cuyo RPC exige pricing.manage; el rol seed sales no tiene ese permiso, incluso para una venta base.</observed>
+      <impact>El owner puede operar, pero el cajero/vendedor previsto por RBAC queda bloqueado en el flujo principal.</impact>
+      <requiredFix>Separar lectura/creación segura del snapshot del permiso administrativo de precios o preprovisionarlo; probar POS completo con rol sales mínimo.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-024" priority="P0" status="FIXED" module="Pedidos online/RBAC" evidenceRef="EV-029 EV-049">
+      <title>El rol de ventas no puede cumplir pedidos por dependencia de accounting.post</title>
+      <observed>orders.manage autoriza fulfill_online_order, pero su composición llama al posteo contable que exige accounting.post, ausente en sales.</observed>
+      <impact>Un operador autorizado para pedidos no puede finalizar el fulfillment; el pedido pagado queda pendiente.</impact>
+      <requiredFix>Definir un comando de negocio con posteo interno seguro o permisos compuestos explícitos; probar roles mínimos y segregación contable.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-025" priority="P0" status="FIXED" module="Clientes/Privacidad" evidenceRef="EV-030 EV-049 EV-053">
+      <title>DNI/CUIT queda expuesto sin customers.view_sensitive</title>
+      <observed>DNI/CUIT se almacena en customers.code y se devuelve por la policy general customers.view, mientras el modelo privado previsto no protege ese campo.</observed>
+      <impact>Roles operativos pueden leer identificadores personales sin el permiso sensible previsto.</impact>
+      <requiredFix>Migrar el documento al almacenamiento privado, enmascarar la vista general y probar lectura por cada rol, tenant y acceso auditado.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-026" priority="P1" status="FIXED" module="Clientes" evidenceRef="EV-031 EV-051 EV-053">
+      <title>El alta de clientes pierde campos y muestra valores ficticios</title>
+      <observed>Ciudad y crédito inicial capturados no se persisten; la ficha devuelve CABA y 0 de forma fija y confunde legal_name con notas.</observed>
+      <impact>El operador cree haber guardado datos que se pierden y luego ve información falsa.</impact>
+      <requiredFix>Definir el modelo canónico, persistir cada campo o retirarlo del formulario, y probar roundtrip campo por campo sin defaults ficticios.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-027" priority="P1" status="OPEN" module="Catálogo" evidenceRef="EV-039">
+      <title>El alta de catálogo solo soporta productos quantity con valores fijos</title>
+      <observed>La UI fija tracking quantity, costo 0 e IVA 21 y no permite crear service, serial o IMEI ni administrar completamente variantes/identificadores.</observed>
+      <impact>Una parte central del catálogo prometido no puede cargarse ni mantenerse sin acceso técnico.</impact>
+      <requiredFix>Implementar alta/edición por tipo de tracking, impuestos, costos, categorías y lifecycle de variantes e identificadores.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-028" priority="P1" status="FIXED" module="Caja" evidenceRef="EV-032 EV-049 EV-051">
+      <title>No hay movimientos manuales de caja en la interfaz</title>
+      <observed>Existe post_cash_movement en base, pero la UI solo abre y cierra sesiones.</observed>
+      <impact>No se pueden registrar ingresos, retiros o ajustes operativos con motivo, moneda y trazabilidad.</impact>
+      <requiredFix>Agregar ingreso/egreso/reversa por moneda con permisos, confirmación, idempotencia, arqueo y asiento.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-029" priority="P1" status="FIXED" module="Etiquetas" evidenceRef="EV-033 EV-051 EV-053">
+      <title>La impresión recorta silenciosamente cantidades mayores a 100</title>
+      <observed>El formulario acepta hasta 500 copias pero el render limita a 100 sin advertencia.</observed>
+      <impact>El operador obtiene menos etiquetas que las solicitadas y puede dejar unidades sin identificar.</impact>
+      <requiredFix>Alinear el límite, paginar/lotes y mostrar conteo; probar 1, 100, 101 y 500 más roundtrip de escaneo.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-030" priority="P1" status="OPEN" module="Pedidos online" evidenceRef="EV-034">
+      <title>El lifecycle de preparación y entrega no está implementado</title>
+      <observed>La UI solo ofrece Cumplir y el backend marca dispatched automáticamente sin evidencia logística; faltan preparar, listo, despachar, entregar, cancelar y devolver.</observed>
+      <impact>El estado visible no representa la operación física y no hay control de responsabilidades ni tiempos.</impact>
+      <requiredFix>Implementar máquina de estados y eventos logísticos, permisos, timestamps, responsables y pruebas de transiciones/reintentos.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-031" priority="P1" status="OPEN" module="Presupuestos" evidenceRef="EV-035">
+      <title>No existen presupuestos comerciales independientes del taller</title>
+      <observed>El workspace opera únicamente repair_quotes vinculados a una reparación.</observed>
+      <impact>No se puede cotizar una venta comercial ni convertirla en venta/pedido pese al alcance declarado.</impact>
+      <requiredFix>Implementar presupuesto comercial versionado, vencimiento, aprobación/rechazo y conversión idempotente; o excluirlo formalmente del contrato.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-032" priority="P1" status="OPEN" module="Garantías" evidenceRef="EV-036">
+      <title>Los reclamos de garantía no tienen resolución completa</title>
+      <observed>Solo se puede abrir un claim; no hay estados, evaluación, resolución, vínculo a nueva orden ni cierre.</observed>
+      <impact>El caso queda abierto sin trazabilidad del trabajo, costo, cobertura ni resultado.</impact>
+      <requiredFix>Implementar lifecycle, decisiones, orden derivada, repuestos/mano de obra, cierre y pruebas de vigencia/cobertura.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-033" priority="P1" status="OPEN" module="Reportes/Exportaciones" evidenceRef="EV-037">
+      <title>Los CSV omiten permiso de exportación y permiten fórmulas</title>
+      <observed>Los botones financieros se habilitan con reports.view aunque existe reports.export; los valores iniciados con =,+,-,@ no se neutralizan.</observed>
+      <impact>Un rol de solo lectura puede extraer información y un CSV abierto en planilla puede ejecutar fórmulas maliciosas.</impact>
+      <requiredFix>Exigir reports.export en UI y backend, neutralizar fórmulas, aplicar límites/auditoría y probar todos los exportes.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-034" priority="P1" status="OPEN" module="Integraciones" evidenceRef="EV-038">
+      <title>No existe recuperación operativa de eventos fallidos</title>
+      <observed>La UI puede mover un evento a DLQ pero no reintentar, reencolar ni recuperar.</observed>
+      <impact>Fallas temporales requieren intervención técnica y los mensajes/documentos pueden quedar abandonados.</impact>
+      <requiredFix>Agregar retry/requeue/recover con backoff, permisos, contador, motivo, idempotencia y auditoría.</requiredFix>
+    </defect>
+    <defect id="DEF-ERP-035" priority="P0" status="FIXED" module="POS/Moneda" evidenceRef="EV-041 EV-049 EV-051 EV-053">
+      <title>Una venta totalmente ARS queda bloqueada si no hay cotización USD</title>
+      <observed>El submit del POS exige dollarRate antes de distinguir si existe conversión; sin cotización no permite cobrar una operación base ARS.</observed>
+      <impact>Una dependencia ajena a la transacción puede detener todas las ventas locales.</impact>
+      <requiredFix>Exigir snapshot solo cuando la operación convierte moneda y probar ARS puro con/sin cotización, USD y mixto.</requiredFix>
+    </defect>
+  </defects>
+
+  <testSuites>
+    <suite id="SUITE-REL" name="Build, configuración y release" owner="Engineering" mandatory="true">
+      <case id="TC-REL-001" priority="P0" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-005">
+        <objective>Demostrar que una base vacía puede reconstruirse únicamente con migraciones versionadas y seed.</objective>
+        <arrange>Docker disponible; stack local detenido o descartable; checkout exacto del release.</arrange>
+        <act><step order="1">Ejecutar supabase db reset --local.</step><step order="2">Observar cada migración y el seed.</step><step order="3">Esperar reinicio de servicios.</step></act>
+        <assert>Exit 0, todas las migraciones ERP aplicadas en orden, seed completo y API reiniciada.</assert>
+        <cleanup>Conservar la base local para el resto de la auditoría.</cleanup>
+      </case>
+      <case id="TC-REL-002" priority="P0" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-006">
+        <objective>Validar todos los contratos pgTAP del esquema ERP.</objective><arrange>Base reconstruida por TC-REL-001.</arrange>
+        <act><step order="1">Ejecutar supabase test db.</step><step order="2">Guardar cantidad de archivos y aserciones.</step></act>
+        <assert>19 archivos, 1297 tests, cero fallos.</assert>
+      </case>
+      <case id="TC-REL-003" priority="P0" type="Unit" automation="CLI" status="PASS" evidenceRef="EV-001"><objective>Comprobar TypeScript estricto del ERP.</objective><arrange>Dependencias instaladas.</arrange><act><step order="1">Ejecutar npm run typecheck:erp.</step></act><assert>Exit 0 sin diagnósticos.</assert></case>
+      <case id="TC-REL-004" priority="P0" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-002"><objective>Generar artefacto web de producción.</objective><arrange>Variables VITE declaradas.</arrange><act><step order="1">Ejecutar npm run build:erp.</step><step order="2">Validar index y chunks lazy.</step></act><assert>Exit 0, 2336 módulos y dist autocontenido.</assert></case>
+      <case id="TC-REL-005" priority="P1" type="Unit" automation="CLI" status="PASS" evidenceRef="EV-003"><objective>Evitar errores ESLint en ERP/domain.</objective><arrange>Configuración ESLint del repo.</arrange><act><step order="1">Ejecutar eslint con max-warnings 0.</step></act><assert>Cero errores y advertencias.</assert></case>
+      <case id="TC-REL-006" priority="P0" type="Security" automation="CLI" status="PASS" evidenceRef="EV-009"><objective>Comprobar dependencias productivas conocidas vulnerables.</objective><arrange>Lockfile actual.</arrange><act><step order="1">Ejecutar npm audit del workspace ERP omitiendo dev.</step></act><assert>Cero vulnerabilidades low/moderate/high/critical.</assert></case>
+      <case id="TC-REL-007" priority="P0" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-050"><objective>Analizar tipos y referencias de todas las funciones PL/pgSQL.</objective><arrange>Esquema local reconstruido con todas las migraciones.</arrange><act><step order="1">Ejecutar db lint --local --level error.</step></act><assert>Finalizó con cero errores en erp, extensions y public.</assert></case>
+      <case id="TC-REL-008" priority="P1" type="Integration" automation="Manual" status="NOT_RUN"><objective>Verificar paridad exacta de historial local/remoto.</objective><arrange>Proyecto enlazado y credenciales DB.</arrange><act><step order="1">Listar migraciones local/remoto.</step><step order="2">Comparar versiones y estados.</step></act><assert>Sin migraciones solo-local, solo-remoto ni historial reparado sin justificación.</assert></case>
+      <case id="TC-REL-009" priority="P1" type="E2E" automation="Docker" status="PASS" evidenceRef="EV-021"><objective>Validar que la imagen Docker contiene el build actual.</objective><arrange>Build args con URL y publishable key locales.</arrange><act><step order="1">Construir imagen ERP.</step><step order="2">Recrear contenedor.</step><step order="3">Abrir URL con cache-buster.</step></act><assert>Título NicTech ERP y login actual visibles.</assert></case>
+      <case id="TC-REL-010" priority="P1" type="Recovery" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-016"><objective>Restaurar backup previo a migración en un proyecto aislado.</objective><arrange>Backup schema/data, destino vacío y ventana de prueba.</arrange><act><step order="1">Restaurar schema.</step><step order="2">Restaurar datos.</step><step order="3">Aplicar ERP.</step><step order="4">Comparar conteos y hashes.</step></act><assert>RTO/RPO medidos, cero pérdida y smoke aprobado.</assert></case>
+      <case id="TC-REL-011" priority="P1" type="Recovery" automation="Manual" status="NOT_RUN"><objective>Ensayar rollback ante migración fallida.</objective><arrange>Clon aislado del remoto y runbook.</arrange><act><step order="1">Forzar fallo controlado.</step><step order="2">Ejecutar rollback/restauración.</step><step order="3">Reconciliar operaciones.</step></act><assert>Servicio recuperado dentro de RTO sin transacciones huérfanas.</assert></case>
+      <case id="TC-REL-012" priority="P2" type="Performance" automation="Manual" status="NOT_RUN"><objective>Medir peso, caché y carga de chunks principales.</objective><arrange>Build de producción y red simulada.</arrange><act><step order="1">Capturar waterfall cold/warm.</step><step order="2">Medir LCP/INP/CLS.</step></act><assert>Presupuesto acordado; ningún chunk bloquea uso operativo.</assert></case>
+      <case id="TC-REL-013" priority="P1" type="Integration" automation="Inspection" status="FAIL" defectRef="DEF-ERP-019" evidenceRef="EV-042"><objective>Ejecutar gates ERP automáticamente antes de integrar/desplegar.</objective><arrange>Repositorio del release.</arrange><act><step order="1">Buscar pipeline CI.</step><step order="2">Verificar npm ci, typecheck, lint, Vitest, coverage, reset, pgTAP, lint DB, build y smoke.</step></act><assert>Debe existir pipeline bloqueante; observado: no hay workflows.</assert></case>
+      <case id="TC-REL-014" priority="P1" type="Observability" automation="HTTP" status="FAIL" defectRef="DEF-ERP-019" evidenceRef="EV-021"><objective>Comprobar salud operativa y no solo Nginx.</objective><arrange>Contenedor ERP arriba y Supabase disponible/no disponible.</arrange><act><step order="1">Consultar /health en ambos escenarios.</step></act><assert>Debe degradar si Auth/contexto/RPC fallan; actualmente solo verifica servidor estático.</assert></case>
+      <case id="TC-REL-015" priority="P2" type="Security" automation="Inspection" status="PASS" evidenceRef="EV-052"><objective>Controlar publicación de sourcemaps de producción.</objective><arrange>Build productivo final.</arrange><act><step order="1">Inspeccionar vite.config y contar artefactos .map.</step></act><assert>sourcemap=false y cero archivos .map en dist.</assert></case>
+      <case id="TC-REL-016" priority="P0" type="Integration" automation="Deno/HTTP" status="FAIL" defectRef="DEF-ERP-015" evidenceRef="EV-027 EV-047" objectUnderTest="create-mercadopago-preference mercadopago-webhook"><objective>Ejecutar pruebas de contrato HTTP de las Edge Functions Mercado Pago.</objective><arrange>Runtime Deno, secretos sandbox, firma válida/inválida y fixtures de productos quantity/serial/IMEI.</arrange><act><step order="1">Probar creación de preferencia y validación server-side.</step><step order="2">Probar webhook, firma, replay, evento fuera de orden y error de Supabase/MP.</step><step order="3">Verificar logs sin secretos y despliegue.</step></act><assert>Suite reproducible, atomicidad/idempotencia y 0 secretos; observado: solo existen unit tests de helpers, no contrato HTTP integral.</assert></case>
+      <case id="TC-REL-017" priority="P1" type="Unit" automation="Vitest" status="PASS" evidenceRef="EV-047" objectUnderTest="Mercado Pago domain/signature helpers"><objective>Validar helpers puros de preferencia, normalización y firma.</objective><arrange>Fixtures de variantes, stock, estados y HMAC.</arrange><act><step order="1">Ejecutar los tres archivos de test.</step></act><assert>3 archivos, 7 tests, cero fallos.</assert></case>
+      <case id="TC-REL-018" priority="P2" type="Unit" automation="Vitest" status="FAIL" defectRef="DEF-ERP-014" evidenceRef="EV-004"><objective>Aislar los tests unitarios de disponibilidad de Supabase local.</objective><arrange>Supabase local apagado y fronteras de red mockeadas.</arrange><act><step order="1">Ejecutar suite ERP/domain.</step><step order="2">Repetir con Supabase arriba.</step></act><assert>Los unit tests deben ser deterministas en ambos estados; observado: un timeout sin Supabase y éxito al levantarlo.</assert></case>
+    </suite>
+
+    <suite id="SUITE-AUTH" name="Autenticación, contexto y RBAC" owner="Security" mandatory="true">
+      <case id="TC-AUTH-001" priority="P0" type="E2E" automation="Browser" status="PASS" evidenceRef="EV-010"><objective>Ingresar con propietario activo.</objective><arrange>Usuario Auth confirmado, profile activo, organización y rol owner.</arrange><act><step order="1">Abrir ERP sin sesión.</step><step order="2">Completar correo/contraseña válidos.</step><step order="3">Ingresar.</step></act><assert>Dashboard visible, contexto con organization_id y 19 workspaces autorizados.</assert></case>
+      <case id="TC-AUTH-002" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Rechazar contraseña incorrecta sin revelar existencia del usuario.</objective><arrange>Correo válido y contraseña inválida.</arrange><act><step order="1">Intentar login.</step></act><assert>Mensaje genérico, sin sesión ni datos ERP; evento auditable si corresponde.</assert></case>
+      <case id="TC-AUTH-003" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Rechazar usuario Auth sin perfil ERP.</objective><arrange>Usuario confirmado sin fila profiles.</arrange><act><step order="1">Autenticar.</step><step order="2">Esperar get_current_erp_context.</step></act><assert>Acceso bloqueado con explicación operativa, sin navegación ni lecturas.</assert></case>
+      <case id="TC-AUTH-004" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Rechazar perfil inactivo.</objective><arrange>Profile is_active=false.</arrange><act><step order="1">Autenticar.</step></act><assert>Contexto vacío/denegado y ninguna consulta de negocio exitosa.</assert></case>
+      <case id="TC-AUTH-005" priority="P0" type="Security" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Aplicar deny explícito por encima del rol.</objective><arrange>Rol permite y override de usuario deniega.</arrange><act><step order="1">Evaluar hasPermission.</step></act><assert>Deny prevalece globalmente y en sucursal.</assert></case>
+      <case id="TC-AUTH-006" priority="P0" type="Security" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Aislar permisos por sucursal.</objective><arrange>Usuario con override en CENTRAL y otra sucursal.</arrange><act><step order="1">Consultar permiso en ambas.</step></act><assert>Solo la sucursal autorizada permite la operación.</assert></case>
+      <case id="TC-AUTH-007" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Expirar sesión y token durante una operación.</objective><arrange>Sesión corta y formulario con datos no sensibles.</arrange><act><step order="1">Expirar token.</step><step order="2">Ejecutar RPC.</step></act><assert>RPC falla sin efecto parcial; UI solicita reingreso y no entra en loop.</assert></case>
+      <case id="TC-AUTH-008" priority="P0" type="Security" automation="Browser" status="NOT_RUN"><objective>Cerrar sesión y eliminar acceso residual.</objective><arrange>Sesión activa.</arrange><act><step order="1">Cerrar sesión.</step><step order="2">Volver con historial.</step><step order="3">Recargar.</step></act><assert>Login visible y ningún dato protegido queda accesible.</assert></case>
+      <case id="TC-AUTH-009" priority="P0" type="E2E" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-007"><objective>Ingresar con propietario real en Supabase remoto.</objective><arrange>Cliente designa usuario; perfil y owner creados.</arrange><act><step order="1">Autenticar contra remoto.</step><step order="2">Abrir cada workspace permitido.</step></act><assert>Contexto productivo válido, sin errores 401/403/5xx.</assert></case>
+      <case id="TC-AUTH-010" priority="P0" type="Security" automation="HTTP" status="PASS" evidenceRef="EV-013"><objective>Bloquear acceso anónimo al esquema ERP.</objective><arrange>Anon/publishable key sin JWT de usuario.</arrange><act><step order="1">Consultar tabla ERP.</step><step order="2">Invocar RPC ERP.</step></act><assert>401/403 y cero filas o metadatos sensibles.</assert></case>
+      <case id="TC-AUTH-011" priority="P1" type="Security" automation="Manual" status="NOT_RUN"><objective>Comprobar revocación inmediata de rol.</objective><arrange>Dos sesiones del mismo usuario.</arrange><act><step order="1">Revocar rol desde sesión administradora.</step><step order="2">Intentar mutación en sesión antigua.</step></act><assert>Backend deniega aunque la UI conserve estado; refresco oculta módulo.</assert></case>
+      <case id="TC-AUTH-012" priority="P1" type="Security" automation="Manual" status="FAIL" defectRef="DEF-ERP-011" evidenceRef="EV-043"><objective>Dar de alta un operador sin acceso técnico a Supabase.</objective><arrange>Owner autenticado.</arrange><act><step order="1">Abrir Configuración y accesos.</step><step order="2">Buscar alta Auth/perfil/rol.</step></act><assert>Debe existir flujo auditable; observado: pantalla declara que no está disponible.</assert></case>
+      <case id="TC-AUTH-013" priority="P0" type="E2E" automation="Browser+SQL" status="NOT_RUN" objectUnderTest="roles sales technician inventory"><objective>Certificar journeys positivos con cada rol seed mínimo.</objective><arrange>Un usuario por rol y sucursal; sin permisos owner implícitos.</arrange><act><step order="1">Sales completa POS, pedidos y clientes permitidos.</step><step order="2">Technician completa taller.</step><step order="3">Inventory completa recepción, stock, conteo y etiquetas.</step></act><assert>Cada journey termina sin elevar permisos y todo lo no autorizado es denegado por backend.</assert></case>
+    </suite>
+
+    <suite id="SUITE-UI" name="Shell, navegación, accesibilidad y veracidad" owner="Frontend" mandatory="true">
+      <case id="TC-UI-001" priority="P1" type="E2E" automation="Browser" status="PASS" evidenceRef="EV-010"><objective>Abrir las 19 áreas autorizadas.</objective><arrange>Owner QA autenticado.</arrange><act><step order="1">Recorrer cada botón lateral.</step><step order="2">Esperar render de cada workspace.</step></act><assert>Todos cargan una vista identificable sin pantalla blanca ni crash.</assert></case>
+      <case id="TC-UI-002" priority="P1" type="Unit" automation="Vitest" status="PASS" evidenceRef="EV-004"><objective>Mapear 29 módulos exactamente una vez en 19 workspaces.</objective><arrange>Taxonomía domain.</arrange><act><step order="1">Ejecutar tests de módulos.</step></act><assert>Sin duplicados, omisiones ni workspaces vacíos.</assert></case>
+      <case id="TC-UI-003" priority="P1" type="E2E" automation="Browser" status="NOT_RUN"><objective>Buscar módulos por workspace y submódulo.</objective><arrange>Menú completo.</arrange><act><step order="1">Usar F2.</step><step order="2">Buscar términos con/sin acento.</step><step order="3">Limpiar con Escape.</step></act><assert>Resultados correctos, foco visible y navegación intacta.</assert></case>
+      <case id="TC-UI-004" priority="P1" type="Accessibility" automation="Vitest" status="PASS" evidenceRef="EV-004"><objective>Validar skip link y contención de foco en modal.</objective><arrange>App renderizada.</arrange><act><step order="1">Abrir modal.</step><step order="2">Navegar por teclado.</step></act><assert>Foco no escapa y existe salto al contenido.</assert></case>
+      <case id="TC-UI-005" priority="P1" type="Accessibility" automation="Manual" status="NOT_RUN"><objective>Operar toda acción crítica solo con teclado.</objective><arrange>Owner y datasets completos.</arrange><act><step order="1">Tabular menú/formularios/tablas.</step><step order="2">Abrir/cerrar selectores y modales.</step><step order="3">Enviar/cancelar.</step></act><assert>Orden lógico, foco visible, sin trampas ni acciones inaccesibles.</assert></case>
+      <case id="TC-UI-006" priority="P1" type="Accessibility" automation="Manual" status="NOT_RUN"><objective>Validar nombres, estados y errores con lector de pantalla.</objective><arrange>NVDA o equivalente.</arrange><act><step order="1">Recorrer landmarks.</step><step order="2">Provocar errores Zod/backend.</step></act><assert>Labels, mensajes, tablas, diálogos y cambios dinámicos son anunciados.</assert></case>
+      <case id="TC-UI-007" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Validar responsive en 360, 768, 1366 y 1920 px.</objective><arrange>Datasets con tablas largas.</arrange><act><step order="1">Cambiar viewport.</step><step order="2">Abrir menú, modal y tabla por tamaño.</step></act><assert>Sin contenido cortado, solapado ni acción fuera de pantalla.</assert></case>
+      <case id="TC-UI-008" priority="P1" type="E2E" automation="Browser" status="PASS" evidenceRef="EV-053"><objective>Mostrar solo notificaciones reales.</objective><arrange>Base vacía sin eventos.</arrange><act><step order="1">Abrir campana.</step></act><assert>Mostró estado vacío sin badge ni alertas hardcodeadas.</assert></case>
+      <case id="TC-UI-009" priority="P1" type="E2E" automation="Browser" status="PASS" evidenceRef="EV-053"><objective>Mostrar rol, sucursal y caja reales del operador.</objective><arrange>Propietario QA y contexto local real.</arrange><act><step order="1">Abrir perfil.</step><step order="2">Comparar con DB.</step></act><assert>Mostró 73 permisos, una sucursal real y acceso a Caja sin inventar sesión abierta.</assert></case>
+      <case id="TC-UI-010" priority="P2" type="E2E" automation="Manual" status="NOT_RUN"><objective>Validar estados loading/empty/error/success en los 19 workspaces.</objective><arrange>Interceptar demora, vacío, error 4xx/5xx y datos.</arrange><act><step order="1">Cargar cada estado.</step></act><assert>Mensajes claros, reintento disponible y sin datos ficticios.</assert></case>
+      <case id="TC-UI-011" priority="P0" type="E2E" automation="Browser+SQL" status="NOT_RUN" objectUnderTest="dashboard KPIs and drill-through"><objective>Validar exactitud de cada KPI y acceso al detalle fuente.</objective><arrange>Dataset conocido con ventas, caja, stock, reparaciones, pedidos, deuda y márgenes.</arrange><act><step order="1">Calcular cada métrica desde tablas fuente.</step><step order="2">Comparar dashboard.</step><step order="3">Abrir drill-through y reconciliar filas.</step></act><assert>Valor, moneda, fecha, sucursal y filtros coinciden exactamente; cero tarjetas decorativas o estáticas.</assert></case>
+    </suite>
+
+    <suite id="SUITE-CAT" name="Catálogo, variantes, códigos y precios" owner="Comercial/Stock" mandatory="true">
+      <case id="TC-CAT-001" priority="P0" type="E2E" automation="Browser" status="PASS" evidenceRef="EV-012"><objective>Crear producto quantity con dos variantes y barcodes.</objective><arrange>Owner local; códigos únicos.</arrange><act><step order="1">Abrir Nuevo Producto.</step><step order="2">Completar código, nombre y precio.</step><step order="3">Activar variantes, completar dos colores/barcodes.</step><step order="4">Crear.</step></act><assert>Producto y dos variantes visibles; transacción completa y feedback exitoso.</assert></case>
+      <case id="TC-CAT-002" priority="P0" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-049 EV-050"><objective>Crear variante con identificador SKU soportado.</objective><arrange>Payload RPC con SKU no vacío.</arrange><act><step order="1">Invocar create_catalog_product_with_variants.</step></act><assert>Usa identifier_kind internal canónico y el esquema final no presenta error de enum.</assert></case>
+      <case id="TC-CAT-003" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Garantizar rollback atómico ante barcode duplicado.</objective><arrange>Barcode ya existente.</arrange><act><step order="1">Crear producto con dos variantes, segunda duplicada.</step></act><assert>No queda producto ni primera variante huérfanos; error accionable.</assert></case>
+      <case id="TC-CAT-004" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Editar nombre/precio sin alterar variantes ni stock.</objective><arrange>Producto con saldos y variantes.</arrange><act><step order="1">Editar campos.</step><step order="2">Guardar.</step><step order="3">Comparar hijos/saldos.</step></act><assert>Solo campos autorizados cambian; historial/auditoría registrado.</assert></case>
+      <case id="TC-CAT-005" priority="P1" type="Security" automation="Manual" status="NOT_RUN"><objective>Impedir edición sin catalog.manage.</objective><arrange>Usuario solo catalog.view.</arrange><act><step order="1">Intentar UI y REST directo.</step></act><assert>Botón oculto y backend 403/RLS.</assert></case>
+      <case id="TC-CAT-006" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Desactivar producto preservando historial.</objective><arrange>Producto vendido y con stock.</arrange><act><step order="1">Desactivar.</step><step order="2">Buscar en POS y documentos históricos.</step></act><assert>No vendible, historial intacto y sin borrado físico.</assert></case>
+      <case id="TC-CAT-007" priority="P1" type="E2E" automation="Manual" status="FAIL" defectRef="DEF-ERP-010" evidenceRef="EV-040 EV-045"><objective>Gestionar lista de precios y vigencia.</objective><arrange>Dos listas y fecha futura.</arrange><act><step order="1">Abrir Precios y monedas.</step><step order="2">Crear/cambiar lista.</step></act><assert>Debe existir flujo; observado: solo catálogo compartido.</assert></case>
+      <case id="TC-CAT-008" priority="P1" type="Integration" automation="Manual" status="NOT_RUN"><objective>Validar redondeo e IVA ARS/USD.</objective><arrange>Cotización con decimales y tasas 0/10.5/21.</arrange><act><step order="1">Calcular venta y documento.</step></act><assert>Totales coinciden entre UI, venta, pago y contabilidad a cuatro/dos decimales según contrato.</assert></case>
+      <case id="TC-CAT-009" priority="P2" type="Performance" automation="Manual" status="NOT_RUN"><objective>Buscar/paginar 10.000 productos.</objective><arrange>Dataset masivo realista.</arrange><act><step order="1">Buscar código/nombre/barcode.</step><step order="2">Paginar y ordenar.</step></act><assert>P95 acordado, sin descargar catálogo completo ni congelar UI.</assert></case>
+      <case id="TC-CAT-010" priority="P1" type="E2E" automation="Inspection+Browser" status="FAIL" defectRef="DEF-ERP-027" evidenceRef="EV-039" objectUnderTest="products product_variants product_identifiers"><objective>Dar de alta y mantener service, quantity, serial e IMEI.</objective><arrange>Datos válidos/duplicados, categorías, impuestos, costos y dos variantes.</arrange><act><step order="1">Crear cada tracking mode.</step><step order="2">Agregar/editar/desactivar variantes e identificadores.</step><step order="3">Verificar stock y referencias históricas.</step></act><assert>Todos los tipos operables sin acceso técnico; observado: la UI solo crea quantity con costo/IVA fijos.</assert></case>
+      <case id="TC-CAT-011" priority="P1" type="E2E" automation="Inspection+Browser" status="FAIL" defectRef="DEF-ERP-010" evidenceRef="EV-040" objectUnderTest="price_lists price_change_previews exchange_rates"><objective>Previsualizar y aplicar cambio masivo de precios.</objective><arrange>Lista vigente, reglas por costo/margen/redondeo, ARS/USD y productos excluidos.</arrange><act><step order="1">Generar preview.</step><step order="2">Revisar diferencias.</step><step order="3">Aprobar/aplicar con clave idempotente.</step><step order="4">Repetir y revertir según política.</step></act><assert>Solo filas aprobadas cambian, snapshots/auditoría completos; observado: no existe flujo UI.</assert></case>
+    </suite>
+
+    <suite id="SUITE-STK" name="Stock, ledger, reservas e inventarios" owner="Stock" mandatory="true">
+      <case id="TC-STK-001" priority="P0" type="Security" automation="HTTP" status="PASS" evidenceRef="EV-049 EV-053"><objective>Leer unidades serializadas como usuario autorizado sin exponer la tabla cruda.</objective><arrange>JWT owner y esquema erp.</arrange><act><step order="1">Invocar list_available_inventory_units_for_pos.</step></act><assert>El RPC seguro respetó tenant/RBAC y el POS cargó sin 403.</assert></case>
+      <case id="TC-STK-002" priority="P0" type="Integration" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Registrar movimiento y actualizar saldo desde ledger.</objective><arrange>Producto quantity, ubicación y costo.</arrange><act><step order="1">Crear documento.</step><step order="2">Agregar línea.</step><step order="3">Publicar.</step></act><assert>Documento inmutable, balance actualizado y costo trazable.</assert></case>
+      <case id="TC-STK-003" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Bloquear stock negativo bajo concurrencia.</objective><arrange>Una unidad disponible y dos sesiones.</arrange><act><step order="1">Vender/reservar simultáneamente.</step></act><assert>Solo una transacción confirma; la otra revierte sin efectos laterales.</assert></case>
+      <case id="TC-STK-004" priority="P0" type="Integration" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Separar saldo por variante y ubicación.</objective><arrange>Dos variantes en dos depósitos.</arrange><act><step order="1">Ingresar/mover unidades.</step></act><assert>Ningún saldo se agrega a otra variante/ubicación.</assert></case>
+      <case id="TC-STK-005" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Transferir stock atómicamente.</objective><arrange>Origen suficiente y destino válido.</arrange><act><step order="1">Publicar transferencia.</step></act><assert>Egreso e ingreso balancean; una falla revierte ambos.</assert></case>
+      <case id="TC-STK-006" priority="P1" type="Integration" automation="Manual" status="NOT_RUN"><objective>Revertir documento manteniendo trazabilidad.</objective><arrange>Documento publicado sin reversa.</arrange><act><step order="1">Solicitar reversa con motivo.</step><step order="2">Repetir clave.</step></act><assert>Documento inverso único; original intacto; replay idempotente.</assert></case>
+      <case id="TC-STK-007" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Controlar ciclo serial/IMEI.</objective><arrange>Unidades serial e IMEI.</arrange><act><step order="1">Ingresar.</step><step order="2">Reservar.</step><step order="3">Vender/consumir.</step><step order="4">Intentar reutilizar.</step></act><assert>Una unidad física solo puede estar en un estado/ubicación y no se duplica.</assert></case>
+      <case id="TC-STK-008" priority="P1" type="Integration" automation="Manual" status="NOT_RUN"><objective>Expirar y liberar reservas.</objective><arrange>Reserva con expires_at vencido.</arrange><act><step order="1">Ejecutar lectura/fulfillment.</step><step order="2">Liberar.</step></act><assert>No se cumple una reserva expirada y vuelve disponibilidad una vez.</assert></case>
+      <case id="TC-STK-009" priority="P1" type="E2E" automation="Browser" status="FAIL" defectRef="DEF-ERP-009" evidenceRef="EV-045"><objective>Realizar inventario físico controlado.</objective><arrange>Depósito con productos y conteadores.</arrange><act><step order="1">Abrir Inventarios físicos.</step><step order="2">Intentar iniciar conteo.</step></act><assert>Debe existir apertura/captura/cierre; observado: no hay flujo.</assert></case>
+      <case id="TC-STK-010" priority="P1" type="Integration" automation="Manual" status="NOT_RUN"><objective>Calcular costo promedio tras compras y devoluciones.</objective><arrange>Ingresos a costos diferentes.</arrange><act><step order="1">Recibir compras.</step><step order="2">Revertir una.</step><step order="3">Consultar ledger.</step></act><assert>Cantidad y valorización coinciden con hechos de costo.</assert></case>
+      <case id="TC-STK-011" priority="P1" type="Security" automation="Manual" status="NOT_RUN"><objective>Aislar stock entre organizaciones.</objective><arrange>Mismo código en tenant A/B.</arrange><act><step order="1">Listar, ajustar y transferir con usuario A apuntando IDs B.</step></act><assert>Cero lectura/mutación cross-tenant.</assert></case>
+      <case id="TC-STK-012" priority="P1" type="E2E" automation="Inspection+Browser" status="NOT_RUN" evidenceRef="EV-053" objectUnderTest="labels barcode scanner"><objective>Imprimir etiquetas y recuperar el producto por escaneo sin pérdida.</objective><arrange>Barcode persistido y fallback; cantidades 1, 100, 101 y 500; impresora/PDF de prueba.</arrange><act><step order="1">Generar cada lote.</step><step order="2">Contar etiquetas renderizadas/impresas.</step><step order="3">Escanear muestra en POS/stock.</step></act><assert>El smoke confirmó 101 sin recorte; quedan pendientes 500, impresión física y roundtrip de escáner.</assert></case>
+    </suite>
+
+    <suite id="SUITE-POS" name="POS, caja y ventas" owner="Caja" mandatory="true">
+      <case id="TC-POS-001" priority="P0" type="E2E" automation="Browser" status="PASS" evidenceRef="EV-053"><objective>Cargar catálogo, sucursal, ubicación y medios de pago.</objective><arrange>Owner sintético y seed.</arrange><act><step order="1">Abrir Punto de venta.</step></act><assert>Cargó sucursal Central, ubicación Mostrador y medios reales sin error de catálogo.</assert></case>
+      <case id="TC-POS-002" priority="P0" type="E2E" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-001"><objective>Abrir caja con fondo contado.</objective><arrange>Caja activa, usuario autorizado, sin sesión abierta.</arrange><act><step order="1">Completar denominaciones/fondo.</step><step order="2">Abrir.</step></act><assert>Una sesión abierta, saldo inicial y auditoría; duplicado rechazado.</assert></case>
+      <case id="TC-POS-003" priority="P0" type="E2E" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-001"><objective>Venta quantity en efectivo.</objective><arrange>Caja abierta, cotización y stock.</arrange><act><step order="1">Agregar producto.</step><step order="2">Cobrar efectivo.</step><step order="3">Emitir comprobante.</step></act><assert>Venta/pago/stock/caja/asiento/documento coherentes y atómicos.</assert></case>
+      <case id="TC-POS-004" priority="P0" type="E2E" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-001"><objective>Venta con variante por barcode.</objective><arrange>Dos variantes con barcodes.</arrange><act><step order="1">Escanear barcode.</step><step order="2">Cobrar.</step></act><assert>Descuenta solo la variante correcta y ticket la identifica.</assert></case>
+      <case id="TC-POS-005" priority="P0" type="E2E" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-001"><objective>Venta serial/IMEI seleccionando unidad explícita.</objective><arrange>Dos unidades disponibles.</arrange><act><step order="1">Agregar sin unidad.</step><step order="2">Seleccionar unidad.</step><step order="3">Cobrar.</step></act><assert>Primero rechaza; luego vende exactamente una unidad y marca estado final.</assert></case>
+      <case id="TC-POS-006" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Impedir sobreventa y cantidades inválidas.</objective><arrange>Stock 1.</arrange><act><step order="1">Intentar cantidad 2, 0, negativa, NaN e infinita.</step></act><assert>Todo inválido se rechaza antes y en backend; sin movimientos parciales.</assert></case>
+      <case id="TC-POS-007" priority="P0" type="Integration" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Garantizar idempotencia de create_sale.</objective><arrange>Payload y operation_key.</arrange><act><step order="1">Invocar dos veces igual.</step><step order="2">Reusar clave con payload distinto.</step></act><assert>Replay devuelve mismo resultado; payload distinto falla.</assert></case>
+      <case id="TC-POS-008" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Venta mixta efectivo/transferencia/QR.</objective><arrange>Métodos configurados y caja.</arrange><act><step order="1">Distribuir pago.</step><step order="2">Confirmar.</step></act><assert>Suma exacta; solo efectivo afecta caja; referencias obligatorias donde corresponda.</assert></case>
+      <case id="TC-POS-009" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Cancelar venta y revertir todos los subledgers.</objective><arrange>Venta aprobada cancelable.</arrange><act><step order="1">Cancelar con motivo.</step><step order="2">Reintentar.</step></act><assert>Stock/caja/contabilidad/documentos se revierten una vez con enlaces al original.</assert></case>
+      <case id="TC-POS-010" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Cerrar caja con arqueo exacto.</objective><arrange>Sesión con movimientos.</arrange><act><step order="1">Contar denominaciones.</step><step order="2">Cerrar.</step></act><assert>Esperado=contado, diferencia cero, sesión inmutable y no admite nuevos pagos.</assert></case>
+      <case id="TC-POS-011" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Cerrar caja con diferencia autorizada.</objective><arrange>Diferencia y permiso de aprobación.</arrange><act><step order="1">Ingresar conteo distinto y motivo.</step><step order="2">Aprobar.</step></act><assert>Diferencia, responsable y ajuste contable auditados.</assert></case>
+      <case id="TC-POS-012" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Bloquear cobro/cierre sin permisos o en otra sucursal.</objective><arrange>Rol sales limitado.</arrange><act><step order="1">Invocar UI y RPC con IDs ajenos.</step></act><assert>Acción oculta y backend deniega sin filtrar saldos.</assert></case>
+      <case id="TC-POS-013" priority="P0" type="E2E" automation="Inspection+Browser" status="NOT_RUN" evidenceRef="EV-049 EV-051" objectUnderTest="get_or_create_exchange_snapshot"><objective>Completar venta con el rol sales mínimo.</objective><arrange>Usuario sales con sales.create, caja y stock; sin pricing.manage.</arrange><act><step order="1">Agregar producto ARS.</step><step order="2">Cobrar.</step></act><assert>La regresión de permiso mínimo pasó en DB; queda pendiente repetir la venta completa en navegador con rol sales.</assert></case>
+      <case id="TC-POS-014" priority="P1" type="E2E" automation="Inspection+Browser" status="NOT_RUN" evidenceRef="EV-049 EV-051" objectUnderTest="post_cash_movement reverse_manual_cash_movement"><objective>Registrar ingreso y egreso manual de caja con reversa.</objective><arrange>Caja abierta, ARS/USD, rol cash.adjust y motivo obligatorio.</arrange><act><step order="1">Registrar ingreso.</step><step order="2">Registrar egreso.</step><step order="3">Revertir con motivo.</step><step order="4">Conciliar cierre y mayor.</step></act><assert>Backend, schemas y UI están implementados; queda pendiente la jornada completa en navegador y arqueo físico.</assert></case>
+      <case id="TC-POS-015" priority="P0" type="E2E" automation="Inspection+Browser" status="NOT_RUN" evidenceRef="EV-049 EV-051 EV-053"><objective>Vender en ARS sin depender de cotización USD.</objective><arrange>Producto/precio/medio ARS, caja abierta y ninguna cotización vigente.</arrange><act><step order="1">Agregar producto.</step><step order="2">Cobrar en ARS.</step></act><assert>UI y contrato ARS pasaron tests y el formulario ya no bloquea; queda pendiente confirmar una venta completa en navegador.</assert></case>
+    </suite>
+
+    <suite id="SUITE-WEB" name="Pedidos online y Mercado Pago" owner="E-commerce" mandatory="true">
+      <case id="TC-WEB-001" priority="P0" type="Security" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Permitir process_mercadopago_payment solo a service_role.</objective><arrange>Roles anon/auth/service.</arrange><act><step order="1">Inspeccionar y ejecutar privilegios.</step></act><assert>Anon/auth no ejecutan; service_role sí.</assert></case>
+      <case id="TC-WEB-002" priority="P0" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-049 EV-050"><objective>Procesar pago aprobado con tracking válido.</objective><arrange>Orden pública coincidente y contexto ERP.</arrange><act><step order="1">Invocar adaptador con item quantity/serial/imei.</step></act><assert>Procesa el tracking serial canónico sin error de enum.</assert></case>
+      <case id="TC-WEB-003" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Rechazar firma webhook inválida o ausente.</objective><arrange>Eventos manipulados, timestamps viejos y secretos rotados.</arrange><act><step order="1">POST a Edge Function.</step></act><assert>401/403, sin consultar/procesar pago ni persistir PII.</assert></case>
+      <case id="TC-WEB-004" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Idempotencia ante webhooks duplicados y concurrentes.</objective><arrange>Mismo provider_payment_id/event_id.</arrange><act><step order="1">Enviar N eventos simultáneos.</step></act><assert>Una venta, un descuento, un asiento; respuestas restantes idempotentes.</assert></case>
+      <case id="TC-WEB-005" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Revalidar total/items contra orden local.</objective><arrange>Payload alterado en precio, cantidad, producto o external_reference.</arrange><act><step order="1">Procesar evento firmado pero inconsistente.</step></act><assert>Transacción rechazada, orden pública sin aprobar y alerta/auditoría.</assert></case>
+      <case id="TC-WEB-006" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Cumplir pedido aprobado de punta a punta.</objective><arrange>Stock suficiente y métodos ERP.</arrange><act><step order="1">Registrar evento.</step><step order="2">Crear web_order.</step><step order="3">Fulfill.</step></act><assert>Venta, pago, remito, stock, asiento y estados coinciden.</assert></case>
+      <case id="TC-WEB-007" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Resolver pago aprobado sin stock.</objective><arrange>Proveedor aprobó pero stock agotado concurrentemente.</arrange><act><step order="1">Procesar.</step></act><assert>No hay venta parcial; incidente queda visible y reconciliable con política de devolución.</assert></case>
+      <case id="TC-WEB-008" priority="P1" type="E2E" automation="Browser" status="NOT_RUN"><objective>Mostrar bandeja vacía sin inventar pedidos.</objective><arrange>Sin web_orders y captura de consultas/respuesta.</arrange><act><step order="1">Abrir Pedidos online.</step><step order="2">Comparar KPIs y filas con la base.</step></act><assert>Ceros reales y empty state explícito; la simple apertura del workspace no alcanza como evidencia.</assert></case>
+      <case id="TC-WEB-009" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Buscar/filtrar pedido y ver lineage.</objective><arrange>Pedidos pendiente/pagado/cumplido/fallido.</arrange><act><step order="1">Filtrar cada estado.</step><step order="2">Abrir detalle.</step></act><assert>Estado derivado de eventos; IDs de venta/stock/asiento navegables.</assert></case>
+      <case id="TC-WEB-010" priority="P0" type="Integration" automation="Inspection+SQL" status="PASS" evidenceRef="EV-049" objectUnderTest="record_web_payment_event"><objective>Reembolsar atómicamente un pedido ya cumplido.</objective><arrange>Pedido fulfilled con venta, pago, stock, documento y asiento; webhook refunded válido.</arrange><act><step order="1">Procesar reembolso con retorno físico.</step><step order="2">Repetir evento.</step><step order="3">Conciliar todos los subledgers.</step></act><assert>Compensó pago, venta, stock, documento y asiento una sola vez; el replay fue idempotente.</assert></case>
+      <case id="TC-WEB-011" priority="P0" type="Integration" automation="Inspection+SQL" status="PASS" evidenceRef="EV-049" objectUnderTest="fulfill_online_order post_online_order_accounting_internal"><objective>Cumplir pedido con el rol sales mínimo.</objective><arrange>Usuario sales con orders.manage y sin accounting.post; pedido aprobado y stock suficiente.</arrange><act><step order="1">Invocar fulfillment.</step></act><assert>El comando autorizado posteó internamente sin conceder accounting.post al operador.</assert></case>
+      <case id="TC-WEB-012" priority="P1" type="E2E" automation="Inspection+Browser" status="FAIL" defectRef="DEF-ERP-030" evidenceRef="EV-034"><objective>Operar preparación, listo, despacho, entrega, cancelación y devolución.</objective><arrange>Pedidos en cada estado, roles separados y reloj controlado.</arrange><act><step order="1">Ejecutar cada transición válida.</step><step order="2">Intentar transiciones inválidas/replay.</step><step order="3">Verificar responsables y timestamps.</step></act><assert>Estado refleja hecho físico y máquina de estados; observado: solo Cumplir y dispatched automático.</assert></case>
+    </suite>
+
+    <suite id="SUITE-PUR" name="Compras y proveedores" owner="Compras" mandatory="true">
+      <case id="TC-PUR-001" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Crear proveedor válido.</objective><arrange>CUIT/email únicos.</arrange><act><step order="1">Completar formulario.</step><step order="2">Guardar.</step></act><assert>Proveedor activo, normalizado y auditado.</assert></case>
+      <case id="TC-PUR-002" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Rechazar proveedor duplicado/inválido.</objective><arrange>CUIT existente y formatos inválidos.</arrange><act><step order="1">Intentar alta.</step></act><assert>Zod y DB rechazan con mensaje útil.</assert></case>
+      <case id="TC-PUR-003" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Emitir y aprobar orden de compra multi-variante.</objective><arrange>Proveedor, productos y permisos separados.</arrange><act><step order="1">Crear borrador.</step><step order="2">Agregar líneas/costos.</step><step order="3">Aprobar.</step></act><assert>Total correcto, estado aprobado, snapshot de costo y segregación aplicada.</assert></case>
+      <case id="TC-PUR-004" priority="P0" type="Integration" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Recibir parcialmente una compra.</objective><arrange>PO aprobada de cantidad mayor.</arrange><act><step order="1">Recibir parte con remito.</step></act><assert>Stock/costo/AP por recibido; pendiente permanece abierto.</assert></case>
+      <case id="TC-PUR-005" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Completar recepción sin exceder orden.</objective><arrange>PO parcialmente recibida.</arrange><act><step order="1">Recibir saldo.</step><step order="2">Intentar exceso.</step></act><assert>Completa exacto; exceso rechazado atómicamente.</assert></case>
+      <case id="TC-PUR-006" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Recibir series/IMEI únicas.</objective><arrange>PO de producto serial/imei.</arrange><act><step order="1">Cargar identificadores.</step><step order="2">Duplicar uno.</step></act><assert>Cantidad coincide y duplicado se rechaza sin recepción parcial.</assert></case>
+      <case id="TC-PUR-007" priority="P1" type="Integration" automation="Manual" status="NOT_RUN"><objective>Revertir recepción y cuenta por pagar.</objective><arrange>Recepción sin consumo posterior.</arrange><act><step order="1">Revertir con motivo.</step></act><assert>Stock/costo/deuda se revierten con documento inverso.</assert></case>
+      <case id="TC-PUR-008" priority="P1" type="E2E" automation="Browser+SQL" status="PASS" evidenceRef="EV-054"><objective>Visualizar deuda y aplicar pagos por proveedor/moneda.</objective><arrange>Proveedor sintético ARS con deuda 10000.</arrange><act><step order="1">Abrir proveedor.</step><step order="2">Registrar pago parcial 2500.</step><step order="3">Revertir con motivo.</step><step order="4">Conciliar subledger y mayor.</step></act><assert>UI mostró 10000→7500→10000; DB confirmó un pago, una reversa y dos asientos balanceados.</assert></case>
+      <case id="TC-PUR-009" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Aislar proveedores y PO entre tenants/sucursales.</objective><arrange>Datos A/B y rol limitado.</arrange><act><step order="1">Enumerar/listar/mutar IDs ajenos.</step></act><assert>Sin fuga ni mutación cross-tenant.</assert></case>
+      <case id="TC-PUR-010" priority="P1" type="Integration" automation="SQL" status="PASS" evidenceRef="EV-049 EV-054" objectUnderTest="supplier_payables supplier_account_entries supplier_payments supplier_payment_reversals"><objective>Pagar y revertir deuda de proveedor atómicamente.</objective><arrange>Cuenta por pagar USD, pago parcial, banco y período abierto.</arrange><act><step order="1">Aplicar pago.</step><step order="2">Repetir clave.</step><step order="3">Revertir.</step><step order="4">Intentar sobrepago y doble reversa.</step></act><assert>Subledger, tesorería y mayor fueron únicos/coherentes; replay idempotente y operaciones inválidas rechazadas.</assert></case>
+    </suite>
+
+    <suite id="SUITE-CUS" name="Clientes y CRM" owner="Atención" mandatory="true">
+      <case id="TC-CUS-001" priority="P0" type="E2E" automation="Inspection+Manual" status="NOT_RUN" evidenceRef="EV-051 EV-053"><objective>Crear persona y empresa y persistir todos los campos ofrecidos.</objective><arrange>DNI/CUIT, teléfono y email sintéticos; la UI ya no ofrece ciudad/crédito sin soporte.</arrange><act><step order="1">Completar cada variante.</step><step order="2">Guardar.</step><step order="3">Recargar y comparar campo por campo.</step></act><assert>Se retiraron los valores ficticios y los documentos usan capa privada; queda pendiente el roundtrip manual completo de ambos tipos.</assert></case>
+      <case id="TC-CUS-002" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Validar campos y duplicados.</objective><arrange>Documento/email inválido/duplicado.</arrange><act><step order="1">Enviar formulario.</step></act><assert>Errores junto al campo; sin fila parcial.</assert></case>
+      <case id="TC-CUS-003" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Editar contacto conservando historia.</objective><arrange>Cliente con ventas/reparaciones.</arrange><act><step order="1">Editar contacto.</step><step order="2">Abrir hechos previos.</step></act><assert>Relaciones intactas y cambios auditados.</assert></case>
+      <case id="TC-CUS-004" priority="P0" type="Security" automation="SQL+Browser" status="PASS" evidenceRef="EV-049 EV-053"><objective>No exponer PII cross-tenant o sin customers.view_sensitive.</objective><arrange>Roles generales y sensibles con datos migrados.</arrange><act><step order="1">Inspeccionar customers.code y RPCs privados.</step><step order="2">Abrir Clientes con owner.</step></act><assert>DNI/CUIT se almacena en customer_private_details, el código público no admite documentos y los RPC exigen permiso sensible.</assert></case>
+      <case id="TC-CUS-005" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Consolidar historial de venta/taller/cuenta.</objective><arrange>Cliente con los tres tipos de hechos.</arrange><act><step order="1">Abrir ficha.</step></act><assert>Totales y estados coinciden con subledgers, sin duplicación por joins.</assert></case>
+      <case id="TC-CUS-006" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Desactivar cliente con obligaciones abiertas.</objective><arrange>Saldo o reparación abierta.</arrange><act><step order="1">Intentar desactivar.</step></act><assert>Política explícita: bloquear o conservar accesibilidad histórica sin nuevas operaciones.</assert></case>
+    </suite>
+
+    <suite id="SUITE-QTE-REP" name="Presupuestos, reparaciones, QC y garantías" owner="Taller" mandatory="true">
+      <case id="TC-REP-001" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Ingresar reparación con equipo, cliente, falla y accesorios.</objective><arrange>Cliente válido y credenciales de protección.</arrange><act><step order="1">Completar recepción.</step><step order="2">Registrar condición/accesorios/serie o IMEI.</step><step order="3">Confirmar.</step></act><assert>Orden/código tracking/equipo/custodia creados atómicamente y comprobante imprimible.</assert></case>
+      <case id="TC-REP-002" priority="P0" type="Security" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Proteger DNI, tracking, serie e IMEI.</objective><arrange>Datos sensibles y claves activas/rotadas.</arrange><act><step order="1">Consultar tablas/vistas/RPC.</step></act><assert>Solo columnas mediadas; hashes/enmascarado y no acceso anon a raw.</assert></case>
+      <case id="TC-REP-003" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Ejecutar transiciones válidas del ciclo de reparación.</objective><arrange>Orden recibida.</arrange><act><step order="1">Recibido→diagnóstico→espera aprobación→reparación→QC→retiro→entregado.</step></act><assert>Secuencia, tiempos, actor y motivo correctos.</assert></case>
+      <case id="TC-REP-004" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Rechazar transición inválida o terminal.</objective><arrange>Orden en cada estado.</arrange><act><step order="1">Saltar etapas o mutar entregada.</step></act><assert>Backend rechaza, sin evento parcial.</assert></case>
+      <case id="TC-REP-005" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Registrar diagnóstico y presupuesto versionado.</objective><arrange>Orden diagnosticada.</arrange><act><step order="1">Crear versión con mano de obra/repuestos.</step><step order="2">Emitir.</step></act><assert>Totales, costos snapshot, validez y token formal registrados.</assert></case>
+      <case id="TC-REP-006" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Responder presupuesto con token público seguro.</objective><arrange>Token vigente/expirado/revocado y decisión approve/reject.</arrange><act><step order="1">Responder una vez.</step><step order="2">Reusar token.</step></act><assert>Una decisión válida; expirado/revocado/replay conflictivo rechazado sin filtrar datos.</assert></case>
+      <case id="TC-REP-007" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Reservar y consumir repuestos exactos.</objective><arrange>Presupuesto aprobado y stock.</arrange><act><step order="1">Reservar.</step><step order="2">Consumir.</step><step order="3">Reintentar.</step></act><assert>Stock/costo/reparación enlazados; no doble consumo.</assert></case>
+      <case id="TC-REP-008" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Exigir QC completo antes de listo/entrega.</objective><arrange>Checklist vigente con pruebas requeridas.</arrange><act><step order="1">Omitir/fallar prueba.</step><step order="2">Intentar avanzar.</step><step order="3">Aprobar todas.</step></act><assert>Solo QC completo y aprobado habilita retiro.</assert></case>
+      <case id="TC-REP-009" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Registrar cobro y entrega con conformidad.</objective><arrange>Orden lista, saldo y persona que retira.</arrange><act><step order="1">Cobrar.</step><step order="2">Registrar identidad/firma o aceptación.</step><step order="3">Entregar.</step></act><assert>Pago/caja/documento/ownership/garantía coherentes.</assert></case>
+      <case id="TC-REP-010" priority="P0" type="E2E" automation="Inspection+Manual" status="FAIL" defectRef="DEF-ERP-032" evidenceRef="EV-036"><objective>Reingreso por garantía sin alterar orden original.</objective><arrange>Orden entregada con póliza vigente.</arrange><act><step order="1">Crear reclamo.</step><step order="2">Evaluar cobertura.</step><step order="3">Vincular nueva orden y resolver.</step></act><assert>Original inmutable, cobertura evaluada y nueva trazabilidad; observado: solo existe apertura del claim.</assert></case>
+      <case id="TC-REP-011" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Garantía vencida o excluida.</objective><arrange>Fechas y causal fuera de cobertura.</arrange><act><step order="1">Solicitar reclamo.</step></act><assert>Decisión explicada, auditable y sin otorgar cobertura automática.</assert></case>
+      <case id="TC-REP-012" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Aislar taller por organización/sucursal/rol.</objective><arrange>Técnico limitado y órdenes A/B.</arrange><act><step order="1">Listar y mutar IDs ajenos.</step></act><assert>Solo órdenes autorizadas; costes/PII protegidos.</assert></case>
+      <case id="TC-REP-013" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Tracking del cliente muestra solo logs públicos.</objective><arrange>Logs públicos/privados.</arrange><act><step order="1">Consultar tracking externo.</step></act><assert>No expone diagnósticos internos, costos, identidad ni notas privadas.</assert></case>
+      <case id="TC-REP-014" priority="P1" type="Performance" automation="Manual" status="NOT_RUN"><objective>Buscar y filtrar 20.000 órdenes.</objective><arrange>Dataset histórico.</arrange><act><step order="1">Buscar cliente/modelo/falla.</step><step order="2">Filtrar estado.</step></act><assert>P95 acordado, paginación estable e índices utilizados.</assert></case>
+      <case id="TC-REP-015" priority="P1" type="E2E" automation="Inspection+Browser" status="FAIL" defectRef="DEF-ERP-031" evidenceRef="EV-035" objectUnderTest="commercial quotes"><objective>Crear presupuesto comercial sin reparación y convertirlo a venta.</objective><arrange>Cliente, productos/servicios, vigencia, descuentos e impuestos.</arrange><act><step order="1">Crear/versionar.</step><step order="2">Enviar y aceptar/rechazar.</step><step order="3">Convertir dos veces con misma clave.</step></act><assert>Venta única con snapshot exacto; observado: solo existen presupuestos de reparación.</assert></case>
+    </suite>
+
+    <suite id="SUITE-PC" name="Armados de PC" owner="Taller PC" mandatory="true">
+      <case id="TC-PC-001" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Crear proyecto y revisión de componentes.</objective><arrange>Cliente, sucursal, plantilla y catálogo compatibles.</arrange><act><step order="1">Crear proyecto.</step><step order="2">Agregar componentes.</step><step order="3">Congelar revisión.</step></act><assert>Versión inmutable con cantidades/costos/requisitos.</assert></case>
+      <case id="TC-PC-002" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Evaluar compatibilidad completa.</objective><arrange>Reglas versionadas y atributos completos/incompletos.</arrange><act><step order="1">Ejecutar motor.</step></act><assert>Pass solo si todas las reglas requeridas coinciden; faltantes no preservan pass.</assert></case>
+      <case id="TC-PC-003" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Reservar componentes exactos.</objective><arrange>Compatibilidad pass y stock suficiente.</arrange><act><step order="1">Reservar.</step><step order="2">Cambiar revisión.</step></act><assert>Reserva pertenece a revisión exacta; no se reutiliza en otra.</assert></case>
+      <case id="TC-PC-004" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Bloquear reserva con faltante/concurrencia.</objective><arrange>Dos builds compiten por componente.</arrange><act><step order="1">Reservar simultáneamente.</step></act><assert>Uno gana o ambos reciben cantidades consistentes; nunca stock negativo.</assert></case>
+      <case id="TC-PC-005" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Ejecutar test final versionado.</objective><arrange>Reserva activa y plantilla final configurada.</arrange><act><step order="1">Registrar todos los resultados.</step></act><assert>Cada prueba requerida tiene resultado, actor y tiempo posteriores a la reserva.</assert></case>
+      <case id="TC-PC-006" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Completar build y crear equipo/lineage.</objective><arrange>Última revisión compatible, reserva activa y tests pass.</arrange><act><step order="1">Invocar complete_pc_build.</step></act><assert>Consume stock, crea equipo/ownership/completion/lineage y estado completed atómicamente.</assert></case>
+      <case id="TC-PC-007" priority="P1" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-049 EV-050"><objective>Repetir finalización con la misma clave.</objective><arrange>Build ya completado.</arrange><act><step order="1">Repetir payload idéntico.</step></act><assert>Retornó el mismo equipment_id sin ambigüedad.</assert></case>
+      <case id="TC-PC-008" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Rechazar serial duplicado y warranty inválida.</objective><arrange>Serial existente, JSON no objeto/grande.</arrange><act><step order="1">Completar build.</step></act><assert>Error previo, sin consumir reserva ni stock.</assert></case>
+      <case id="TC-PC-009" priority="P2" type="Usability" automation="Browser" status="FAIL" defectRef="DEF-ERP-013" evidenceRef="EV-046"><objective>Crear build sin conocer UUID internos.</objective><arrange>Operador funcional.</arrange><act><step order="1">Abrir formularios.</step></act><assert>Debe usar selectores; observado: solicita UUID de sucursal, cliente, producto y plantilla.</assert></case>
+    </suite>
+
+    <suite id="SUITE-TRD" name="Equipos usados, IMEI y canjes" owner="Trade-in" mandatory="true">
+      <case id="TC-TRD-001" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Recibir equipo con declaración de procedencia.</objective><arrange>Cliente/equipo/sucursal y consentimiento.</arrange><act><step order="1">Completar recepción.</step><step order="2">Firmar declaración.</step></act><assert>Cuarentena, custody y evidencia creadas; no stock vendible.</assert></case>
+      <case id="TC-TRD-002" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Revisar procedencia approve/reject.</objective><arrange>Canje en revisión y evidencia.</arrange><act><step order="1">Registrar decisión y motivo.</step></act><assert>Solo transición permitida, actor y evidencia inmutables.</assert></case>
+      <case id="TC-TRD-003" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Consultar IMEI y fallback manual.</objective><arrange>Proveedor OK/timeout/error y permiso de fallback.</arrange><act><step order="1">Solicitar check.</step><step order="2">Reintentar/fallback.</step></act><assert>Estados claros; fallback exige fuente/evidencia; no se marca clear sin prueba.</assert></case>
+      <case id="TC-TRD-004" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Tasar y aprobar valor.</objective><arrange>Procedencia/IMEI válidos y checklist técnico.</arrange><act><step order="1">Registrar evaluación.</step><step order="2">Aprobar/rechazar.</step></act><assert>Valor base, decisión y snapshots trazables.</assert></case>
+      <case id="TC-TRD-005" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Registrar reacondicionamiento y costo.</objective><arrange>Evaluación aprobada.</arrange><act><step order="1">Vincular reparación o detalle.</step><step order="2">Registrar costo.</step></act><assert>Costo alimenta valoración/margen una vez.</assert></case>
+      <case id="TC-TRD-006" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Liberar a stock solo cuando todos los gates están aprobados.</objective><arrange>Combinaciones procedencia/IMEI/evaluación.</arrange><act><step order="1">Intentar liberar cada combinación.</step></act><assert>Solo all-pass crea unidad vendible; no duplica IMEI/serie.</assert></case>
+      <case id="TC-TRD-007" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Aplicar canje por valor exacto a venta del mismo cliente/sucursal.</objective><arrange>Canje liberado y venta compatible.</arrange><act><step order="1">Aplicar pago TRADE_IN.</step></act><assert>Pago por valor aceptado, no efectivo, vinculado a trade-in.</assert></case>
+      <case id="TC-TRD-008" priority="P1" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-049 EV-050"><objective>Replay idempotente de pago por canje.</objective><arrange>Aplicación ya confirmada.</arrange><act><step order="1">Repetir misma clave/payload.</step></act><assert>Devolvió el mismo payment_id sin referencia ambigua.</assert></case>
+      <case id="TC-TRD-009" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Revertir pago por canje y permitir política posterior.</objective><arrange>Pago aplicado y venta reversible.</arrange><act><step order="1">Revertir.</step><step order="2">Reintentar.</step></act><assert>Evento inverso único, venta conciliada y canje vuelve a estado definido.</assert></case>
+      <case id="TC-TRD-010" priority="P2" type="Usability" automation="Browser" status="FAIL" defectRef="DEF-ERP-013" evidenceRef="EV-046"><objective>Operar canje sin UUID/JSON técnicos.</objective><arrange>Operador comercial.</arrange><act><step order="1">Abrir recepción/reacondicionamiento/liberación.</step></act><assert>Debe usar selectores; observado: campos UUID y JSON manual.</assert></case>
+      <case id="TC-TRD-011" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Proteger IMEI/serie/PII entre roles y tenants.</objective><arrange>Roles sales/technician y datos A/B.</arrange><act><step order="1">Consultar vistas/raw y mutar IDs ajenos.</step></act><assert>Solo exposición mínima por tarea; cero cross-tenant.</assert></case>
+    </suite>
+
+    <suite id="SUITE-FIN" name="Finanzas, cuentas corrientes y contabilidad" owner="Administración" mandatory="true">
+      <case id="TC-FIN-001" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Crear financiación con anticipo, tasa y cuotas.</objective><arrange>Cliente, sucursal, moneda y primer vencimiento.</arrange><act><step order="1">Crear contrato.</step></act><assert>Principal/anticipo/interés/cuotas suman según contrato y estados iniciales correctos.</assert></case>
+      <case id="TC-FIN-002" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Rechazar montos/tasas/plazos inválidos.</objective><arrange>Cero, negativos, NaN, anticipo mayor y fechas inválidas.</arrange><act><step order="1">Invocar UI/RPC.</step></act><assert>Zod y DB rechazan sin contrato/cuotas parciales.</assert></case>
+      <case id="TC-FIN-003" priority="P0" type="Integration" automation="CLI" status="PASS" evidenceRef="EV-049 EV-050"><objective>Cobrar cuota parcial/total.</objective><arrange>Contrato con saldo.</arrange><act><step order="1">Registrar cobro.</step></act><assert>Asignó mora→interés→capital y actualizó el enum sin 42804.</assert></case>
+      <case id="TC-FIN-004" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Rechazar sobrepago y doble cobro.</objective><arrange>Saldo exacto e idempotency key.</arrange><act><step order="1">Pagar más del saldo.</step><step order="2">Repetir clave.</step></act><assert>Sobrepago rechazado; replay idéntico no duplica.</assert></case>
+      <case id="TC-FIN-005" priority="P1" type="Integration" automation="Manual" status="NOT_RUN"><objective>Calcular vencimiento/mora/status por reloj.</objective><arrange>Fechas antes/en/después de vencimiento y timezone AR.</arrange><act><step order="1">Calcular status.</step></act><assert>upcoming/due/partial/paid correctos sin depender de reloj del cliente.</assert></case>
+      <case id="TC-FIN-006" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Postear asiento manual balanceado en período abierto.</objective><arrange>Dos cuentas, débitos=créditos.</arrange><act><step order="1">Crear asiento.</step></act><assert>Asiento posted, líneas inmutables y auditadas.</assert></case>
+      <case id="TC-FIN-007" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Rechazar asiento desbalanceado o cuenta inactiva.</objective><arrange>Débito≠crédito y cuenta inactiva.</arrange><act><step order="1">Postear.</step></act><assert>Error previo, ninguna cabecera/línea huérfana.</assert></case>
+      <case id="TC-FIN-008" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Revertir asiento mediante contrasiento.</objective><arrange>Asiento posted sin reversa.</arrange><act><step order="1">Revertir con motivo.</step><step order="2">Reintentar.</step></act><assert>Original intacto, contrasiento único y balance neto cero.</assert></case>
+      <case id="TC-FIN-009" priority="P0" type="E2E" automation="Manual" status="NOT_RUN"><objective>Cerrar período solo conciliado.</objective><arrange>Período abierto con/sin diferencias.</arrange><act><step order="1">Intentar cerrar.</step></act><assert>Bloquea diferencias; cerrado impide nuevas imputaciones y queda auditado.</assert></case>
+      <case id="TC-FIN-010" priority="P1" type="Integration" automation="Manual" status="NOT_RUN"><objective>Conciliar subledger con mayor.</objective><arrange>Saldos iguales y diferentes.</arrange><act><step order="1">Ejecutar conciliación.</step></act><assert>Solo exacta cierra o diferencia queda explícita, sin autoajuste oculto.</assert></case>
+      <case id="TC-FIN-011" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Separar ARS/USD y snapshots de cambio.</objective><arrange>Operaciones multimoneda.</arrange><act><step order="1">Registrar y reportar.</step></act><assert>No suma monedas sin conversión; cada hecho conserva snapshot.</assert></case>
+      <case id="TC-FIN-012" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Aplicar segregación de funciones contables.</objective><arrange>Roles ventas, caja, contabilidad y owner.</arrange><act><step order="1">Probar postear/revertir/cerrar.</step></act><assert>Solo permisos explícitos; backend valida sucursal y tenant.</assert></case>
+      <case id="TC-FIN-013" priority="P1" type="E2E" automation="Browser" status="NOT_RUN"><objective>Mostrar empty state financiero sin datos ficticios.</objective><arrange>Sin contratos/períodos/asientos y captura de tablas fuente.</arrange><act><step order="1">Abrir cuentas y contabilidad.</step><step order="2">Comparar KPIs y filas con la base.</step></act><assert>Ceros/guiones coherentes y plan seed real; la simple apertura del workspace no alcanza como evidencia.</assert></case>
+      <case id="TC-FIN-014" priority="P0" type="Integration" automation="SQL" status="PASS" evidenceRef="EV-049" objectUnderTest="record_receivable_payment_settlement"><objective>Cobrar y revertir una cuota reflejando el dinero en todos los subledgers.</objective><arrange>Contrato con capital/interés/mora, medio explícito, caja/banco y período abierto.</arrange><act><step order="1">Cobrar parcial y total.</step><step order="2">Repetir clave.</step><step order="3">Revertir.</step><step order="4">Conciliar cuotas, caja/banco, cliente y mayor.</step></act><assert>La transacción fue atómica, tipada, idempotente y balanceada.</assert></case>
+      <case id="TC-FIN-015" priority="P1" type="Integration" automation="SQL+Browser" status="NOT_RUN" objectUnderTest="v_profitability_by_line v_iva_ventas v_iva_compras v_trial_balance"><objective>Certificar rentabilidad, libros y exportes contra hechos fuente.</objective><arrange>Ventas, devoluciones, compras, costos serializados, taller, IVA, ARS/USD y período cerrado.</arrange><act><step order="1">Recalcular consultas independientes.</step><step order="2">Comparar KPIs, filas y CSV.</step><step order="3">Aplicar filtros/fechas/sucursal.</step></act><assert>Totales, moneda, costo, margen, impuestos y filtros coinciden sin doble conteo ni mezcla de monedas.</assert></case>
+    </suite>
+
+    <suite id="SUITE-DOC-COM" name="Documentos, ARCA, WhatsApp e integraciones" owner="Integraciones" mandatory="true">
+      <case id="TC-DOC-001" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Emitir documento desde operación real.</objective><arrange>Venta/pago/reparación/garantía/build/canje existente.</arrange><act><step order="1">Elegir dueño.</step><step order="2">Emitir.</step></act><assert>Snapshot fiscal/cliente/líneas/total coincide y owner_type/id válidos.</assert></case>
+      <case id="TC-DOC-002" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Impedir documento huérfano, duplicado o cross-tenant.</objective><arrange>IDs inexistentes/ajenos y misma operación.</arrange><act><step order="1">Emitir.</step></act><assert>Rechazo atómico o idempotencia definida; sin numeración consumida incorrectamente.</assert></case>
+      <case id="TC-DOC-003" priority="P0" type="Integration" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-012"><objective>Timbrar comprobante con ARCA/proveedor real.</objective><arrange>Credenciales sandbox, PV, certificado y operación.</arrange><act><step order="1">Encolar.</step><step order="2">Procesar adaptador.</step><step order="3">Recibir CAE/error.</step></act><assert>Estado autorizado/rechazado real, CAE/vencimiento y request/response protegidos.</assert></case>
+      <case id="TC-DOC-004" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Reintentar timbrado sin duplicar comprobante.</objective><arrange>Timeout luego de envío.</arrange><act><step order="1">Reintentar misma clave.</step><step order="2">Consultar proveedor.</step></act><assert>Un número/CAE, conciliación antes de nuevo envío.</assert></case>
+      <case id="TC-DOC-005" priority="P1" type="E2E" automation="Manual" status="NOT_RUN"><objective>Descargar/imprimir representación.</objective><arrange>Documento autorizado y no autorizado.</arrange><act><step order="1">Abrir impresión/PDF.</step></act><assert>Datos legales, totales, QR/CAE correctos; borrador claramente marcado.</assert></case>
+      <case id="TC-COM-001" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Respetar consentimiento WhatsApp.</objective><arrange>Consentimiento granted/revoked/absent.</arrange><act><step order="1">Intentar encolar plantilla/uso libre.</step></act><assert>Solo políticas permitidas; opt-out bloquea futuros mensajes y queda auditado.</assert></case>
+      <case id="TC-COM-002" priority="P0" type="Integration" automation="Browser" status="NOT_RUN"><objective>Encolar sin fingir entrega.</objective><arrange>Canal sin proveedor conectado y conversación sintética.</arrange><act><step order="1">Encolar mensaje.</step><step order="2">Consultar mensaje, eventos y outbox.</step></act><assert>UI declara queued y no muestra sent/delivered/read sin eventos reales.</assert></case>
+      <case id="TC-COM-003" priority="P0" type="Integration" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-012"><objective>Enviar y recibir estados reales con Meta/proveedor.</objective><arrange>Credenciales sandbox y webhook verificado.</arrange><act><step order="1">Enviar.</step><step order="2">Recibir accepted/sent/delivered/read/failed.</step></act><assert>Secuencia válida, firmas verificadas e idempotencia de callbacks.</assert></case>
+      <case id="TC-COM-004" priority="P1" type="Integration" automation="Inspection+Manual" status="FAIL" defectRef="DEF-ERP-034" evidenceRef="EV-038"><objective>Reintentar outbox, mover a DLQ y recuperar.</objective><arrange>Proveedor temporal/permanente fallido.</arrange><act><step order="1">Ejecutar reintentos con backoff.</step><step order="2">Mover a DLQ.</step><step order="3">Corregir y reencolar.</step></act><assert>N intentos máximos, sin tormenta y recuperación auditable; observado: solo existe mover a DLQ.</assert></case>
+      <case id="TC-COM-005" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Proteger secretos y payloads PII.</objective><arrange>Logs, outbox, errores y UI.</arrange><act><step order="1">Inspeccionar outputs por rol.</step></act><assert>No se exponen tokens, claves, raw PII ni respuestas completas innecesarias.</assert></case>
+      <case id="TC-COM-006" priority="P1" type="Integration" automation="Manual" status="NOT_RUN" objectUnderTest="communication automations"><objective>Ejecutar automatizaciones por cambio real de estado sin duplicar mensajes.</objective><arrange>Consentimiento válido/revocado; reparación y pedido con transiciones; proveedor sandbox.</arrange><act><step order="1">Disparar cada evento configurado.</step><step order="2">Repetir evento y cambiar consentimiento.</step><step order="3">Provocar error temporal/permanente.</step></act><assert>Plantilla/canal/destinatario correctos, una entrega lógica, opt-out respetado y recuperación observable.</assert></case>
+    </suite>
+
+    <suite id="SUITE-SYS" name="Configuración, auditoría y observabilidad" owner="Administración" mandatory="true">
+      <case id="TC-SYS-001" priority="P1" type="E2E" automation="Browser" status="FAIL" defectRef="DEF-ERP-011" evidenceRef="EV-043"><objective>Administrar sucursales y ubicaciones desde ERP.</objective><arrange>Owner.</arrange><act><step order="1">Abrir tabs de configuración.</step><step order="2">Buscar alta/edición/desactivación.</step></act><assert>Debe existir flujo acordado; actualmente cobertura operativa incompleta/solo lectura.</assert></case>
+      <case id="TC-SYS-002" priority="P0" type="Integration" automation="Manual" status="NOT_RUN"><objective>Guardar configuración tipada y versionada.</objective><arrange>Valores boolean/string/number/json válidos e inválidos.</arrange><act><step order="1">Actualizar.</step><step order="2">Leer consumidor.</step></act><assert>Tipo, scope global/sucursal, actor y motivo correctos.</assert></case>
+      <case id="TC-SYS-003" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Evitar cambio de configuración sin permiso.</objective><arrange>Usuario system.view.</arrange><act><step order="1">Intentar UI y REST/RPC.</step></act><assert>Botón oculto y backend deniega.</assert></case>
+      <case id="TC-SYS-004" priority="P1" type="E2E" automation="Browser" status="NOT_RUN"><objective>Listar auditoría real y filtros.</objective><arrange>Eventos sintéticos conocidos por perfil/roles.</arrange><act><step order="1">Abrir auditoría.</step><step order="2">Filtrar schema/tabla/acción.</step><step order="3">Comparar filas con audit_events.</step></act><assert>Últimos eventos reales visibles, sin inventar IP.</assert></case>
+      <case id="TC-SYS-005" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Demostrar inmutabilidad del audit log.</objective><arrange>Usuario app y service role según política.</arrange><act><step order="1">Intentar UPDATE/DELETE.</step></act><assert>Denegado o procedimiento extraordinario estrictamente auditado.</assert></case>
+      <case id="TC-SYS-006" priority="P1" type="Security" automation="Inspection+Manual" status="FAIL" defectRef="DEF-ERP-033" evidenceRef="EV-037"><objective>Exportar auditoría y reportes CSV con autorización y sin fórmula/inyección.</objective><arrange>Rol reports.view sin reports.export; campos iniciados con =,+,-,@ y Unicode.</arrange><act><step order="1">Intentar todos los exportes.</step><step order="2">Abrir archivos en planilla aislada.</step></act><assert>Backend exige permiso, CSV neutralizado y filtros auditados; observado: permiso omitido y prefijos peligrosos no neutralizados.</assert></case>
+      <case id="TC-SYS-007" priority="P1" type="Observability" automation="Manual" status="NOT_RUN"><objective>Detectar fallos de RPC/integración.</objective><arrange>Provocar 4xx/5xx/timeout controlados.</arrange><act><step order="1">Consultar logs/métricas/alertas.</step></act><assert>Correlación por operación sin secretos; alerta accionable y responsable.</assert></case>
+      <case id="TC-SYS-008" priority="P1" type="Observability" automation="Inspection" status="PASS" evidenceRef="EV-022"><objective>Verificar compatibilidad con cambio de endpoint de logs Supabase.</objective><arrange>Inventario de scripts Management API y changelog oficial.</arrange><act><step order="1">Buscar uso logs.all y endpoint de logs en alcance ERP.</step></act><assert>Ningún consumidor ERP depende de logs.all antes de su retiro 2026-09-23.</assert></case>
+      <case id="TC-SYS-009" priority="P1" type="E2E" automation="Manual" status="NOT_RUN" defectRef="DEF-ERP-011" objectUnderTest="profiles roles role_permissions user_permission_overrides"><objective>Administrar ciclo completo de usuarios, roles y alcance por sucursal.</objective><arrange>Owner, usuario nuevo/inactivo, roles seed/custom y dos sucursales.</arrange><act><step order="1">Invitar/activar y asignar rol.</step><step order="2">Agregar allow/deny y scope.</step><step order="3">Revocar/desactivar.</step><step order="4">Verificar sesiones y auditoría.</step></act><assert>Cambios efectivos sin consola técnica, least privilege, deny prevalece y revocación inmediata.</assert></case>
+    </suite>
+
+    <suite id="SUITE-SEC" name="Seguridad Supabase, RLS e integridad" owner="Security" mandatory="true">
+      <case id="TC-SEC-001" priority="P0" type="Security" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>RLS habilitada en tablas ERP expuestas.</objective><arrange>Catálogo pg_class/policies.</arrange><act><step order="1">Enumerar tablas.</step></act><assert>Toda tabla accesible a roles API tiene RLS y política explícita.</assert></case>
+      <case id="TC-SEC-002" priority="P0" type="Security" automation="HTTP" status="PASS" evidenceRef="EV-013"><objective>Revocar schema/tablas/RPC a anon.</objective><arrange>Anon key.</arrange><act><step order="1">Intentar SELECT/INSERT/RPC/OpenAPI.</step></act><assert>401/403 sin datos.</assert></case>
+      <case id="TC-SEC-003" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Aislamiento horizontal para cada tabla mutable.</objective><arrange>Tenant A/B y mismos roles.</arrange><act><step order="1">SELECT/INSERT/UPDATE/DELETE con IDs B desde A.</step></act><assert>Cero filas visibles/modificadas y sin side channel por errores.</assert></case>
+      <case id="TC-SEC-004" priority="P0" type="Security" automation="pgTAP" status="PASS" evidenceRef="EV-006"><objective>Revisar SECURITY DEFINER.</objective><arrange>Catálogo pg_proc y acl.</arrange><act><step order="1">Enumerar definer.</step><step order="2">Validar search_path y permisos internos.</step></act><assert>Sin ejecución anon; search_path fijo; current organization y has_permission aplicados.</assert></case>
+      <case id="TC-SEC-005" priority="P0" type="Security" automation="Catalog+pgTAP" status="FAIL" defectRef="DEF-ERP-017" evidenceRef="EV-006 EV-019"><objective>Medir exposición de vistas sensibles.</objective><arrange>trade_ins_overview y pc_build_projects_overview; rol de módulo sin costs.view.</arrange><act><step order="1">Validar barrera y tenant.</step><step order="2">Enumerar columnas y consultar como rol mínimo.</step></act><assert>Tenant protegido y costos/IMEI/series inaccesibles sin permiso específico; observado: las vistas exponen esas columnas con permisos generales.</assert></case>
+      <case id="TC-SEC-006" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Evitar SQL/JSON injection en búsquedas y payloads.</objective><arrange>Cadenas con comillas, operadores, Unicode y JSON profundo.</arrange><act><step order="1">Enviar a cada formulario/RPC.</step></act><assert>Datos tratados como valores; límites de tamaño/profundidad aplicados.</assert></case>
+      <case id="TC-SEC-007" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Evitar XSS almacenado/reflejado.</objective><arrange>Payloads HTML/JS en nombres/notas/mensajes.</arrange><act><step order="1">Guardar.</step><step order="2">Renderizar en todas las vistas/exportaciones.</step></act><assert>Sin ejecución; escape/sanitización consistente.</assert></case>
+      <case id="TC-SEC-008" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Controlar CSRF/origin y sesión en operaciones sensibles.</objective><arrange>Sitio atacante y sesión activa.</arrange><act><step order="1">Intentar petición cross-origin.</step></act><assert>CORS/origin/JWT impiden la mutación no autorizada.</assert></case>
+      <case id="TC-SEC-009" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Rotar claves de identificadores protegidos.</objective><arrange>Datos cifrados/hasheados con versión anterior.</arrange><act><step order="1">Activar nueva clave.</step><step order="2">Buscar/operar datos viejos/nuevos.</step></act><assert>Compatibilidad de lectura, nuevas escrituras con key actual y sin duplicados.</assert></case>
+      <case id="TC-SEC-010" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Verificar secretos fuera del bundle/repositorio/logs.</objective><arrange>Dist, sourcemaps, git y logs.</arrange><act><step order="1">Escanear service keys, passwords y tokens.</step></act><assert>Solo URL/publishable key públicas; ningún secreto privilegiado.</assert></case>
+      <case id="TC-SEC-011" priority="P1" type="Security" automation="Advisor" status="PASS" evidenceRef="EV-019"><objective>Ejecutar advisors de seguridad filtrados a ERP.</objective><arrange>Proyecto remoto.</arrange><act><step order="1">Obtener findings.</step><step order="2">Clasificar excepciones.</step></act><assert>Cero anon definer; vistas excepcionadas documentadas con barrier y filtros.</assert></case>
+      <case id="TC-SEC-012" priority="P1" type="Performance" automation="Advisor" status="PASS" evidenceRef="EV-019"><objective>Ejecutar advisor de performance ERP.</objective><arrange>Proyecto remoto.</arrange><act><step order="1">Obtener findings ERP.</step></act><assert>Cero findings ERP abiertos.</assert></case>
+      <case id="TC-SEC-013" priority="P0" type="Security" automation="Manual" status="NOT_RUN"><objective>Prueba negativa masiva de 107 RPC authenticated.</objective><arrange>Roles mínimos y IDs cross-tenant.</arrange><act><step order="1">Invocar cada RPC sin permiso/con tenant ajeno.</step></act><assert>Todos deniegan antes del efecto; ninguna función confía solo en GRANT.</assert></case>
+      <case id="TC-SEC-014" priority="P1" type="Security" automation="Manual" status="NOT_RUN"><objective>Aplicar límites de abuso y payload.</objective><arrange>Login, búsquedas, export, RPC y webhooks.</arrange><act><step order="1">Enviar ráfagas/cuerpos grandes.</step></act><assert>Rate/size/timeouts controlados, sin caída global ni costos ilimitados.</assert></case>
+      <case id="TC-SEC-015" priority="P1" type="Security" automation="Catalog" status="PASS" evidenceRef="EV-017 EV-018"><objective>Inventariar superficie ERP y controles base.</objective><arrange>Catálogo pg_catalog final.</arrange><act><step order="1">Contar tablas/vistas/funciones/policies/triggers/índices/constraints.</step><step order="2">Comprobar RLS y ACL.</step></act><assert>166/166 tablas con RLS, 0 anon, 0 definer sin search_path.</assert></case>
+      <case id="TC-SEC-016" priority="P1" type="Security" automation="Manual" status="NOT_RUN" defectRef="DEF-ERP-017"><objective>Ocultar costos e identificadores a roles sin costs.view.</objective><arrange>Rol trade_ins.view/pc_builds.view sin costs.view.</arrange><act><step order="1">Consultar ambas vistas overview.</step></act><assert>No recibe costos/IMEI/series y la lectura autorizada queda auditada.</assert></case>
+      <case id="TC-SEC-017" priority="P2" type="Security" automation="Advisor" status="FAIL" defectRef="DEF-ERP-018" evidenceRef="EV-020"><objective>Bloquear contraseñas conocidas como filtradas.</objective><arrange>Proyecto remoto y contraseña de corpus de prueba.</arrange><act><step order="1">Inspeccionar setting.</step><step order="2">Intentar establecer contraseña comprometida.</step></act><assert>Control activo y contraseña rechazada; setting observado deshabilitado.</assert></case>
+      <case id="TC-SEC-018" priority="P1" type="Security" automation="Manual" status="NOT_RUN" evidenceRef="EV-019"><objective>Validar negativamente las 107 funciones definer expuestas a authenticated.</objective><arrange>Sin perfil, tenant ajeno, sucursal ajena, permiso faltante y permiso válido.</arrange><act><step order="1">Invocar cada firma con matriz de identidades y payloads.</step></act><assert>Cada función deniega antes de efectos en escenarios negativos y permite solo el caso positivo.</assert></case>
+      <case id="TC-SEC-019" priority="P0" type="Security" automation="GeneratedMatrix" status="NOT_RUN" objectUnderTest="166 tables 191 functions 191 policies"><objective>Completar trazabilidad exhaustiva por objeto del esquema ERP.</objective><arrange>Catálogo final, roles anon/authenticated/service_role, dos tenants y matriz TRACE-001.</arrange><act><step order="1">Generar una fila por tabla/función/policy.</step><step order="2">Ejecutar caso positivo y negativo aplicable.</step><step order="3">Vincular evidencia/defecto.</step><step order="4">Comparar conteos con catálogo.</step></act><assert>548 filas exactas, ninguna sin case/result/evidence, 166/166 RLS y cero acceso no autorizado.</assert></case>
+    </suite>
+
+    <suite id="SUITE-PERF-REC-UAT" name="Rendimiento, continuidad y aceptación" owner="QA/Cliente" mandatory="true">
+      <case id="TC-PERF-001" priority="P1" type="Performance" automation="Manual" status="NOT_RUN"><objective>Medir dashboard con volumen de cliente.</objective><arrange>12 meses, 100k ventas, 20k reparaciones y stock realista.</arrange><act><step order="1">Ejecutar cold/warm 30 veces.</step></act><assert>P95 acordado; consultas indexadas, sin timeout ni totales duplicados.</assert></case>
+      <case id="TC-PERF-002" priority="P1" type="Performance" automation="Manual" status="NOT_RUN"><objective>Medir mutaciones críticas bajo concurrencia.</objective><arrange>20-100 usuarios simulados.</arrange><act><step order="1">Vender, reservar, recibir y cobrar concurrentemente.</step></act><assert>Latencia/errores dentro de SLO; integridad invariante.</assert></case>
+      <case id="TC-PERF-003" priority="P1" type="Performance" automation="Manual" status="NOT_RUN"><objective>Evaluar tablas y exports grandes.</objective><arrange>10k productos/clientes y 1M eventos audit.</arrange><act><step order="1">Filtrar/paginar/exportar.</step></act><assert>Server-side pagination, memoria estable y export acotado.</assert></case>
+      <case id="TC-REC-001" priority="P0" type="Recovery" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-016"><objective>Restauración completa y reconciliación.</objective><arrange>Backup verificado y entorno aislado.</arrange><act><step order="1">Restaurar.</step><step order="2">Ejecutar pgTAP/lint/smoke.</step><step order="3">Comparar hechos financieros/stock.</step></act><assert>RTO/RPO aprobados y hashes/conteos iguales.</assert></case>
+      <case id="TC-REC-002" priority="P0" type="Recovery" automation="Manual" status="NOT_RUN"><objective>Recuperar caída durante transacción.</objective><arrange>Kill controlado en venta/recepción/cobro.</arrange><act><step order="1">Interrumpir conexión antes/después de commit.</step><step order="2">Reintentar clave.</step></act><assert>Todo o nada; replay devuelve hecho único.</assert></case>
+      <case id="TC-UAT-001" priority="P0" type="E2E" automation="Manual" status="BLOCKED"><objective>Turno real de caja completo con usuario cliente.</objective><arrange>Sandbox, datos y guion aprobados por responsable de caja.</arrange><act><step order="1">Apertura→ventas→devolución→arqueo→cierre.</step></act><assert>Responsable de caja firma exactitud y usabilidad.</assert></case>
+      <case id="TC-UAT-002" priority="P0" type="E2E" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-009 DEF-ERP-027"><objective>Jornada de stock/compras completa.</objective><arrange>Conteo físico y alta avanzada de catálogo resueltos.</arrange><act><step order="1">PO→recepción parcial→transferencia→conteo→ajuste→etiquetas→pago proveedor.</step></act><assert>Responsable de stock firma cantidades/costos.</assert></case>
+      <case id="TC-UAT-003" priority="P0" type="E2E" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-031 DEF-ERP-032"><objective>Caso de taller completo.</objective><arrange>Presupuesto comercial y lifecycle de garantías resueltos.</arrange><act><step order="1">Ingreso→diagnóstico→presupuesto→repuestos→QC→cobro→entrega→garantía.</step></act><assert>Responsable de taller firma trazabilidad y tiempos.</assert></case>
+      <case id="TC-UAT-004" priority="P0" type="E2E" automation="Manual" status="BLOCKED" defectRef="DEF-ERP-007 DEF-ERP-033"><objective>Cierre administrativo y reportes.</objective><arrange>Propietario remoto asignado, migraciones desplegadas y exportación cerrada.</arrange><act><step order="1">Conciliar caja/stock/subledgers/mayor/documentos.</step></act><assert>Administración firma que todos los totales coinciden.</assert></case>
+    </suite>
+  </testSuites>
+
+  <executionSummary totalCases="206" executed="65" pass="46" fail="19" blocked="13" notRun="128" executionPercent="31.55" executedPassRatePercent="70.77" totalPassRatePercent="22.33">
+    <interpretation>Las correcciones elevaron la regresión automatizada y el smoke UI, pero el conjunto obligatorio todavía conserva 128 casos no ejecutados y 13 bloqueados. El dictamen continúa NO_GO hasta completar alcance, UAT y remoto.</interpretation>
+    <gateResult gateId="GATE-EXEC" status="FAIL">31.55% ejecutado; requerido 100% del release set.</gateResult>
+    <gateResult gateId="GATE-PASS" status="FAIL">70.77% aprobado entre ejecutados y 22.33% sobre el total; requerido al menos 80% del total y todos los P0.</gateResult>
+    <gateResult gateId="GATE-DEFECTS" status="FAIL">Quedan un P0, trece P1 y cuatro P2 abiertos.</gateResult>
+    <gateResult gateId="GATE-COVERAGE" status="FAIL">Cobertura porcentual no medible.</gateResult>
+    <gateResult gateId="GATE-SECURITY" status="PARTIAL">RLS/anon/search_path sólidos; faltan matriz dinámica de 107 RPC y controles Auth.</gateResult>
+    <gateResult gateId="GATE-RECOVERY" status="FAIL">Restore/rollback no ensayado.</gateResult>
+    <gateResult gateId="GATE-UAT" status="FAIL">UAT no ejecutado ni firmado.</gateResult>
+  </executionSummary>
+
+  <coverageMatrix>
+    <mapping capability="Auth/RBAC" suites="SUITE-AUTH SUITE-SEC" current="blocked" blocker="DEF-ERP-007 DEF-ERP-011"/>
+    <mapping capability="Dashboard" suites="SUITE-UI SUITE-PERF-REC-UAT" current="implemented-awaiting-uat"/>
+    <mapping capability="Catálogo/precios" suites="SUITE-CAT" current="blocked" blocker="DEF-ERP-010 DEF-ERP-027"/>
+    <mapping capability="Stock/inventarios/etiquetas" suites="SUITE-STK" current="blocked" blocker="DEF-ERP-009"/>
+    <mapping capability="Compras/proveedores" suites="SUITE-PUR" current="verified-local"/>
+    <mapping capability="POS/caja" suites="SUITE-POS" current="implemented-awaiting-uat"/>
+    <mapping capability="Pedidos/MercadoPago" suites="SUITE-WEB SUITE-REL" current="blocked" blocker="DEF-ERP-030"/>
+    <mapping capability="Clientes" suites="SUITE-CUS SUITE-SEC" current="implemented-awaiting-uat"/>
+    <mapping capability="Presupuestos/reparaciones/QC/garantías" suites="SUITE-QTE-REP" current="blocked" blocker="DEF-ERP-031 DEF-ERP-032"/>
+    <mapping capability="Armados PC" suites="SUITE-PC" current="partial" blocker="DEF-ERP-013"/>
+    <mapping capability="Trade-ins/IMEI" suites="SUITE-TRD" current="partial" blocker="DEF-ERP-013"/>
+    <mapping capability="Finanzas/contabilidad/reportes" suites="SUITE-FIN SUITE-SYS" current="blocked" blocker="DEF-ERP-033"/>
+    <mapping capability="Documentos/ARCA/WhatsApp" suites="SUITE-DOC-COM" current="blocked-external" blocker="DEF-ERP-012 DEF-ERP-034"/>
+    <mapping capability="Sistema/auditoría" suites="SUITE-SYS" current="blocked" blocker="DEF-ERP-011 DEF-ERP-033"/>
+    <mapping capability="Release/security/recovery" suites="SUITE-REL SUITE-SEC SUITE-PERF-REC-UAT" current="blocked" blocker="DEF-ERP-015 DEF-ERP-016 DEF-ERP-017 DEF-ERP-018 DEF-ERP-019"/>
+  </coverageMatrix>
+
+  <releaseChecklist>
+    <item id="RC-001" status="FAIL">Cero P0 abiertos.</item>
+    <item id="RC-002" status="FAIL">Propietario productivo designado y smoke autenticado aprobado.</item>
+    <item id="RC-003" status="PARTIAL">db lint local sin errores; remoto pendiente de desplegar seis migraciones y repetir lint.</item>
+    <item id="RC-004" status="FAIL">POS, Mercado Pago y cobro de cuotas E2E aprobados.</item>
+    <item id="RC-005" status="FAIL">Conteo físico y precios dentro del alcance contractual o formalmente excluidos.</item>
+    <item id="RC-006" status="FAIL">Integraciones ARCA/WhatsApp conectadas o excluidas por contrato.</item>
+    <item id="RC-007" status="FAIL">Cobertura ≥80% y E2E automatizado en CI.</item>
+    <item id="RC-008" status="FAIL">Restore/rollback ensayado.</item>
+    <item id="RC-009" status="FAIL">UAT y conciliación firmados.</item>
+    <item id="RC-010" status="PASS">Build, tipos, lint de código, dependencias productivas y pgTAP base aprobados.</item>
+  </releaseChecklist>
+
+  <nextExecutionOrder>
+    <phase order="1" name="Eliminar P0">Definir y asignar el propietario remoto de DEF-ERP-007; los otros ocho P0 originales quedaron corregidos y cubiertos localmente.</phase>
+    <phase order="2" name="Completar circuitos P1">Resolver idempotencia, catálogo, caja, pedidos, proveedores, garantías, reportes e integraciones; cada cierre exige evidencia E2E.</phase>
+    <phase order="3" name="Automatización y seguridad">Implementar Deno, E2E, cobertura, CI, matriz de 548 objetos, permisos de export y pruebas de privacidad.</phase>
+    <phase order="4" name="Producción y continuidad">Designar propietario remoto, smoke autenticado, restore/rollback y observabilidad dependiente de Supabase.</phase>
+    <phase order="5" name="UAT y entrega">Ejecutar las cuatro jornadas UAT, conciliar saldos/stock/documentos y obtener firmas del cliente.</phase>
+  </nextExecutionOrder>
+
+  <finalStatement>
+    <clientReady>false</clientReady>
+    <mergeState>El esquema ERP ya está fusionado en Supabase remoto, pero no debe considerarse entregable ni habilitarse para operación real hasta cerrar las puertas fallidas.</mergeState>
+    <minimumGoCriteria>Cero P0, propietario remoto, lint limpio, smoke autenticado, flujos E2E críticos aprobados, restore validado y UAT firmado.</minimumGoCriteria>
+  </finalStatement>
+</erpAuditPlan>

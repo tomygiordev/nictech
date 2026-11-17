@@ -2,9 +2,32 @@ project_id = "nictech-local"
 
 [api]
 enabled = true
+port = 55421
 schemas = ["public", "graphql_public", "erp"]
 extra_search_path = ["public", "extensions", "erp"]
 max_rows = 1000
+
+[db]
+port = 55422
+shadow_port = 55420
+
+[db.pooler]
+enabled = false
+port = 55429
+
+[studio]
+port = 55423
+
+[inbucket]
+port = 55424
+smtp_port = 55425
+pop3_port = 55426
+
+[analytics]
+port = 55427
+
+[vector]
+port = 55428
 
 [db.seed]
 enabled = true
@@ -18,6 +41,14 @@ verify_jwt = false
 import_map = "./functions/mercadopago-webhook/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/mercadopago-webhook/index.ts"
+
+# Preserve the historical callback URL while routing both endpoints through
+# the same verified, idempotent ERP payment handler.
+[functions.mp-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/mercadopago-webhook/deno.json"
 entrypoint = "./functions/mercadopago-webhook/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:

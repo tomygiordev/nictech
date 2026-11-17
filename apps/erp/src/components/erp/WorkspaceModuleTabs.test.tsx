@@ -13,6 +13,8 @@ const renderWithPermissions = (
       value={{
         session: null,
         organizationId: "test-org",
+        branchIds: ["test-branch"],
+        permissions,
         loading: false,
         error: null,
         hasPermission: (perm: string) => permissions.includes(perm),
@@ -70,7 +72,7 @@ describe("WorkspaceModuleTabs", () => {
       ["stock.view", "stock_counts.view", "labels.print"],
     );
 
-    const countsTab = screen.getByRole("tab", { name: "Inventarios fisicos" });
+    const countsTab = screen.getByRole("tab", { name: /conteo f[ií]sico/i });
     await user.click(countsTab);
 
     expect(onSelect).toHaveBeenCalledTimes(1);

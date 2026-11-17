@@ -1,21 +1,17 @@
-import { useState, useMemo, useEffect } from "react";
-import {
-  Sparkles,
-  Search,
-  Shield,
-  Clock,
-  Filter,
-  CheckCircle2,
-  AlertTriangle,
-  User,
-  Key,
-  Terminal,
-  Download,
-  Printer,
-} from "lucide-react";
-import { WorkspaceHeader } from "../../components/erp/WorkspaceUi";
+import { useEffect, useMemo, useState } from "react";
+import { Search, Shield, User, Key, Terminal } from "lucide-react";
+import { WorkspaceHeader, StatePanel } from "../../components/erp/WorkspaceUi";
+import { OfficialCsvExportButton } from "../../components/erp/OfficialCsvExportButton";
 import { formatDateTime } from "../../lib/formatters";
-import { supabase } from "../../lib/supabase";
+import { useErpAuth } from "../../auth/ErpAuthContext";
+import {
+  exportAuditEvents,
+  extractActorDetail,
+  extractActorLabel,
+  extractIp,
+  listAuditEvents,
+  type AuditEventRow,
+} from "./api";
 
 interface AuditLogEntry {
   id: string;
@@ -23,79 +19,105 @@ interface AuditLogEntry {
   actorName: string;
   actorRole: string;
   action: string;
+  schema: string;
   entity: string;
   entityId: string;
-  ipAddress: string;
-  status: "success" | "warning" | "danger";
+  ipAddress: string | null;
+  status: "success" | "warning";
   details: string;
 }
 
+const toEntry = (row: AuditEventRow): AuditLogEntry => ({
+  id: row.id.toString(),
+  timestamp: formatDateTime(row.occurred_at),
+  actorName: extractActorLabel(row),
+  actorRole: extractActorDetail(row),
+  action: row.action.toUpperCase(),
+  schema: row.schema_name,
+  entity: row.table_name || "Tabla",
+  entityId: row.record_id || row.correlation_id.slice(0, 8) || "—",
+  ipAddress: extractIp(row),
+  status: row.action === "delete" || row.action === "reject" ? "warning" : "success",
+  details: row.reason || `Operación ${row.action} sobre ${row.table_name || "entidad"}`,
+});
+
+const PAGE_SIZE = 100;
+
 export const AuditWorkspace = () => {
-  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
+  const { hasPermission } = useErpAuth();
+  const [rows, setRows] = useState<AuditEventRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actorColumnAvailable, setActorColumnAvailable] = useState<boolean>(true);
   const [search, setSearch] = useState<string>("");
   const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [schemaFilter, setSchemaFilter] = useState<string>("all");
+  const [tableFilter, setTableFilter] = useState<string>("all");
+  const [actionFilter, setActionFilter] = useState<string>("all");
 
   useEffect(() => {
-    const fetchAuditEvents = async () => {
+    let cancelled = false;
+    const load = async () => {
       try {
         setLoading(true);
-        const { data, error } = await supabase
-          .from("audit_events")
-          .select("id, occurred_at, schema_name, table_name, record_id, action, reason, correlation_id, metadata")
-          .order("occurred_at", { ascending: false })
-          .limit(50);
-
-        if (error) {
-          console.warn("Aviso al consultar audit_events:", error.message);
-          setLogs([]);
-          return;
-        }
-
-        const mapped: AuditLogEntry[] = (data || []).map((e: any) => ({
-          id: e.id.toString(),
-          timestamp: formatDateTime(e.occurred_at),
-          actorName: e.table_name ? `${e.schema_name}.${e.table_name}` : "Sistema",
-          actorRole: e.action,
-          action: e.action.toUpperCase(),
-          entity: e.table_name || "Tabla",
-          entityId: e.record_id || e.correlation_id?.slice(0, 8) || "—",
-          ipAddress: (e.metadata?.ip as string) || "127.0.0.1",
-          status: e.action === "delete" || e.action === "reject" ? "warning" : "success",
-          details: e.reason || `Operación ${e.action} sobre ${e.table_name || "entidad"}`,
-        }));
-        setLogs(mapped);
-      } catch {
-        setLogs([]);
+        setError(null);
+        const result = await listAuditEvents(PAGE_SIZE);
+        if (cancelled) return;
+        setRows(result.rows);
+        setActorColumnAvailable(result.actorColumnAvailable);
+      } catch (e) {
+        if (cancelled) return;
+        setRows([]);
+        setError(e instanceof Error ? e.message : "No se pudo cargar el registro de auditoría.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    void fetchAuditEvents();
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  const logs = useMemo(() => rows.map(toEntry), [rows]);
+  const schemas = useMemo(() => Array.from(new Set(logs.map((l) => l.schema))).sort(), [logs]);
+  const tables = useMemo(() => Array.from(new Set(logs.map((l) => l.entity))).sort(), [logs]);
+  const actions = useMemo(() => Array.from(new Set(logs.map((l) => l.action))).sort(), [logs]);
+
   const filteredLogs = useMemo(() => {
+    const q = search.toLowerCase();
     return logs.filter((log) => {
-      const matchFilter = activeFilter === "all" || log.status === activeFilter;
-      const q = search.toLowerCase();
-      const matchSearch =
+      if (activeFilter !== "all" && log.status !== activeFilter) return false;
+      if (schemaFilter !== "all" && log.schema !== schemaFilter) return false;
+      if (tableFilter !== "all" && log.entity !== tableFilter) return false;
+      if (actionFilter !== "all" && log.action !== actionFilter) return false;
+      if (q === "") return true;
+      return (
         log.actorName.toLowerCase().includes(q) ||
         log.action.toLowerCase().includes(q) ||
         log.entity.toLowerCase().includes(q) ||
         log.entityId.toLowerCase().includes(q) ||
         log.details.toLowerCase().includes(q) ||
-        log.ipAddress.includes(q);
-      return matchFilter && matchSearch;
+        (log.ipAddress ?? "").includes(q)
+      );
     });
-  }, [logs, search, activeFilter]);
+  }, [logs, search, activeFilter, schemaFilter, tableFilter, actionFilter]);
 
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
         title="Libro de Auditoría & Trazabilidad Inmutable"
-        description="Registro cronológico de cada operación, cambio de stock, autenticación y modificación contable (erp.audit_events)."
+        description="Registro cronológico de operaciones, cambios de stock, accesos y movimientos contables."
         badge="Auditoría ERP"
       />
+
+      {!actorColumnAvailable && !loading && (
+        <StatePanel
+          type="info"
+          title="Actor limitado por permisos"
+          message="Este perfil no puede ver quién realizó algunos eventos; cuando no hay datos disponibles, el operador figura como Sistema."
+        />
+      )}
 
       {/* KPI Cards */}
       <div className="kpi-grid">
@@ -109,7 +131,7 @@ export const AuditWorkspace = () => {
               <span className="flow-kpi-card__val">{logs.length}</span>
               <span className="flow-trend-tag positive">Persistidos</span>
             </div>
-            <span className="flow-kpi-card__sub">Tabla central erp.audit_events</span>
+            <span className="flow-kpi-card__sub">Últimos 100 registros disponibles</span>
           </div>
         </div>
 
@@ -123,7 +145,7 @@ export const AuditWorkspace = () => {
               <span className="flow-kpi-card__val">{new Set(logs.map((l) => l.actorName)).size}</span>
               <span className="flow-trend-tag positive">Auditados</span>
             </div>
-            <span className="flow-kpi-card__sub">Entidades registradas</span>
+            <span className="flow-kpi-card__sub">Operadores distintos en la ventana</span>
           </div>
         </div>
 
@@ -137,7 +159,7 @@ export const AuditWorkspace = () => {
               <span className="flow-kpi-card__val">RBAC</span>
               <span className="flow-trend-tag positive">Activo</span>
             </div>
-            <span className="flow-kpi-card__sub">Matriz de roles central</span>
+            <span className="flow-kpi-card__sub">Lectura sujeta a permiso audit.view</span>
           </div>
         </div>
 
@@ -161,10 +183,10 @@ export const AuditWorkspace = () => {
         <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
           <div>
             <h2 className="flow-card__title">Eventos de Auditoría Recientes</h2>
-            <p className="flow-card__subtitle">Trazabilidad completa con dirección IP, operador y detalle técnico</p>
+            <p className="flow-card__subtitle">Trazabilidad completa con operador e IP solo cuando el evento la trae</p>
           </div>
 
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
             <div className="flow-search-pill" style={{ width: "260px" }}>
               <Search size={15} />
               <input
@@ -175,19 +197,47 @@ export const AuditWorkspace = () => {
               />
             </div>
 
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-              onClick={() => window.print()}
-            >
-              <Printer size={14} /> Imprimir Registro
-            </button>
+            {hasPermission("reports.export") && (
+              <OfficialCsvExportButton
+                filename="auditoria-erp.csv"
+                label="Exportar CSV oficial"
+                loadDataset={async (reason) => {
+                  const exported = await exportAuditEvents({
+                    reason,
+                    search: search || undefined,
+                    schema: schemaFilter === "all" ? undefined : schemaFilter,
+                    table: tableFilter === "all" ? undefined : tableFilter,
+                    action: actionFilter === "all" ? undefined : actionFilter,
+                    status:
+                      activeFilter === "success" || activeFilter === "warning"
+                        ? activeFilter
+                        : undefined,
+                    rowLimit: 5000,
+                  });
+                  const exportLogs = exported.rows.map(toEntry);
+                  return {
+                    headers: ["timestamp", "operador", "rol", "accion", "schema", "tabla", "entidad_id", "ip", "detalle"],
+                    rows: exportLogs.map((log) => [
+                      log.timestamp,
+                      log.actorName,
+                      log.actorRole,
+                      log.action,
+                      log.schema,
+                      log.entity,
+                      log.entityId,
+                      log.ipAddress ?? "—",
+                      log.details,
+                    ]),
+                    truncated: exported.truncated,
+                  };
+                }}
+              />
+            )}
           </div>
         </div>
 
         {/* Filter tabs */}
-        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
           {[
             { id: "all", label: "Todos los Registros" },
             { id: "success", label: "Operaciones Exitosas" },
@@ -204,35 +254,71 @@ export const AuditWorkspace = () => {
           ))}
         </div>
 
-        <div className="flow-table-wrapper">
-          <table className="flow-table">
-            <thead>
-              <tr>
-                <th>Timestamp</th>
-                <th>Operador</th>
-                <th>Acción Realizada</th>
-                <th>Entidad</th>
-                <th>IP Origen</th>
-                <th>Detalle del Evento</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+          <label className="erp-form-group">
+            <span className="erp-form-label">Esquema</span>
+            <select className="erp-form-input" value={schemaFilter} onChange={(e) => setSchemaFilter(e.target.value)}>
+              <option value="all">Todos</option>
+              {schemas.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="erp-form-group">
+            <span className="erp-form-label">Tabla</span>
+            <select className="erp-form-input" value={tableFilter} onChange={(e) => setTableFilter(e.target.value)}>
+              <option value="all">Todas</option>
+              {tables.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="erp-form-group">
+            <span className="erp-form-label">Acción</span>
+            <select className="erp-form-input" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+              <option value="all">Todas</option>
+              {actions.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {loading ? (
+          <StatePanel type="loading" message="Cargando eventos recientes…" />
+        ) : error ? (
+          <StatePanel type="error" title="No se pudo leer la auditoría" message={error} />
+        ) : filteredLogs.length === 0 ? (
+          <StatePanel
+            type="empty"
+            title="Sin eventos"
+            message="No se encontraron eventos para los filtros aplicados."
+          />
+        ) : (
+          <div className="flow-table-wrapper">
+            <table className="flow-table">
+              <thead>
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-                    Cargando eventos de auditoría desde erp.audit_events...
-                  </td>
+                  <th>Timestamp</th>
+                  <th>Operador</th>
+                  <th>Acción Realizada</th>
+                  <th>Entidad</th>
+                  <th>IP Origen</th>
+                  <th>Detalle del Evento</th>
                 </tr>
-              ) : filteredLogs.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-                    No se encontraron eventos de auditoría registrados en erp.audit_events.
-                  </td>
-                </tr>
-              ) : (
-                filteredLogs.map((log) => (
+              </thead>
+              <tbody>
+                {filteredLogs.map((log) => (
                   <tr key={log.id}>
-                    <td style={{ fontSize: "12px", color: "var(--text-muted)", fontFamily: "monospace" }}>{log.timestamp}</td>
+                    <td style={{ fontSize: "12px", color: "var(--text-muted)", fontFamily: "monospace" }}>
+                      {log.timestamp}
+                    </td>
                     <td>
                       <div style={{ display: "flex", flexDirection: "column" }}>
                         <strong>{log.actorName}</strong>
@@ -240,7 +326,10 @@ export const AuditWorkspace = () => {
                       </div>
                     </td>
                     <td>
-                      <span className={`type-badge ${log.status === "warning" ? "orange" : "green"}`} style={{ fontSize: "10px", fontFamily: "monospace" }}>
+                      <span
+                        className={`type-badge ${log.status === "warning" ? "orange" : "green"}`}
+                        style={{ fontSize: "10px", fontFamily: "monospace" }}
+                      >
                         {log.action}
                       </span>
                     </td>
@@ -250,17 +339,19 @@ export const AuditWorkspace = () => {
                       </span>
                     </td>
                     <td>
-                      <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "monospace" }}>{log.ipAddress}</span>
+                      <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "monospace" }}>
+                        {log.ipAddress ?? "—"}
+                      </span>
                     </td>
                     <td>
                       <span style={{ fontSize: "12px", color: "var(--text-main)" }}>{log.details}</span>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

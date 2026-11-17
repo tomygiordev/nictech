@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { optimizeImage, fileExtension, IMAGE_UPLOAD_OPTIONS } from '@/lib/image-upload';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -94,12 +95,12 @@ export const BannerManagement = () => {
     }
 
     setUploading(true);
-    const ext = file.name.split('.').pop();
-    const fileName = `banner_${Date.now()}.${ext}`;
+    const optimized = await optimizeImage(file, 1920);
+    const fileName = `banner_${Date.now()}.${fileExtension(optimized)}`;
 
     const { error: uploadError } = await supabase.storage
       .from('product_images')
-      .upload(fileName, file, { upsert: true });
+      .upload(fileName, optimized, { ...IMAGE_UPLOAD_OPTIONS, upsert: true });
 
     if (uploadError) {
       toast({ title: 'Error al subir', description: uploadError.message, variant: 'destructive' });

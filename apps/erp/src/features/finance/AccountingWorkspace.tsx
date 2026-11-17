@@ -4,14 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  ArrowUpRight,
   BarChart3,
   CheckCircle2,
   DollarSign,
   Percent,
-  FileText,
-  FileSpreadsheet,
-  Download,
   PieChart,
   BookOpen,
   Calendar,
@@ -24,10 +20,20 @@ import {
 } from "lucide-react";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
+  bootstrapChartOfAccounts,
   closeAccountingPeriod,
+  exportIvaComprasReport,
+  exportIvaVentasReport,
+  exportProfitabilityReport,
+  exportTrialBalanceReport,
   listAccountingPeriods,
+  listBranches,
   listChartOfAccounts,
+  listIvaCompras,
+  listIvaVentas,
   listJournalEntries,
+  listProfitabilityByLine,
+  listTrialBalance,
   postJournalEntry,
   reconcileAccountBalance,
   reverseJournalEntry,
@@ -50,156 +56,377 @@ import {
   FeedbackAlert,
   KpiCard,
 } from "../../components/erp/WorkspaceUi";
+import { OfficialCsvExportButton } from "../../components/erp/OfficialCsvExportButton";
 import { type ErpModuleId } from "@nictech/domain";
-import { formatCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
+import { formatCurrency, formatPosCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
 
-const downloadDraftFile = (filename: string, content: string) => {
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+// Los numeric de Postgres pueden llegar como string: normalizar con Number().
+// Devuelve null cuando no hay dato (la vista documenta NULL por falta de fuente).
+const toNumber = (value: number | string | null | undefined): number | null => {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
-const ProfitabilitySection = () => {
+const NO_SOURCE_LABEL = "Sin datos fuente";
+
+const ProfitabilitySection = ({ canExport }: { canExport: boolean }) => {
+  const profitability = useQuery({
+    queryKey: ["erp", "reports", "profitability"],
+    queryFn: () => listProfitabilityByLine(),
+  });
+
+  const rows = useMemo(
+    () =>
+      (profitability.data ?? []).map((row) => ({
+        productId: row.product_id,
+        code: row.internal_code,
+        name: row.internal_name,
+        quantitySold: toNumber(row.quantity_sold),
+        revenue: toNumber(row.gross_revenue),
+        unitCost: toNumber(row.avg_unit_landed_cost),
+        cost: toNumber(row.estimated_cost),
+        margin: toNumber(row.margin),
+      })),
+    [profitability.data],
+  );
+
+  const totals = useMemo(() => {
+    let revenue = 0;
+    let costedRevenue = 0;
+    let cost = 0;
+    let margin = 0;
+    let withCost = 0;
+    let best: { name: string; pct: number } | null = null;
+    for (const row of rows) {
+      revenue += row.revenue ?? 0;
+      if (row.margin !== null) {
+        withCost += 1;
+        costedRevenue += row.revenue ?? 0;
+        cost += row.cost ?? 0;
+        margin += row.margin;
+        if ((row.revenue ?? 0) > 0) {
+          const pct = (Number(row.margin) / Number(row.revenue)) * 100;
+          if (!best || pct > best.pct) {
+            best = { name: row.name ?? row.code ?? "Producto", pct };
+          }
+        }
+      }
+    }
+    return {
+      revenue,
+      cost,
+      margin,
+      withCost,
+      marginPct: costedRevenue > 0 ? (margin / costedRevenue) * 100 : null,
+      best,
+    };
+  }, [rows]);
+
+  if (profitability.isLoading) {
+    return <StatePanel type="loading" message="Cargando rentabilidad por producto…" />;
+  }
+
+  if (profitability.isError) {
+    return (
+      <StatePanel
+        type="error"
+        title="No se pudo cargar la rentabilidad"
+        message={
+          profitability.error instanceof Error
+            ? profitability.error.message
+            : "Error al consultar v_profitability_by_line."
+        }
+      />
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      <div style={{
-        padding: "12px 16px",
-        background: "#eff6ff",
-        border: "1px solid #bfdbfe",
-        borderRadius: "8px",
-        color: "#1e40af",
-        fontSize: "13px"
-      }}>
-        <strong>[Módulo DEMO / Proyección - FASE G]:</strong> Los indicadores de rentabilidad, márgenes brutos y ticket promedio mostrados abajo son proyecciones analíticas de demostración. En FASE G se calcularán dinámicamente sobre los asientos de ventas y compras del ejercicio cerrado.
-      </div>
-
-      {/* KPI Cards */}
+      {/* KPI Cards calculados sobre v_profitability_by_line */}
       <div className="kpi-grid">
         <KpiCard
           icon={Percent}
           iconVariant="green"
-          label="Margen Bruto Consolidado"
-          value="43.8%"
-          trend={{ text: "+2.4% vs mes ant.", positive: true }}
-          sublabel="Rentabilidad promedio ponderada"
+          label="Margen Bruto (con costo real)"
+          value={totals.marginPct === null ? "Sin datos" : `${totals.marginPct.toFixed(1)}%`}
+          sublabel="Solo productos con recepciones de compra"
         />
         <KpiCard
           icon={DollarSign}
           iconVariant="navy"
           label="Ganancia Bruta Acumulada"
-          value="$6.960.000"
-          trend={{ text: "ARS", positive: true }}
-          sublabel="Ingresos netos menos costo de mercadería"
+          value={totals.withCost === 0 ? "Sin datos" : formatCurrency(totals.margin, "ARS")}
+          sublabel="Ingresos menos costo promedio ponderado"
         />
         <KpiCard
           icon={TrendingUp}
           iconVariant="steel"
-          label="Línea Más Rentable"
-          value="Taller (68.5%)"
-          trend={{ text: "Servicios", positive: true }}
-          sublabel="Alta contribución marginal"
+          label={
+            totals.withCost === 1
+              ? "Único producto evaluado"
+              : totals.best && totals.best.pct < 0
+                ? "Mejor resultado entre márgenes negativos"
+                : "Producto de Mayor Margen"
+          }
+          value={totals.best ? `${totals.best.name} (${totals.best.pct.toFixed(1)}%)` : "Sin datos"}
+          sublabel={
+            totals.withCost === 1
+              ? "Solo hay un producto con costo real; no es una comparación"
+              : totals.best && totals.best.pct < 0
+                ? "Es el menos negativo; todos los márgenes evaluados son negativos"
+                : "Comparación sobre costo real de recepciones"
+          }
         />
         <KpiCard
           icon={BarChart3}
           iconVariant="dark"
-          label="Ticket Promedio Taller"
-          value="$58.400"
-          trend={{ text: "Mano de Obra", positive: true }}
-          sublabel="Diagnósticos y reparaciones"
+          label="Ingresos Brutos Totales"
+          value={formatCurrency(totals.revenue, "ARS")}
+          trend={{ text: `${totals.withCost}/${rows.length} con costo`, positive: totals.withCost > 0 }}
+          sublabel="Ventas registradas en las líneas de venta"
         />
       </div>
 
-      {/* Main Table: Rentabilidad por Línea de Negocio */}
+      {/* Tabla por producto */}
       <div className="flow-card">
         <div className="flow-card__header">
           <div>
-            <h2 className="flow-card__title">Rentabilidad por Unidad de Negocio</h2>
-            <p className="flow-card__subtitle">Desglose de ingresos, costo directo de ventas (COGS) y margen bruto porcentual</p>
+            <h2 className="flow-card__title">Rentabilidad por Producto</h2>
+            <p className="flow-card__subtitle">Ingresos reales vs costo promedio ponderado de recepciones. Sin recepciones el costo y el margen son nulos por falta de fuente.</p>
           </div>
+          {rows.length > 0 && canExport && (
+            <OfficialCsvExportButton
+              filename="rentabilidad_por_producto.csv"
+              loadDataset={async (reason) => {
+                const exported = await exportProfitabilityReport({ reason, rowLimit: 5000 });
+                return {
+                  headers: ["Producto", "Código", "Cantidad vendida", "Ingresos brutos", "Costo prom. unitario", "Costo estimado", "Margen"],
+                  rows: exported.rows.map((row) => [
+                    row.internal_name ?? "",
+                    row.internal_code ?? "",
+                    toNumber(row.quantity_sold) ?? NO_SOURCE_LABEL,
+                    toNumber(row.gross_revenue) ?? NO_SOURCE_LABEL,
+                    toNumber(row.avg_unit_landed_cost) ?? NO_SOURCE_LABEL,
+                    toNumber(row.estimated_cost) ?? NO_SOURCE_LABEL,
+                    toNumber(row.margin) ?? NO_SOURCE_LABEL,
+                  ]),
+                  truncated: exported.truncated,
+                };
+              }}
+            />
+          )}
         </div>
 
-        <div className="flow-table-wrapper">
-          <table className="flow-table">
-            <thead>
-              <tr>
-                <th>Unidad de Negocio</th>
-                <th>Ingresos Netos</th>
-                <th>Costo Directo (COGS)</th>
-                <th>Margen Bruto</th>
-                <th>% Margen</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Dispositivos & Celulares</strong></td>
-                <td>$8.450.000</td>
-                <td>$5.490.000</td>
-                <td>$2.960.000</td>
-                <td><span className="flow-status-pill completed">35.0%</span></td>
-              </tr>
-              <tr>
-                <td><strong>Servicio Técnico & Taller</strong></td>
-                <td>$3.820.000</td>
-                <td>$1.200.000</td>
-                <td>$2.620.000</td>
-                <td><span className="flow-status-pill completed">68.5%</span></td>
-              </tr>
-              <tr>
-                <td><strong>Fundas & Accesorios</strong></td>
-                <td>$2.120.000</td>
-                <td>$848.000</td>
-                <td>$1.272.000</td>
-                <td><span className="flow-status-pill completed">60.0%</span></td>
-              </tr>
-              <tr>
-                <td><strong>Ensamble de PCs & Armados</strong></td>
-                <td>$1.490.000</td>
-                <td>$1.392.000</td>
-                <td>$98.000</td>
-                <td><span className="flow-status-pill processing">6.5%</span></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        {rows.length === 0 ? (
+          <StatePanel
+            type="empty"
+            title="Sin movimientos para rentabilizar"
+            message="Todavía no hay ventas ni recepciones registradas en las vistas de reporte."
+          />
+        ) : (
+          <div className="flow-table-wrapper">
+            <table className="flow-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Cant. Vendida</th>
+                  <th>Ingresos Brutos</th>
+                  <th>Costo Prom. Unit.</th>
+                  <th>Costo Estimado</th>
+                  <th>Margen</th>
+                  <th>% Margen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const pct =
+                    row.margin !== null && (row.revenue ?? 0) > 0
+                      ? (Number(row.margin) / Number(row.revenue)) * 100
+                      : null;
+                  return (
+                    <tr key={row.productId}>
+                      <td>
+                        <strong>{row.name ?? "Producto"}</strong>
+                        {row.code ? (
+                          <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>{row.code}</span>
+                        ) : null}
+                      </td>
+                      <td>{row.quantitySold === null ? NO_SOURCE_LABEL : row.quantitySold.toLocaleString("es-AR")}</td>
+                      <td>{row.revenue === null ? NO_SOURCE_LABEL : formatCurrency(row.revenue, "ARS")}</td>
+                      <td>{row.unitCost === null ? NO_SOURCE_LABEL : formatCurrency(row.unitCost, "ARS")}</td>
+                      <td>{row.cost === null ? NO_SOURCE_LABEL : formatCurrency(row.cost, "ARS")}</td>
+                      <td>
+                        {row.margin === null ? (
+                          <span className="flow-status-pill pending">{NO_SOURCE_LABEL}</span>
+                        ) : (
+                          <strong style={{ color: "var(--emerald-success)" }}>{formatCurrency(row.margin, "ARS")}</strong>
+                        )}
+                      </td>
+                      <td>
+                        {pct === null ? (
+                          <span className="flow-status-pill pending">{NO_SOURCE_LABEL}</span>
+                        ) : (
+                          <span className="flow-status-pill completed">{pct.toFixed(1)}%</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 
-const ReportsSection = () => {
+const ReportsSection = ({ canExport }: { canExport: boolean }) => {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const range = useMemo(
+    () => ({ from: from || undefined, to: to || undefined }),
+    [from, to],
+  );
+
+  const ivaVentas = useQuery({
+    queryKey: ["erp", "reports", "iva-ventas", range],
+    queryFn: () => listIvaVentas(range),
+  });
+  const ivaCompras = useQuery({
+    queryKey: ["erp", "reports", "iva-compras", range],
+    queryFn: () => listIvaCompras(range),
+  });
+  const trial = useQuery({
+    queryKey: ["erp", "reports", "trial-balance"],
+    queryFn: () => listTrialBalance(),
+  });
+
+  const ventasRows = useMemo(
+    () =>
+      (ivaVentas.data ?? []).map((row) => ({
+        saleId: row.sale_id,
+        saleDate: row.sale_date,
+        alicuota: toNumber(row.alicuota),
+        base: toNumber(row.base_imponible),
+        iva: toNumber(row.iva),
+      })),
+    [ivaVentas.data],
+  );
+
+  const comprasRows = useMemo(
+    () =>
+      (ivaCompras.data ?? []).map((row) => ({
+        purchaseOrderId: row.purchase_order_id,
+        purchaseDate: row.purchase_date,
+        // La vista documenta alicuota NULL: la línea de compra no registra alícuota.
+        alicuota: toNumber(row.alicuota),
+        base: toNumber(row.base_imponible),
+        iva: toNumber(row.iva),
+      })),
+    [ivaCompras.data],
+  );
+
+  const trialRows = useMemo(
+    () =>
+      (trial.data ?? []).map((row) => ({
+        accountId: row.account_id,
+        code: row.account_code,
+        name: row.account_name,
+        debit: toNumber(row.total_debit),
+        credit: toNumber(row.total_credit),
+        balance: toNumber(row.balance),
+      })),
+    [trial.data],
+  );
+
+  const ventasByAlicuota = useMemo(() => {
+    const grouped = new Map<string, { alicuota: number | null; count: number; base: number; iva: number }>();
+    for (const row of ventasRows) {
+      const key = row.alicuota === null ? "null" : String(row.alicuota);
+      const entry = grouped.get(key) ?? { alicuota: row.alicuota, count: 0, base: 0, iva: 0 };
+      entry.count += 1;
+      entry.base += row.base ?? 0;
+      entry.iva += row.iva ?? 0;
+      grouped.set(key, entry);
+    }
+    return [...grouped.values()].sort((a, b) => b.iva - a.iva);
+  }, [ventasRows]);
+
+  const totalBaseVentas = ventasRows.reduce((acc, row) => acc + (row.base ?? 0), 0);
+  const totalIvaVentas = ventasRows.reduce((acc, row) => acc + (row.iva ?? 0), 0);
+  const totalBaseCompras = comprasRows.reduce((acc, row) => acc + (row.base ?? 0), 0);
+  const totalIvaCompras = comprasRows.reduce((acc, row) => acc + (row.iva ?? 0), 0);
+  const saldoTecnico = totalIvaVentas - totalIvaCompras;
+  const totalDebit = trialRows.reduce((acc, row) => acc + (row.debit ?? 0), 0);
+  const totalCredit = trialRows.reduce((acc, row) => acc + (row.credit ?? 0), 0);
+
+  const loading = ivaVentas.isLoading || ivaCompras.isLoading || trial.isLoading;
+  const loadError =
+    (ivaVentas.isError ? "IVA ventas" : null) ??
+    (ivaCompras.isError ? "IVA compras" : null) ??
+    (trial.isError ? "balance de sumas y saldos" : null);
+
+  if (loading) {
+    return <StatePanel type="loading" message="Cargando informes sobre vistas reales…" />;
+  }
+
+  if (loadError) {
+    return (
+      <StatePanel
+        type="error"
+        title={`No se pudo cargar ${loadError}`}
+        message="Revisá los permisos de lectura sobre las vistas de reporte (authenticated)."
+      />
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      <div style={{
-        padding: "12px 16px",
-        background: "#eff6ff",
-        border: "1px solid #bfdbfe",
-        borderRadius: "8px",
-        color: "#1e40af",
-        fontSize: "13px"
-      }}>
-        <strong>[Módulo DEMO / Informes Fiscales - FASE G]:</strong> Los informes fiscales y libros de IVA se integrarán con la API de ARCA y los períodos contables cerrados en FASE G. Los botones de exportación descargan borradores de prueba para verificación de estructura.
+      {/* Filtro por rango de fechas (aplica a IVA ventas y compras) */}
+      <div className="flow-card" style={{ margin: 0, padding: "12px 16px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "flex-end" }}>
+          <div className="erp-form-group" style={{ minWidth: "180px" }}>
+            <label className="erp-form-label">Desde</label>
+            <input className="erp-form-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div className="erp-form-group" style={{ minWidth: "180px" }}>
+            <label className="erp-form-label">Hasta</label>
+            <input className="erp-form-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
+          <button
+            type="button"
+            className="pag-btn"
+            onClick={() => {
+              setFrom("");
+              setTo("");
+            }}
+          >
+            Limpiar rango
+          </button>
+          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            El balance de sumas y saldos refleja solo períodos cerrados, sin filtro de fechas.
+          </span>
+        </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards calculados sobre las vistas */}
       <div className="kpi-grid">
         <KpiCard
           icon={DollarSign}
           iconVariant="green"
-          label="Ventas Netas Período"
-          value="$15.880.000"
-          trend={{ text: "ARS", positive: true }}
-          sublabel="Facturación bruta sin descuentos"
+          label="Ventas Netas (base)"
+          value={formatCurrency(totalBaseVentas, "ARS")}
+          trend={{ text: `${ventasRows.length} líneas`, positive: true }}
+          sublabel="Base imponible de v_iva_ventas"
         />
         <KpiCard
           icon={PieChart}
           iconVariant="navy"
-          label="Débito Fiscal (IVA 21%)"
-          value="$2.756.000"
+          label="Débito Fiscal (IVA ventas)"
+          value={formatCurrency(totalIvaVentas, "ARS")}
           trend={{ text: "ARCA", positive: true }}
           sublabel="Impuesto generado en facturación"
         />
@@ -207,111 +434,225 @@ const ReportsSection = () => {
           icon={Layers}
           iconVariant="steel"
           label="Crédito Fiscal Compras"
-          value="$1.840.000"
+          value={formatCurrency(totalIvaCompras, "ARS")}
           trend={{ text: "Deducción", positive: true }}
-          sublabel="IVA computable de proveedores"
+          sublabel="Alícuota de compra: sin datos fuente"
         />
         <KpiCard
           icon={CheckCircle2}
           iconVariant="dark"
           label="Saldo Técnico a Pagar"
-          value="$916.000"
-          trend={{ text: "Posición IVA", positive: true }}
-          sublabel="Vencimiento DDJJ día 20"
+          value={formatCurrency(saldoTecnico, "ARS")}
+          trend={{ text: "Posición IVA", positive: saldoTecnico >= 0 }}
+          sublabel="Débito menos crédito del rango"
         />
       </div>
 
-      {/* Reports Download Grid */}
+      {/* IVA ventas por alícuota */}
       <div className="flow-card">
         <div className="flow-card__header">
           <div>
-            <h2 className="flow-card__title">Centro de Informes & Exportaciones Fiscales</h2>
-            <p className="flow-card__subtitle">Generación de archivos reglamentarios para AFIP/ARCA, balances contables y auditorías de inventario</p>
+            <h2 className="flow-card__title">Libro IVA Ventas por Alícuota</h2>
+            <p className="flow-card__subtitle">Base + IVA reales desde las líneas de venta, agrupados por alícuota</p>
           </div>
-          <span className="type-badge blue">Formatos TXT / CSV / PDF</span>
+          {ventasRows.length > 0 && canExport && (
+            <OfficialCsvExportButton
+              filename="libro_iva_ventas.csv"
+              loadDataset={async (reason) => {
+                const exported = await exportIvaVentasReport({ reason, range, rowLimit: 5000 });
+                return {
+                  headers: ["Fecha", "Venta ID", "Alícuota %", "Base imponible", "IVA"],
+                  rows: exported.rows.map((row) => [
+                    row.sale_date ?? "",
+                    row.sale_id,
+                    toNumber(row.alicuota) ?? NO_SOURCE_LABEL,
+                    toNumber(row.base_imponible) ?? NO_SOURCE_LABEL,
+                    toNumber(row.iva) ?? NO_SOURCE_LABEL,
+                  ]),
+                  truncated: exported.truncated,
+                };
+              }}
+            />
+          )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
-          <div style={{ padding: "16px", background: "var(--canvas-bg)", borderRadius: "12px", border: "1px solid var(--border-line)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "12px" }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                <FileText size={18} color="var(--brand-primary)" />
-                <strong style={{ fontSize: "14px" }}>Libro IVA Ventas Digital</strong>
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: 0 }}>
-                Régimen de información RG 4597 para importación directa en el portal ARCA.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ justifyContent: "center", gap: "6px" }}
-              onClick={() => downloadDraftFile("libro_iva_ventas_borrador.txt", "ENCABEZADO_LIBRO_IVA_VENTAS\nPERIODO: 202608\n(Borrador demostrativo no fiscal - FASE G)\n")}
-            >
-              <Download size={14} /> Exportar TXT / CSV
-            </button>
+        {ventasByAlicuota.length === 0 ? (
+          <StatePanel
+            type="empty"
+            title="Sin ventas en el rango"
+            message="No hay líneas de venta registradas para el rango seleccionado."
+          />
+        ) : (
+          <div className="flow-table-wrapper">
+            <table className="flow-table">
+              <thead>
+                <tr>
+                  <th>Alícuota</th>
+                  <th>Líneas</th>
+                  <th>Base Imponible</th>
+                  <th>IVA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ventasByAlicuota.map((entry) => (
+                  <tr key={entry.alicuota === null ? "null" : entry.alicuota}>
+                    <td>
+                      {entry.alicuota === null ? (
+                        <span className="flow-status-pill pending">{NO_SOURCE_LABEL}</span>
+                      ) : (
+                        <strong>{Number(entry.alicuota)}%</strong>
+                      )}
+                    </td>
+                    <td>{entry.count}</td>
+                    <td>{formatCurrency(entry.base, "ARS")}</td>
+                    <td>
+                      <strong style={{ color: "var(--brand-primary)" }}>{formatCurrency(entry.iva, "ARS")}</strong>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+      </div>
 
-          <div style={{ padding: "16px", background: "var(--canvas-bg)", borderRadius: "12px", border: "1px solid var(--border-line)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "12px" }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                <FileSpreadsheet size={18} color="var(--emerald-success)" />
-                <strong style={{ fontSize: "14px" }}>Balance de Sumas y Saldos</strong>
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: 0 }}>
-                Resumen analítico de todas las cuentas del plan con saldos deudores y acreedores.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ justifyContent: "center", gap: "6px" }}
-              onClick={() => downloadDraftFile("balance_sumas_saldos_borrador.csv", "Cuenta,Debe,Haber,Saldo\nCaja Central,0,0,0\n(Borrador demostrativo - FASE G)\n")}
-            >
-              <Download size={14} /> Exportar Excel (.csv)
-            </button>
+      {/* IVA compras */}
+      <div className="flow-card">
+        <div className="flow-card__header">
+          <div>
+            <h2 className="flow-card__title">Libro IVA Compras</h2>
+            <p className="flow-card__subtitle">Base + IVA reales desde purchase_order_lines. La alícuota no se registra en la fuente.</p>
           </div>
-
-          <div style={{ padding: "16px", background: "var(--canvas-bg)", borderRadius: "12px", border: "1px solid var(--border-line)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "12px" }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                <TrendingUp size={18} color="var(--steel-blue)" />
-                <strong style={{ fontSize: "14px" }}>Estado de Resultados & EBITDA</strong>
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: 0 }}>
-                Informe ejecutivo mensual de ingresos, costos directos y gastos operativos.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ justifyContent: "center", gap: "6px" }}
-              onClick={() => downloadDraftFile("estado_resultados_borrador.txt", "ESTADO DE RESULTADOS\n(Borrador demostrativo - FASE G)\n")}
-            >
-              <Download size={14} /> Descargar Borrador
-            </button>
-          </div>
-
-          <div style={{ padding: "16px", background: "var(--canvas-bg)", borderRadius: "12px", border: "1px solid var(--border-line)", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "12px" }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                <BarChart3 size={18} color="var(--purple-accent)" />
-                <strong style={{ fontSize: "14px" }}>Auditoría de Rotación de Stock</strong>
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: 0 }}>
-                Tasa de rotación de artículos, stock inmovilizado y valorización contable.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="pag-btn"
-              style={{ justifyContent: "center", gap: "6px" }}
-              onClick={() => downloadDraftFile("rotacion_stock_borrador.csv", "SKU,Descripcion,Rotacion\n(Borrador demostrativo - FASE G)\n")}
-            >
-              <Download size={14} /> Exportar CSV
-            </button>
-          </div>
+          {comprasRows.length > 0 && canExport && (
+            <OfficialCsvExportButton
+              filename="libro_iva_compras.csv"
+              loadDataset={async (reason) => {
+                const exported = await exportIvaComprasReport({ reason, range, rowLimit: 5000 });
+                return {
+                  headers: ["Fecha", "Orden de compra ID", "Alícuota %", "Base imponible", "IVA"],
+                  rows: exported.rows.map((row) => [
+                    row.purchase_date ?? "",
+                    row.purchase_order_id,
+                    toNumber(row.alicuota) ?? NO_SOURCE_LABEL,
+                    toNumber(row.base_imponible) ?? NO_SOURCE_LABEL,
+                    toNumber(row.iva) ?? NO_SOURCE_LABEL,
+                  ]),
+                  truncated: exported.truncated,
+                };
+              }}
+            />
+          )}
         </div>
+
+        {comprasRows.length === 0 ? (
+          <StatePanel
+            type="empty"
+            title="Sin compras en el rango"
+            message="No hay líneas de compra registradas para el rango seleccionado."
+          />
+        ) : (
+          <div className="flow-table-wrapper">
+            <table className="flow-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Base Imponible</th>
+                  <th>IVA</th>
+                  <th>Alícuota</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comprasRows.map((row) => (
+                  <tr key={row.purchaseOrderId}>
+                    <td style={{ fontSize: "12px", color: "var(--text-muted)" }}>{formatDate(row.purchaseDate)}</td>
+                    <td>{row.base === null ? NO_SOURCE_LABEL : formatCurrency(row.base, "ARS")}</td>
+                    <td>
+                      <strong style={{ color: "var(--emerald-success)" }}>
+                        {row.iva === null ? NO_SOURCE_LABEL : formatCurrency(row.iva, "ARS")}
+                      </strong>
+                    </td>
+                    <td>
+                      <span className="flow-status-pill pending">{NO_SOURCE_LABEL}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Balance de sumas y saldos */}
+      <div className="flow-card">
+        <div className="flow-card__header">
+          <div>
+            <h2 className="flow-card__title">Balance de Sumas y Saldos</h2>
+            <p className="flow-card__subtitle">Solo períodos cerrados y asientos contabilizados o revertidos (balance de comprobación)</p>
+          </div>
+          {trialRows.length > 0 && canExport && (
+            <OfficialCsvExportButton
+              filename="balance_sumas_saldos.csv"
+              loadDataset={async (reason) => {
+                const exported = await exportTrialBalanceReport({ reason, rowLimit: 5000 });
+                return {
+                  headers: ["Cuenta", "Nombre", "Debe", "Haber", "Saldo"],
+                  rows: exported.rows.map((row) => [
+                    row.account_code,
+                    row.account_name,
+                    toNumber(row.total_debit) ?? 0,
+                    toNumber(row.total_credit) ?? 0,
+                    toNumber(row.balance) ?? 0,
+                  ]),
+                  truncated: exported.truncated,
+                };
+              }}
+            />
+          )}
+        </div>
+
+        {trialRows.length === 0 ? (
+          <StatePanel
+            type="empty"
+            title="Sin períodos cerrados"
+            message="El balance solo incluye períodos contables cerrados: todavía no hay ninguno."
+          />
+        ) : (
+          <div className="flow-table-wrapper">
+            <table className="flow-table">
+              <thead>
+                <tr>
+                  <th>Cuenta</th>
+                  <th>Debe</th>
+                  <th>Haber</th>
+                  <th>Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trialRows.map((row) => (
+                  <tr key={row.accountId}>
+                    <td>
+                      <strong style={{ fontFamily: "monospace", color: "var(--brand-primary)", marginRight: "8px" }}>
+                        {row.code}
+                      </strong>
+                      {row.name}
+                    </td>
+                    <td>{formatPosCurrency(row.debit ?? 0, "ARS")}</td>
+                    <td>{formatPosCurrency(row.credit ?? 0, "ARS")}</td>
+                    <td>
+                      <strong>{formatPosCurrency(row.balance ?? 0, "ARS")}</strong>
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td><strong>Totales</strong></td>
+                  <td><strong>{formatPosCurrency(totalDebit, "ARS")}</strong></td>
+                  <td><strong>{formatPosCurrency(totalCredit, "ARS")}</strong></td>
+                  <td><strong>{formatPosCurrency(totalDebit - totalCredit, "ARS")}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -354,6 +695,14 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     queryFn: listJournalEntries,
     enabled: isAccountingMode && hasPermission("accounting.view"),
   });
+  const branches = useQuery({
+    queryKey: ["erp", "accounting", "branches"],
+    queryFn: listBranches,
+    enabled: isAccountingMode && hasPermission("accounting.view"),
+  });
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [bootstrapPending, setBootstrapPending] = useState(false);
+  const [periodGuardError, setPeriodGuardError] = useState<string | null>(null);
 
   const closeForm = useForm<ClosePeriodInput>({
     resolver: zodResolver(closePeriodSchema),
@@ -363,6 +712,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
   const journalForm = useForm<JournalEntryInput>({
     resolver: zodResolver(journalEntrySchema),
     defaultValues: {
+      branchId: "",
       entryDate: today(),
       operationKey: generateIdempotencyKey("jnl"),
       reason: "Asiento de ajuste contable",
@@ -387,13 +737,34 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     resolver: zodResolver(reconciliationSchema),
     defaultValues: {
       accountId: "",
-      branchId: "dev-branch-0000",
+      branchId: "",
       asOfDate: today(),
       subledgerBalance: "0",
       generalLedgerBalance: "0",
       reason: "Conciliación periódica de saldos",
     },
   });
+
+  const isDateInOpenPeriod = (isoDate: string): boolean => {
+    if (!isoDate) return false;
+    return (periods.data ?? []).some(
+      (p) => p.status === "open" && isoDate >= p.period_start.slice(0, 10) && isoDate <= p.period_end.slice(0, 10),
+    );
+  };
+
+  const handleBootstrap = async () => {
+    setBootstrapError(null);
+    setBootstrapPending(true);
+    try {
+      await bootstrapChartOfAccounts();
+      await queryClient.invalidateQueries({ queryKey: ["erp", "accounting", "accounts"] });
+      setFeedback("¡Plan de cuentas inicializado correctamente!");
+    } catch (err) {
+      setBootstrapError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBootstrapPending(false);
+    }
+  };
 
   const closeMutation = useMutation({
     mutationFn: closeAccountingPeriod,
@@ -409,6 +780,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["erp", "accounting", "entries"] });
       journalForm.reset({
+        branchId: journalForm.getValues().branchId,
         entryDate: today(),
         operationKey: generateIdempotencyKey("jnl"),
         reason: "",
@@ -417,10 +789,26 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
           { account_id: "", description: "Haber", debit: "0", credit: "0", currency_code: "ARS", exchange_rate: "1" },
         ],
       });
+      setPeriodGuardError(null);
       setIsJournalModalOpen(false);
       setFeedback("¡Asiento contable publicado y validado en el libro diario!");
     },
   });
+
+  const submitJournalEntry = (values: JournalEntryInput) => {
+    if (!values.branchId) {
+      setPeriodGuardError("Seleccioná una sucursal válida antes de publicar el asiento.");
+      return;
+    }
+    if ((periods.data ?? []).length > 0 && !isDateInOpenPeriod(values.entryDate)) {
+      setPeriodGuardError(
+        `La fecha ${values.entryDate} no cae en ningún período abierto. Revisá los períodos fiscales antes de postear.`,
+      );
+      return;
+    }
+    setPeriodGuardError(null);
+    journalMutation.mutate(values);
+  };
 
   const reversalMutation = useMutation({
     mutationFn: reverseJournalEntry,
@@ -548,9 +936,9 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
       )}
 
       {activeModuleId === "profitability" ? (
-        <ProfitabilitySection />
+        <ProfitabilitySection canExport={hasPermission("reports.export")} />
       ) : activeModuleId === "reports" ? (
-        <ReportsSection />
+        <ReportsSection canExport={hasPermission("reports.export")} />
       ) : (
         <>
           {/* KPI Row */}
@@ -596,7 +984,25 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
                 <span className="type-badge blue">{chartAccounts.length} cuentas</span>
               </div>
               {chartAccounts.length === 0 ? (
-                <p style={{ fontSize: "13px", color: "var(--text-muted)", padding: "16px" }}>No hay cuentas inicializadas todavía.</p>
+                <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: 0 }}>No hay cuentas inicializadas todavía.</p>
+                  {hasPermission("accounting.post") && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        style={{ justifyContent: "center" }}
+                        disabled={bootstrapPending}
+                        onClick={() => void handleBootstrap()}
+                      >
+                        {bootstrapPending ? "Inicializando…" : "Inicializar plan de cuentas"}
+                      </button>
+                      {bootstrapError ? (
+                        <FeedbackAlert type="error" message={bootstrapError} />
+                      ) : null}
+                    </>
+                  )}
+                </div>
               ) : (
                 <div style={{ maxHeight: "240px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
                   {chartAccounts.map((account) => (
@@ -779,7 +1185,9 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
                           </strong>
                         </td>
                         <td>
-                          <span className="flow-status-pill completed">{entry.status}</span>
+                          <span className="flow-status-pill completed">
+                            {entry.status === "draft" ? "Borrador" : entry.status === "posted" ? "Contabilizado" : "Revertido"}
+                          </span>
                         </td>
                         <td className="text-right">
                           {entry.status === "posted" && hasPermission("accounting.post") && (
@@ -815,7 +1223,19 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
         icon={BookOpen}
         maxWidth="600px"
       >
-        <form onSubmit={journalForm.handleSubmit((values) => journalMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        <form onSubmit={journalForm.handleSubmit(submitJournalEntry)} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div className="erp-form-group">
+            <label className="erp-form-label">Sucursal *</label>
+            <select className="erp-form-select" {...journalForm.register("branchId")}>
+              <option value="">Seleccioná una sucursal</option>
+              {(branches.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
+              ))}
+            </select>
+            {journalForm.formState.errors.branchId ? (
+              <span style={{ fontSize: "12px", color: "var(--rose-accent)" }}>Seleccioná una sucursal válida.</span>
+            ) : null}
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
             <div className="erp-form-group">
               <label className="erp-form-label">Fecha del Asiento *</label>
@@ -858,6 +1278,9 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             </div>
           </div>
 
+          {periodGuardError ? (
+            <FeedbackAlert type="error" message={periodGuardError} />
+          ) : null}
           {journalMutation.error ? (
             <FeedbackAlert type="error" message={journalMutation.error.message} />
           ) : null}
@@ -930,6 +1353,15 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
         maxWidth="500px"
       >
         <form onSubmit={reconciliationForm.handleSubmit((values) => reconciliationMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div className="erp-form-group">
+            <label className="erp-form-label">Sucursal *</label>
+            <select className="erp-form-select" {...reconciliationForm.register("branchId")}>
+              <option value="">Seleccioná una sucursal</option>
+              {(branches.data ?? []).map((b) => (
+                <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
+              ))}
+            </select>
+          </div>
           <div className="erp-form-group">
             <label className="erp-form-label">Cuenta Contable a Conciliar *</label>
             <select className="erp-form-select" {...reconciliationForm.register("accountId")}>

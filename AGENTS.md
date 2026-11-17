@@ -89,3 +89,24 @@ In `src/components/admin/`:
 - **Tags**: `products.tags` is a string array used for filtering.
 - `cn()` utility in `src/lib/utils.ts` — use for conditional Tailwind classes.
 - Path alias `@` maps to `./src`.
+
+## Entorno de Pruebas y Base de Datos
+
+- **Docker NO se utiliza**: No exigir demonio de Docker ni considerarlo un bloqueo para pruebas o ejecución. No ejecutar `docker info` ni `supabase db reset`.
+- **Testing de BD**: Se realiza directamente contra el proyecto Supabase de desarrollo (`tuzpcofywkhglkqplhnn`), utilizando transacciones aisladas con `ROLLBACK` o fixtures temporales debidamente limpiados.
+- **Verificación local**: Priorizar `npm run typecheck:erp` y pruebas de Vitest puntuales (`npx vitest run <archivo>`).
+
+## Delegación y Orquestación con agy (Gemini)
+
+- **Estándar de invocación**: Usar la skill `gemini-cli` (`agy -p "<PROMPT>" --model <MODELO> --dangerously-skip-permissions --print-timeout 30m`). El modelo lo define el usuario o el plan según la tarea (ej: Flash para velocidad/rutina, Argon para razonamiento profundo/auditoría). Si se requiere continuar la conversación, usar `-c` o `--continue`.
+- La delegación a `agy` (Gemini) está plenamente autorizada para **escribir, editar e implementar código directamente en el repositorio**. No forzar modos `READ-ONLY` ni generar reportes teóricos cuando el pedido es implementar una feature.
+- **Ejecución por fases**: Respetar la topología de delegación solicitada (incluyendo si un subagente consulta a otro como Flash -> Argon). En fases de implementación, el foco es producir código y verificarlo contra el `git diff` real y tests locales, sin crear intermediarios innecesarios no previstos en el plan.
+
+## Engram — memoria y continuidad obligatorias
+
+- Engram es el sistema requerido de memoria y persistencia para todo el trabajo de este repositorio. Consultarlo al iniciar, registrar avances durante el trabajo y guardar el cierre; no esperar a que el usuario lo recuerde.
+- Con el MCP cargado, usar `mem_session_start` y `mem_context` para recuperar continuidad, `mem_search` para antecedentes, `mem_get_observation` para leer completa una observación por ID, `mem_save` para decisiones/progreso y `mem_update` para corregir una observación existente.
+- La ausencia de herramientas `mem_*` es un problema de configuración que se debe reparar. Verificar la configuración activa de Codex, asegurar `[mcp_servers.engram]` y las instrucciones de memoria/compactación, corregir la ruta que realmente lee el proceso, reiniciar Codex y verificar que las herramientas aparezcan. No dar la tarea por lista ni normalizar el uso del CLI como reemplazo permanente del MCP.
+- Como bootstrap de reparación o continuidad mientras se recarga Codex, se puede usar el CLI local: `engram setup codex`, `engram search "<tema>" --project nictech` y, para IDs exactos, `engram mcp --tools=agent --project nictech` por stdio con `mem_get_observation`. En Windows, comprobar `%USERPROFILE%\.codex\config.toml` y `%APPDATA%\Codex\config.toml`; no asumir que el setup modificó el archivo activo.
+- Persistir el estado en hitos y al cierre: **qué se hizo, qué no se hizo**, archivos afectados, verificaciones y resultados, bloqueos, decisiones pendientes y próximo paso. No presentar trabajo incompleto como terminado. Reutilizar un `topic_key` estable o actualizar la observación existente para evitar memorias duplicadas o contradictorias.
+- Cerrar con `mem_session_summary`, con Goal, Instructions, Discoveries, Accomplished, Next Steps y Relevant Files, dejando explícito lo pendiente.

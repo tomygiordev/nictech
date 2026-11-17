@@ -11,6 +11,11 @@
     "dev": "vite",
     "dev:storefront": "vite",
     "dev:erp": "npm run dev --workspace @nictech/erp",
+    "dev:erp:electron": "npm run electron:dev --workspace @nictech/erp",
+    "preview:erp:electron": "npm run electron:preview --workspace @nictech/erp",
+    "build:erp:electron": "npm run electron:dist --workspace @nictech/erp",
+    "version:erp": "node scripts/release-erp.mjs version",
+    "release:erp": "node scripts/release-erp.mjs publish",
     "dev:all": "concurrently -n \"store,erp\" -c \"cyan.bold,magenta.bold\" \"npm run dev:storefront\" \"npm run dev:erp\"",
     "dev:all:db": "npm run db:start && npm run dev:all",
     "start": "powershell -ExecutionPolicy Bypass -File ./start-dev.ps1",
@@ -18,6 +23,8 @@
     "build:storefront": "vite build",
     "build:erp": "npm run build --workspace @nictech/erp",
     "typecheck:erp": "npm run typecheck --workspace @nictech/erp",
+    "test:erp:desktop": "npm run test:desktop --workspace @nictech/erp",
+    "types:erp": "supabase gen types typescript --local --schema erp > apps/erp/src/types/supabase.ts",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -27,7 +34,9 @@
     "db:start": "supabase start --ignore-health-check",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
-    "db:stop": "supabase stop"
+    "db:stop": "supabase stop",
+    "db:seed:qa-owner": "node scripts/seed-erp-qa-owner.mjs",
+    "db:reset:qa": "supabase db reset && npm run db:seed:qa-owner"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -96,8 +105,8 @@
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
-    "@vitejs/plugin-react-swc": "^3.11.0",
-    "@vitest/ui": "^4.1.0",
+    "@vitejs/plugin-react-swc": "^4.3.3",
+    "@vitest/ui": "^4.1.11",
     "autoprefixer": "^10.4.21",
     "concurrently": "^10.0.5",
     "eslint": "^9.32.0",
@@ -106,11 +115,12 @@
     "globals": "^15.15.0",
     "jsdom": "^29.0.1",
     "postcss": "^8.5.6",
-    "supabase": "^2.115.0",
+    "sharp": "^0.35.5",
+    "supabase": "2.117.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vite": "^5.4.19",
-    "vitest": "^4.1.0"
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
   }
 }

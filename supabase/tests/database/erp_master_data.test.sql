@@ -132,7 +132,8 @@ insert into erp.products (
   public_name,
   inventory_tracking,
   publish_on_web,
-  allow_online_sale
+  allow_online_sale,
+  base_sale_price
 )
 values (
   '70000000-0000-0000-0000-000000000001',
@@ -145,7 +146,8 @@ values (
   'Test product',
   'quantity',
   true,
-  true
+  true,
+  1
 );
 
 select lives_ok(
@@ -199,7 +201,7 @@ select throws_ok(
 select throws_ok(
   $$update erp.products set internal_code = 'REASSIGNED' where id = '70000000-0000-0000-0000-000000000001'$$,
   '23000',
-  'product internal codes are permanent; deactivate the product instead',
+  'product internal codes are permanent; use recode_catalog_product',
   'Product codes cannot be recycled through reassignment'
 );
 

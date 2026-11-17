@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   type ErpArea,
   type ErpModuleDefinition,
@@ -35,29 +35,94 @@ import {
 } from "lucide-react";
 import { ErpAccessGate } from "./auth/ErpAccessGate";
 import { useErpAuth } from "./auth/ErpAuthContext";
-import { PosWorkspace } from "./features/pos/PosWorkspace";
-import { CashWorkspace } from "./features/cash/CashWorkspace";
-import { AccountsWorkspace } from "./features/finance/AccountsWorkspace";
-import { AccountingWorkspace } from "./features/finance/AccountingWorkspace";
-import { DashboardOverview } from "./features/dashboard/DashboardOverview";
-import { RepairsWorkspace } from "./features/repairs/RepairsWorkspace";
-import { CatalogWorkspace } from "./features/catalog/CatalogWorkspace";
-import { StockWorkspace } from "./features/stock/StockWorkspace";
-import { CustomersWorkspace } from "./features/customers/CustomersWorkspace";
-import { PurchasesWorkspace } from "./features/purchases/PurchasesWorkspace";
-import { QuotesWorkspace } from "./features/quotes/QuotesWorkspace";
-import { PcBuildsWorkspace } from "./features/pcbuilds/PcBuildsWorkspace";
-import { TradeInsWorkspace } from "./features/tradeins/TradeInsWorkspace";
-import { OnlineOrdersWorkspace } from "./features/onlineorders/OnlineOrdersWorkspace";
-import { DocumentsWorkspace } from "./features/documents/DocumentsWorkspace";
-import { WhatsappWorkspace } from "./features/whatsapp/WhatsappWorkspace";
-import { IntegrationHealthWorkspace } from "./features/integrations/IntegrationHealthWorkspace";
-import { AuditWorkspace } from "./features/audit/AuditWorkspace";
-import { SystemWorkspace } from "./features/system/SystemWorkspace";
 import { Modal, ConfirmDialog } from "./components/erp/WorkspaceUi";
+import { ModuleTutorialModal } from "./features/help/ModuleTutorialModal";
+import { NicTechBrand } from "./components/brand/NicTechBrand";
 import { getInitials } from "./lib/formatters";
 import { supabase } from "./lib/supabase";
+import { NavigationVisibilityContext, useNavigationSetting, visibleFromSetting } from "./features/system/navigation";
 import "./styles.css";
+
+const DashboardOverview = React.lazy(async () => {
+  const module = await import("./features/dashboard/DashboardOverview");
+  return { default: module.DashboardOverview };
+});
+const PosWorkspace = React.lazy(async () => {
+  const module = await import("./features/pos/PosWorkspace");
+  return { default: module.PosWorkspace };
+});
+const CashWorkspace = React.lazy(async () => {
+  const module = await import("./features/cash/CashWorkspace");
+  return { default: module.CashWorkspace };
+});
+const OnlineOrdersWorkspace = React.lazy(async () => {
+  const module = await import("./features/onlineorders/OnlineOrdersWorkspace");
+  return { default: module.OnlineOrdersWorkspace };
+});
+const CatalogWorkspace = React.lazy(async () => {
+  const module = await import("./features/catalog/CatalogWorkspace");
+  return { default: module.CatalogWorkspace };
+});
+const PricingWorkspace = React.lazy(async () => {
+  const module = await import("./features/catalog/PricingWorkspace");
+  return { default: module.PricingWorkspace };
+});
+const StockWorkspace = React.lazy(async () => {
+  const module = await import("./features/stock/StockWorkspace");
+  return { default: module.StockWorkspace };
+});
+const PurchasesWorkspace = React.lazy(async () => {
+  const module = await import("./features/purchases/PurchasesWorkspace");
+  return { default: module.PurchasesWorkspace };
+});
+const CustomersWorkspace = React.lazy(async () => {
+  const module = await import("./features/customers/CustomersWorkspace");
+  return { default: module.CustomersWorkspace };
+});
+const QuotesWorkspace = React.lazy(async () => {
+  const module = await import("./features/quotes/QuotesWorkspace");
+  return { default: module.QuotesWorkspace };
+});
+const RepairsWorkspace = React.lazy(async () => {
+  const module = await import("./features/repairs/RepairsWorkspace");
+  return { default: module.RepairsWorkspace };
+});
+const PcBuildsWorkspace = React.lazy(async () => {
+  const module = await import("./features/pcbuilds/PcBuildsWorkspace");
+  return { default: module.PcBuildsWorkspace };
+});
+const TradeInsWorkspace = React.lazy(async () => {
+  const module = await import("./features/tradeins/TradeInsWorkspace");
+  return { default: module.TradeInsWorkspace };
+});
+const AccountsWorkspace = React.lazy(async () => {
+  const module = await import("./features/finance/AccountsWorkspace");
+  return { default: module.AccountsWorkspace };
+});
+const AccountingWorkspace = React.lazy(async () => {
+  const module = await import("./features/finance/AccountingWorkspace");
+  return { default: module.AccountingWorkspace };
+});
+const DocumentsWorkspace = React.lazy(async () => {
+  const module = await import("./features/documents/DocumentsWorkspace");
+  return { default: module.DocumentsWorkspace };
+});
+const WhatsappWorkspace = React.lazy(async () => {
+  const module = await import("./features/whatsapp/WhatsappWorkspace");
+  return { default: module.WhatsappWorkspace };
+});
+const IntegrationHealthWorkspace = React.lazy(async () => {
+  const module = await import("./features/integrations/IntegrationHealthWorkspace");
+  return { default: module.IntegrationHealthWorkspace };
+});
+const SystemWorkspace = React.lazy(async () => {
+  const module = await import("./features/system/SystemWorkspace");
+  return { default: module.SystemWorkspace };
+});
+const AuditWorkspace = React.lazy(async () => {
+  const module = await import("./features/audit/AuditWorkspace");
+  return { default: module.AuditWorkspace };
+});
 
 const AREA_LABELS: Record<ErpArea, string> = {
   operaciones: "Operación & Gestión",
@@ -113,12 +178,19 @@ const groupedWorkspaces = ERP_WORKSPACES.reduce<Record<ErpArea, ErpWorkspaceDefi
 );
 
 export const App = () => {
-  const { session, hasPermission } = useErpAuth();
+  const { session, organizationId, branchIds, permissions, hasPermission } = useErpAuth();
+  const navigation = useNavigationSetting();
+  const visibleModules = useMemo(() => navigation.data && !navigation.isError ? visibleFromSetting(navigation.data) : ERP_MODULES.map((module) => module.id), [navigation.data, navigation.isError]);
   const [activeModuleId, setActiveModuleId] = useState<ErpModuleId>("dashboard");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [navOpen, setNavOpen] = useState<boolean>(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchInputId = useId();
+  const searchShortcutLabel = useMemo(() => {
+    if (typeof navigator === "undefined") return "Ctrl+K";
+    const platform = `${navigator.platform} ${navigator.userAgent}`;
+    return /Mac|iPhone|iPad|iPod/i.test(platform) ? "⌘ K" : "Ctrl+K";
+  }, []);
 
   // Modals & Dialogs
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -156,33 +228,33 @@ export const App = () => {
 
   const operatorName = session?.user.user_metadata?.full_name || "Operador NicTech";
   const userInitials = useMemo(() => getInitials(operatorName, "NT"), [operatorName]);
+  const branchScopeLabel = branchIds.length === 0
+    ? "Sin sucursal asignada"
+    : branchIds.length === 1
+      ? "1 sucursal asignada"
+      : `${branchIds.length} sucursales asignadas`;
 
   const filteredGroups = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const result: Partial<Record<ErpArea, ErpWorkspaceDefinition[]>> = {};
 
     for (const [area, workspaces] of Object.entries(groupedWorkspaces)) {
-      const visibleInArea = workspaces.filter((ws) => {
-        const hasAnyPermission = ws.moduleIds.some((id) => {
+      const visibleInArea = workspaces.flatMap((ws) => {
+        const moduleIds = ws.moduleIds.filter((id) => {
           const mod = getErpModuleById(id);
-          return mod && hasPermission(mod.permission);
+          return visibleModules.includes(id) && mod && hasPermission(mod.permission);
         });
-        if (!hasAnyPermission) return false;
-
-        if (!query) return true;
-
-        const matchWs =
-          ws.label.toLowerCase().includes(query) ||
-          ws.description.toLowerCase().includes(query);
-        const matchModule = ws.moduleIds.some((id) => {
+        if (moduleIds.length === 0) return [];
+        const label = moduleIds.length === 1 && ws.moduleIds.some((id) => !visibleModules.includes(id))
+          ? getErpModuleById(moduleIds[0])?.label ?? ws.label
+          : ws.label;
+        const matchWorkspace = label.toLowerCase().includes(query);
+        const matchModule = moduleIds.some((id) => {
           const mod = getErpModuleById(id);
-          return (
-            mod &&
-            (mod.label.toLowerCase().includes(query) ||
-              mod.description.toLowerCase().includes(query))
-          );
+          return mod && (mod.label.toLowerCase().includes(query) || mod.description.toLowerCase().includes(query));
         });
-        return matchWs || matchModule;
+        if (query && !matchWorkspace && !matchModule) return [];
+        return [{ ...ws, label, moduleIds }];
       });
 
       if (visibleInArea.length > 0) {
@@ -190,7 +262,7 @@ export const App = () => {
       }
     }
     return result;
-  }, [searchQuery, hasPermission]);
+  }, [searchQuery, hasPermission, visibleModules]);
 
   const selectModule = (id: ErpModuleId) => {
     setActiveModuleId(id);
@@ -198,13 +270,13 @@ export const App = () => {
   };
 
   const selectWorkspace = (ws: ErpWorkspaceDefinition) => {
-    if (ws.moduleIds.includes(activeModuleId) && hasPermission(getErpModuleById(activeModuleId)?.permission ?? "")) {
+    if (ws.moduleIds.includes(activeModuleId) && visibleModules.includes(activeModuleId) && hasPermission(getErpModuleById(activeModuleId)?.permission ?? "")) {
       setNavOpen(false);
       return;
     }
     const firstAuthorized = ws.moduleIds.find((id) => {
       const mod = getErpModuleById(id);
-      return mod && hasPermission(mod.permission);
+      return visibleModules.includes(id) && mod && hasPermission(mod.permission);
     });
     if (firstAuthorized) {
       setActiveModuleId(firstAuthorized);
@@ -225,7 +297,12 @@ export const App = () => {
   };
 
   return (
+    <NavigationVisibilityContext.Provider value={visibleModules}>
     <div className="erp-shell">
+      <a className="skip-link" href="#erp-main-content">
+        Saltar al contenido principal
+      </a>
+      {navigation.isError && <div role="status">No se pudo leer el perfil de módulos; se muestran todos los módulos permitidos.</div>}
       {/* Mobile Backdrop */}
       {navOpen && (
         <button
@@ -237,14 +314,13 @@ export const App = () => {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`side-nav ${navOpen ? "side-nav--open" : ""}`} aria-label="Navegación del ERP">
+      <aside
+        id="erp-navigation"
+        className={`side-nav ${navOpen ? "side-nav--open" : ""}`}
+        aria-label="Navegación del ERP"
+      >
         <div className="brand-lockup">
-          <div className="brand-title-wrap">
-            <div className="brand-logo-mark">N</div>
-            <span className="brand-text">
-              NicTech <span>ERP</span>
-            </span>
-          </div>
+          <NicTechBrand />
           <button
             type="button"
             className="sidebar-collapse-btn"
@@ -305,7 +381,7 @@ export const App = () => {
             <h1>{activeModuleId === "dashboard" ? "Centro Operativo" : activeModule.label}</h1>
             <p>
               {activeModuleId === "dashboard"
-                ? "Resumen de operaciones y estado del negocio en tiempo real"
+                ? "Resumen de operaciones basado en los datos disponibles del ERP"
                 : activeModule.description}
             </p>
           </div>
@@ -318,23 +394,24 @@ export const App = () => {
                 id={searchInputId}
                 ref={searchInputRef}
                 type="text"
-                placeholder="Buscar módulo o workspace..."
+                placeholder="Buscar en ERP..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label="Buscar módulos y funciones (F2 o ⌘K)"
+                aria-label={`Buscar módulos y funciones (F2 o ${searchShortcutLabel})`}
               />
-              <kbd title="Presioná F2 o ⌘K para buscar">⌘ K</kbd>
+              <kbd title={`Presioná F2 o ${searchShortcutLabel} para buscar`}>{searchShortcutLabel}</kbd>
             </div>
 
-            {/* Quick Action Button: POS */}
+            {/* Primary action stays named on desktop so it is not mistaken for a generic add action. */}
             <button
               type="button"
-              className="header-action-btn"
+              className="header-primary-action"
               aria-label="Nueva Venta POS"
               onClick={() => selectModule("pos")}
               title="Nueva Venta POS"
             >
               <Plus size={18} />
+              <span>Nueva venta</span>
             </button>
 
             {/* Notifications Button */}
@@ -346,19 +423,18 @@ export const App = () => {
               title="Notificaciones y Alertas"
             >
               <Bell size={18} />
-              <span className="header-badge">3</span>
             </button>
 
             {/* WhatsApp / Messaging Button */}
-            <button
+            {visibleModules.includes("whatsapp") && <button
               type="button"
-              className="header-action-btn"
+              className="header-action-btn topbar-hide-mobile"
               aria-label="Mensajes"
               onClick={() => selectModule("whatsapp")}
               title="WhatsApp & Mensajes"
             >
               <MessageSquare size={18} />
-            </button>
+            </button>}
 
             {/* User Profile Avatar */}
             <button
@@ -376,6 +452,8 @@ export const App = () => {
               type="button"
               className="header-action-btn mobile-nav-toggle"
               aria-label="Abrir menú de navegación"
+              aria-controls="erp-navigation"
+              aria-expanded={navOpen}
               onClick={() => setNavOpen(true)}
             >
               <Menu size={18} />
@@ -387,46 +465,25 @@ export const App = () => {
         <Modal
           isOpen={isNotificationsOpen}
           onClose={() => setIsNotificationsOpen(false)}
-          title="Centro de Notificaciones"
-          subtitle="Alertas operativas de e-commerce, stock y laboratorio"
+          title="Estado de operaciones"
+          subtitle="Consultá el estado actualizado en cada módulo"
           icon={Bell}
           maxWidth="480px"
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <div
-              style={{ padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)", cursor: "pointer" }}
-              onClick={() => { setIsNotificationsOpen(false); selectModule("online-orders"); }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                <span className="type-badge green">E-commerce</span>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Hace 5 min</span>
-              </div>
-              <strong style={{ fontSize: "13px", display: "block" }}>Nuevo pedido web recibido</strong>
-              <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>Pago aprobado vía Mercado Pago. Listo para preparar despacho.</p>
-            </div>
-
-            <div
-              style={{ padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)", cursor: "pointer" }}
-              onClick={() => { setIsNotificationsOpen(false); selectModule("stock"); }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                <span className="type-badge orange">Alerta de Stock</span>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Hace 20 min</span>
-              </div>
-              <strong style={{ fontSize: "13px", display: "block" }}>Stock bajo en iPhone 15 Pro</strong>
-              <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>Quedan 2 unidades en Depósito Central. Revisar reposición.</p>
-            </div>
-
-            <div
-              style={{ padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)", cursor: "pointer" }}
-              onClick={() => { setIsNotificationsOpen(false); selectModule("repairs"); }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                <span className="type-badge blue">Taller</span>
-                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Hace 1 hora</span>
-              </div>
-              <strong style={{ fontSize: "13px", display: "block" }}>Equipo diagnosticado: NT-8492-X</strong>
-              <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>Cliente confirmó presupuesto de cambio de módulo OLED.</p>
+          <div
+            role="status"
+            style={{ padding: "18px", background: "var(--canvas-bg)", borderRadius: "10px", border: "1px solid var(--border-light)" }}
+          >
+            <strong style={{ fontSize: "13px", display: "block", marginBottom: "4px" }}>
+              Las alertas todavía no se reúnen en una bandeja única
+            </strong>
+            <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+              Abrí el módulo correspondiente para revisar las operaciones y su estado actual.
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "14px" }}>
+              <button type="button" className="btn-secondary" onClick={() => { setIsNotificationsOpen(false); selectModule("stock"); }}>Stock</button>
+              <button type="button" className="btn-secondary" onClick={() => { setIsNotificationsOpen(false); selectModule("repairs"); }}>Servicio técnico</button>
+              <button type="button" className="btn-secondary" onClick={() => { setIsNotificationsOpen(false); selectModule("cash"); }}>Caja</button>
             </div>
           </div>
         </Modal>
@@ -446,28 +503,36 @@ export const App = () => {
             </div>
             <div>
               <strong style={{ fontSize: "16px", display: "block" }}>{operatorName}</strong>
-              <span style={{ fontSize: "12px", color: "var(--emerald-success)", fontWeight: 700 }}>● Sesión Activa (Sucursal Central)</span>
+              <span style={{ fontSize: "12px", color: "var(--emerald-success)", fontWeight: 700 }}>● Sesión activa</span>
             </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", marginBottom: "16px" }}>
             <div>
-              <span className="stat-label">Rol</span>
-              <strong style={{ fontSize: "13px", display: "block" }}>Super Administrador</strong>
+              <span className="stat-label">Cuenta</span>
+              <strong style={{ fontSize: "13px", display: "block", overflowWrap: "anywhere" }}>
+                {session?.user.email || "Sin correo informado"}
+              </strong>
             </div>
             <div>
-              <span className="stat-label">Sucursal</span>
-              <strong style={{ fontSize: "13px", display: "block" }}>Central (Belgrano)</strong>
+              <span className="stat-label">Ámbito</span>
+              <strong style={{ fontSize: "13px", display: "block" }}>{branchScopeLabel}</strong>
             </div>
             <div>
               <span className="stat-label">Caja Asignada</span>
-              <strong style={{ fontSize: "13px", display: "block" }}>Caja 01 Mostrador</strong>
+              <strong style={{ fontSize: "13px", display: "block" }}>No incluida en la sesión</strong>
             </div>
             <div>
               <span className="stat-label">Permisos</span>
-              <strong style={{ fontSize: "13px", display: "block", color: "var(--brand-primary)" }}>32 / 32 Habilitados</strong>
+              <strong style={{ fontSize: "13px", display: "block", color: "var(--brand-primary)" }}>
+                {permissions.length} habilitados
+              </strong>
             </div>
           </div>
+
+          <p style={{ margin: "-6px 0 16px", fontSize: "11px", color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+            Organización: {organizationId || "sin organización asignada"}
+          </p>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-line)", paddingTop: "14px" }}>
             <button
@@ -485,47 +550,16 @@ export const App = () => {
           </div>
         </Modal>
 
-        {/* Help & Shortcuts Modal */}
-        <Modal
+        {/* Help & Interactive Module Tutorials Modal */}
+        <ModuleTutorialModal
           isOpen={isHelpOpen}
           onClose={() => setIsHelpOpen(false)}
-          title="Guía Rápida & Atajos de Teclado"
-          subtitle="Atajos para operar el sistema rápidamente"
-          icon={HelpCircle}
-          maxWidth="520px"
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "13px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Buscar módulo o workspace</span>
-              <kbd style={{ padding: "3px 8px", background: "var(--surface-white)", borderRadius: "6px", border: "1px solid var(--border-line)", fontSize: "11px", fontWeight: 700 }}>F2 / ⌘ K</kbd>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Cerrar modal o cancelar búsqueda</span>
-              <kbd style={{ padding: "3px 8px", background: "var(--surface-white)", borderRadius: "6px", border: "1px solid var(--border-line)", fontSize: "11px", fontWeight: 700 }}>Escape</kbd>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Punto de Venta (POS) rápido</span>
-              <span style={{ fontWeight: 650, color: "var(--brand-primary)" }}>Botón '+' en barra superior</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Seguimiento de Reparaciones</span>
-              <span style={{ fontWeight: 650 }}>Taller → Ingreso con Tracking</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--canvas-bg)", borderRadius: "8px" }}>
-              <span>Soporte Técnico NicTech</span>
-              <span style={{ fontWeight: 650 }}>soporte@nictech.com.ar</span>
-            </div>
-          </div>
-          <div style={{ marginTop: "18px", display: "flex", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => setIsHelpOpen(false)}
-            >
-              Entendido
-            </button>
-          </div>
-        </Modal>
+          currentWorkspaceId={activeWorkspace.id}
+          onNavigateToWorkspace={(id) => {
+            const ws = ERP_WORKSPACES.find((w) => w.id === id);
+            if (ws) selectWorkspace(ws);
+          }}
+        />
 
         {/* Logout Confirmation Dialog */}
         <ConfirmDialog
@@ -540,11 +574,12 @@ export const App = () => {
         />
 
         {/* Module Content */}
-        <main className="workspace-content">
+        <main id="erp-main-content" className="workspace-content" tabIndex={-1}>
           <ModuleContent moduleId={activeModuleId} onSelectModule={selectModule} />
         </main>
       </div>
     </div>
+    </NavigationVisibilityContext.Provider>
   );
 };
 
@@ -565,8 +600,9 @@ const ModuleContent: React.FC<{
       case "online-orders":
         return <OnlineOrdersWorkspace />;
       case "catalog":
-      case "pricing":
         return <CatalogWorkspace activeModuleId={moduleId} onSelectModule={onSelectModule} />;
+      case "pricing":
+        return <PricingWorkspace onSelectModule={onSelectModule} />;
       case "stock":
       case "stock-counts":
       case "labels":
@@ -595,7 +631,7 @@ const ModuleContent: React.FC<{
       case "documents":
         return <DocumentsWorkspace />;
       case "whatsapp":
-        return <WhatsappWorkspace />;
+        return <WhatsappWorkspace onSelectModule={onSelectModule} />;
       case "integration-health":
         return <IntegrationHealthWorkspace />;
       case "users":
@@ -613,7 +649,15 @@ const ModuleContent: React.FC<{
 
   return (
     <ErpAccessGate permission={activeModule.permission}>
-      {renderModuleBody()}
+      <Suspense
+        fallback={
+          <div className="workspace-loading" role="status" aria-live="polite">
+            Cargando módulo…
+          </div>
+        }
+      >
+        {renderModuleBody()}
+      </Suspense>
     </ErpAccessGate>
   );
 };

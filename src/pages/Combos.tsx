@@ -1,14 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Loader2, Package, Wallet, CreditCard, Landmark, Percent } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { ProductCard } from '@/components/shop/ProductCard';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { supabase } from '@/integrations/supabase/client';
+import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
+import { hasValidDiscount } from '@/lib/pricing';
+import { pickPrimaryImage } from '@/lib/product-gallery';
+import { useStorefrontPromotionPrices } from '@/hooks/use-storefront-promotion-prices';
+import { resolveDisplayPrice } from '@/lib/promo-pricing';
 
 interface Category {
   id: string;
   name: string;
+}
+
+interface ProductVariantSummary {
+  id: string;
+  price: number | null;
 }
 
 interface Product {
@@ -16,15 +26,22 @@ interface Product {
   name: string;
   category_id: string;
   price: number;
+  legacy_price?: number;
   original_price?: number | null;
+  legacy_original_price?: number | null;
   sale_expires_at?: string | null;
+  legacy_sale_expires_at?: string | null;
   stock: number;
   image_url: string | null;
   additional_images: string[] | null;
   description: string | null;
   category?: Category;
   tags: string[] | null;
+  condition?: string | null;
   price_usd?: number | null;
+  hasVariants?: boolean;
+  variantPrices?: number[];
+  activeVariants?: ProductVariantSummary[];
 }
 
 export const Combos = () => {
@@ -34,28 +51,40 @@ export const Combos = () => {
 
   useEffect(() => {
     const fetchCombos = async () => {
-      const { data, error } = await supabase
+      const { data, error } = await storefrontSupabase
         .from('products')
-        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, original_price, sale_expires_at, category:categories(id, name), product_variants(image_url)')
+        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(*)')
+        .eq('is_active', true)
         .gt('stock', 0)
         .order('created_at', { ascending: false });
 
       if (data) {
-        const formatted: Product[] = data.map((item) => ({
-          id: item.id,
-          name: item.name,
-          category_id: item.category_id,
-          price: item.price,
-          stock: item.stock,
-          image_url: item.image_url || item.product_variants?.[0]?.image_url || null,
-          additional_images: item.additional_images || [],
-          description: item.description,
-          category: item.category,
-          tags: item.tags || [],
-          original_price: item.original_price ?? null,
-          sale_expires_at: item.sale_expires_at ?? null,
-          price_usd: item.price_usd ?? null,
-        }));
+        const formatted: Product[] = data.map((item) => {
+          const activeVariants: ProductVariantSummary[] =
+            item.product_variants
+              ?.filter((v) => v.is_active)
+              .map((v) => ({ id: v.id, price: v.price ?? null })) ?? [];
+
+          return {
+            id: item.id,
+            name: item.name,
+            category_id: item.category_id,
+            price: item.price,
+            stock: item.stock,
+            image_url: pickPrimaryImage(item.image_url, item.product_variants),
+            additional_images: item.additional_images || [],
+            description: item.description,
+            category: item.category,
+            tags: item.tags || [],
+            condition: item.condition,
+            original_price: item.original_price ?? null,
+            sale_expires_at: item.sale_expires_at ?? null,
+            price_usd: item.price_usd ?? null,
+            hasVariants: (item.product_variants?.length ?? 0) > 0,
+            variantPrices: activeVariants.map((v) => v.price ?? item.price),
+            activeVariants,
+          };
+        });
 
         // Filter only items in the "combos" category
         const comboProducts = formatted.filter(product => {
@@ -69,6 +98,69 @@ export const Combos = () => {
 
     fetchCombos();
   }, []);
+
+  const productIds = useMemo(() => products.map((product) => product.id), [products]);
+  const { index: promotionIndex } = useStorefrontPromotionPrices(productIds);
+
+  const resolvedProducts = useMemo(() => {
+    return products.map((product) => {
+      const resolvedBase = resolveDisplayPrice(
+        {
+          productId: product.id,
+          legacyPrice: product.price,
+          legacyOriginalPrice: product.original_price,
+          legacySaleExpiresAt: product.sale_expires_at,
+        },
+        promotionIndex,
+      );
+      const resolvedVariants = (product.activeVariants ?? []).map((variant) =>
+        resolveDisplayPrice(
+          {
+            productId: product.id,
+            variantId: variant.id,
+            legacyPrice: variant.price ?? product.price,
+            legacyOriginalPrice: product.original_price,
+            legacySaleExpiresAt: product.sale_expires_at,
+          },
+          promotionIndex,
+        ),
+      );
+      const variantPrices = resolvedVariants.map((variant) => variant.price);
+      const cheapestVariant =
+        resolvedVariants.length > 0
+          ? resolvedVariants.reduce((min, curr) => (curr.price < min.price ? curr : min))
+          : null;
+      const hasVariantErpPromo =
+        resolvedBase.source === 'legacy' && cheapestVariant?.source === 'erp';
+      const resolvedOriginalPrice = hasVariantErpPromo
+        ? cheapestVariant.originalPrice
+        : hasValidDiscount(resolvedBase)
+          ? resolvedBase.originalPrice
+          : null;
+      const resolvedSaleExpiresAt = hasVariantErpPromo
+        ? cheapestVariant.saleExpiresAt
+        : resolvedBase.saleExpiresAt;
+
+      return {
+        ...product,
+        legacy_price: product.price,
+        legacy_original_price: product.original_price ?? null,
+        legacy_sale_expires_at: product.sale_expires_at ?? null,
+        price: resolvedBase.price,
+        original_price: resolvedOriginalPrice,
+        sale_expires_at: resolvedSaleExpiresAt,
+        variantPrices,
+      };
+    });
+  }, [products, promotionIndex]);
+
+  const resolvedSelectedProduct = useMemo(
+    () =>
+      selectedProduct
+        ? resolvedProducts.find((product) => product.id === selectedProduct.id) ?? selectedProduct
+        : null,
+    [selectedProduct, resolvedProducts],
+  );
 
   return (
     <>
@@ -133,7 +225,7 @@ export const Combos = () => {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-6">
-                {products.map((product) => (
+                {resolvedProducts.map((product) => (
                   <div
                     key={product.id}
                     role="button"
@@ -156,13 +248,18 @@ export const Combos = () => {
                       id={product.id}
                       name={product.name}
                       price={product.price}
+                      variantPrices={product.variantPrices}
                       price_usd={product.price_usd}
                       original_price={product.original_price}
+                      sale_expires_at={product.sale_expires_at}
                       stock={product.stock}
                       image_url={product.image_url || undefined}
                       description={product.description || undefined}
                       category={product.category?.name || 'Varios'}
                       tags={product.tags}
+                      condition={product.condition}
+                      hasVariants={product.hasVariants}
+                      onSelectVariant={() => setSelectedProduct(product)}
                     />
                   </div>
                 ))}
@@ -173,9 +270,10 @@ export const Combos = () => {
       </Layout>
 
       <ProductDetailModal
-        product={selectedProduct}
-        isOpen={!!selectedProduct}
+        product={resolvedSelectedProduct}
+        isOpen={!!resolvedSelectedProduct}
         onClose={() => setSelectedProduct(null)}
+        promotionIndex={promotionIndex}
       />
     </>
   );

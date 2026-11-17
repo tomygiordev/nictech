@@ -109,8 +109,10 @@ select ok(exists (
 ), 'Payment allocations cannot be deleted');
 select ok(pg_get_functiondef('erp.post_journal_entry(uuid,date,text,uuid,text,text,jsonb)'::regprocedure)
   like '%accounting_source_events%', 'Journal posting records source events');
-select ok(pg_get_functiondef('erp.record_receivable_payment(uuid,uuid,numeric,text,text)'::regprocedure)
-  like '%interest_amount%', 'Payments allocate interest and late fees');
+select ok(pg_get_functiondef('erp.record_receivable_payment_settlement(uuid,uuid,uuid,uuid,numeric,text,text,text)'::regprocedure)
+  like '%interest_allocation%' and
+  pg_get_functiondef('erp.record_receivable_payment_settlement(uuid,uuid,uuid,uuid,numeric,text,text,text)'::regprocedure)
+  like '%late_allocation%', 'Payments allocate interest and late fees');
 select ok(pg_get_functiondef('erp.close_accounting_period(uuid,text)'::regprocedure)
   like '%journal_entries%', 'Period close validates journal state');
 select ok(pg_get_functiondef('erp.reconcile_account_balance(uuid,uuid,date,numeric,numeric,text)'::regprocedure)

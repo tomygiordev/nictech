@@ -1,8 +1,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- legacy storefront payload shape. */
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Search, Loader2, Package, Gift, Percent, ChevronRight, Wallet, CreditCard, Landmark } from 'lucide-react';
+import {
+  Search,
+  Loader2,
+  Package,
+  Gift,
+  Percent,
+  ChevronRight,
+  Wallet,
+  CreditCard,
+  Landmark,
+  ShoppingBag,
+  Wrench,
+  MapPin,
+  Star,
+  ClipboardList,
+  MessageCircle,
+} from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { ProductDetailModal } from '@/components/shop/ProductDetailModal';
 import { ProductCard } from '@/components/shop/ProductCard';
@@ -17,10 +33,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from '@/integrations/supabase/client';
+import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
+import { hasValidDiscount } from '@/lib/pricing';
+import { pickPrimaryImage } from '@/lib/product-gallery';
+import { useStorefrontPromotionPrices } from '@/hooks/use-storefront-promotion-prices';
+import { resolveDisplayPrice } from '@/lib/promo-pricing';
+import { BUSINESS_INFO } from '@/config/business-info';
+import { SITE_URL, buildProductPath, canonicalProductUrl, findProductByParam } from '@/lib/product-url';
 
 interface Category {
   id: string;
   name: string;
+}
+
+interface ProductVariantSummary {
+  id: string;
+  price: number | null;
 }
 
 interface Product {
@@ -28,8 +56,11 @@ interface Product {
   name: string;
   category_id: string;
   price: number;
+  legacy_price?: number;
   original_price?: number | null;
+  legacy_original_price?: number | null;
   sale_expires_at?: string | null;
+  legacy_sale_expires_at?: string | null;
   stock: number;
   image_url: string | null;
   additional_images: string[] | null;
@@ -38,8 +69,12 @@ interface Product {
   tags: string[] | null;
   model_id?: string;
   brand_id?: string;
-  condition?: string;
+  condition?: string | null;
   price_usd?: number | null;
+  hasVariants?: boolean;
+  variantPrices?: number[];
+  activeVariants?: ProductVariantSummary[];
+  hasPromo?: boolean;
 }
 
 interface SmartphoneModel {
@@ -55,6 +90,9 @@ interface Brand {
 
 const Tienda = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { productId } = useParams<{ productId?: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,8 +169,9 @@ const Tienda = () => {
 
   const fetchProducts = async () => {
     const [productsRes, categoriesRes, modelsRes, brandsRes] = await Promise.all([
-      supabase.from('products')
-        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, model_id, brand_id, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(image_url)')
+      storefrontSupabase.from('products')
+        .select('id, name, category_id, price, price_usd, stock, image_url, additional_images, description, tags, model_id, brand_id, condition, original_price, sale_expires_at, category:categories(id, name), product_variants(*)')
+        .eq('is_active', true)
         .gt('stock', 0)
         .order('created_at', { ascending: false }),
       supabase.from('categories' as any).select('id, name').order('name', { ascending: true }),
@@ -141,24 +180,36 @@ const Tienda = () => {
     ]);
 
     if (productsRes.data) {
-      const formattedProducts: Product[] = productsRes.data.map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        category_id: item.category_id,
-        price: item.price,
-        stock: item.stock,
-        image_url: item.image_url || (item.product_variants as any[])?.[0]?.image_url || null,
-        additional_images: item.additional_images || [],
-        description: item.description,
-        category: item.category,
-        tags: item.tags || [],
-        model_id: item.model_id,
-        brand_id: item.brand_id,
-        condition: item.condition,
-        original_price: item.original_price ?? null,
-        sale_expires_at: item.sale_expires_at ?? null,
-        price_usd: item.price_usd ?? null,
-      }));
+      const formattedProducts: Product[] = productsRes.data.map((item: any) => {
+        const activeVariants: ProductVariantSummary[] = (item.product_variants ?? [])
+          .filter((v: { is_active?: boolean }) => v.is_active)
+          .map((v: { id: string; price?: number | null }) => ({
+            id: v.id,
+            price: v.price ?? null,
+          }));
+
+        return {
+          id: item.id,
+          name: item.name,
+          category_id: item.category_id,
+          price: item.price,
+          stock: item.stock,
+          image_url: pickPrimaryImage(item.image_url, item.product_variants),
+          additional_images: item.additional_images || [],
+          description: item.description,
+          category: item.category,
+          tags: item.tags || [],
+          model_id: item.model_id,
+          brand_id: item.brand_id,
+          condition: item.condition,
+          original_price: item.original_price ?? null,
+          sale_expires_at: item.sale_expires_at ?? null,
+          price_usd: item.price_usd ?? null,
+          hasVariants: (item.product_variants?.length ?? 0) > 0,
+          variantPrices: activeVariants.map((v) => v.price ?? item.price),
+          activeVariants,
+        };
+      });
       setProducts(formattedProducts);
 
       if (formattedProducts.length > 0) {
@@ -197,10 +248,79 @@ const Tienda = () => {
     setLoading(false);
   };
 
+  const productIds = useMemo(() => products.map((product) => product.id), [products]);
+  const { index: promotionIndex } = useStorefrontPromotionPrices(productIds);
+
+  const resolvedProducts = useMemo(() => {
+    return products.map((product) => {
+      const resolvedBase = resolveDisplayPrice(
+        {
+          productId: product.id,
+          legacyPrice: product.price,
+          legacyOriginalPrice: product.original_price,
+          legacySaleExpiresAt: product.sale_expires_at,
+        },
+        promotionIndex,
+      );
+      const resolvedVariants = (product.activeVariants ?? []).map((variant) =>
+        resolveDisplayPrice(
+          {
+            productId: product.id,
+            variantId: variant.id,
+            legacyPrice: variant.price ?? product.price,
+            legacyOriginalPrice: product.original_price,
+            legacySaleExpiresAt: product.sale_expires_at,
+          },
+          promotionIndex,
+        ),
+      );
+      const variantPrices = resolvedVariants.map((variant) => variant.price);
+      const cheapestVariant =
+        resolvedVariants.length > 0
+          ? resolvedVariants.reduce((min, curr) => (curr.price < min.price ? curr : min))
+          : null;
+      const hasVariantErpPromo =
+        resolvedBase.source === 'legacy' && cheapestVariant?.source === 'erp';
+      const resolvedOriginalPrice = hasVariantErpPromo
+        ? cheapestVariant.originalPrice
+        : hasValidDiscount(resolvedBase)
+          ? resolvedBase.originalPrice
+          : null;
+      const resolvedSaleExpiresAt = hasVariantErpPromo
+        ? cheapestVariant.saleExpiresAt
+        : resolvedBase.saleExpiresAt;
+      const discountCheckPrice = hasVariantErpPromo
+        ? cheapestVariant.price
+        : resolvedBase.price;
+
+      return {
+        ...product,
+        legacy_price: product.price,
+        legacy_original_price: product.original_price ?? null,
+        legacy_sale_expires_at: product.sale_expires_at ?? null,
+        price: resolvedBase.price,
+        original_price: resolvedOriginalPrice,
+        sale_expires_at: resolvedSaleExpiresAt,
+        variantPrices,
+        hasPromo: hasValidDiscount({
+          price: discountCheckPrice,
+          originalPrice: resolvedOriginalPrice,
+          saleExpiresAt: resolvedSaleExpiresAt,
+        }),
+      };
+    });
+  }, [products, promotionIndex]);
+
   const maxPrice = useMemo(() => {
-    if (products.length === 0) return 0;
-    return Math.max(...products.map(p => p.original_price ?? p.price));
-  }, [products]);
+    if (resolvedProducts.length === 0) return 0;
+    return Math.max(
+      ...resolvedProducts.map((p) =>
+        p.hasPromo
+          ? (p.original_price ?? p.price)
+          : p.price
+      )
+    );
+  }, [resolvedProducts]);
 
   const normalizeText = (text: string) => {
     return text
@@ -224,8 +344,7 @@ const Tienda = () => {
       let score = clickCounts.get(product.id) || 0;
 
       // 1. Promo boost: offers have higher sales propensity (boost by 5 points)
-      const hasActivePromo = product.original_price != null &&
-        (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date());
+      const hasActivePromo = Boolean(product.hasPromo);
       if (hasActivePromo) {
         score += 5;
       }
@@ -255,7 +374,7 @@ const Tienda = () => {
       return score;
     };
 
-    const result = products.filter(product => {
+    const result = resolvedProducts.filter(product => {
       const normalizedName = normalizeText(product.name);
       const normalizedDescription = normalizeText(product.description || '');
       const normalizedTags = (product.tags || []).map(tag => normalizeText(tag));
@@ -274,9 +393,7 @@ const Tienda = () => {
           categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'combos';
 
         if (isPromos) {
-          const hasActivePromo = product.original_price != null &&
-            (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date());
-          matchesCategory = hasActivePromo;
+          matchesCategory = Boolean(product.hasPromo);
         } else if (isCombos) {
           matchesCategory = product.category?.name.toLowerCase() === 'combos';
         } else {
@@ -307,24 +424,24 @@ const Tienda = () => {
       }
       return 0;
     });
-  }, [products, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap, categories, clickCounts]);
+  }, [resolvedProducts, searchQuery, selectedCategory, priceRange, sortOrder, selectedModel, selectedBrand, selectedCondition, selectedTag, modelBrandMap, categories, clickCounts]);
 
   // Tags available for funda category
   const availableTags = useMemo(() => {
     if (!isFundaCategory) return [];
     const tagSet = new Set<string>();
-    for (const p of products) {
+    for (const p of resolvedProducts) {
       if (p.category_id === selectedCategory)
         (p.tags || []).forEach(t => tagSet.add(t));
     }
     return Array.from(tagSet).sort();
-  }, [products, selectedCategory, isFundaCategory]);
+  }, [resolvedProducts, selectedCategory, isFundaCategory]);
 
   // Models filtered by selected brand and stock availability in the selected category
   const filteredModels = useMemo(() => {
     const activeModelIds = new Set<string>();
     
-    for (const p of products) {
+    for (const p of resolvedProducts) {
       if (selectedCategory) {
         const isPromos = selectedCategory === '__promos__' ||
           categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'promos';
@@ -333,9 +450,7 @@ const Tienda = () => {
 
         let matchesCategory = true;
         if (isPromos) {
-          const hasActivePromo = p.original_price != null &&
-            (!p.sale_expires_at || new Date(p.sale_expires_at) > new Date());
-          matchesCategory = hasActivePromo;
+          matchesCategory = Boolean(p.hasPromo);
         } else if (isCombos) {
           matchesCategory = p.category?.name.toLowerCase() === 'combos';
         } else {
@@ -355,12 +470,12 @@ const Tienda = () => {
       if (selectedBrand && m.brand_id !== selectedBrand) return false;
       return true;
     });
-  }, [models, products, selectedCategory, selectedBrand, categories]);
+  }, [models, resolvedProducts, selectedCategory, selectedBrand, categories]);
 
   // Brands filtered by stock availability in the selected category
   const filteredBrands = useMemo(() => {
     const activeBrandIds = new Set<string>();
-    for (const p of products) {
+    for (const p of resolvedProducts) {
       if (selectedCategory) {
         const isPromos = selectedCategory === '__promos__' ||
           categories.find(c => c.id === selectedCategory)?.name.toLowerCase() === 'promos';
@@ -369,9 +484,7 @@ const Tienda = () => {
 
         let matchesCategory = true;
         if (isPromos) {
-          const hasActivePromo = p.original_price != null &&
-            (!p.sale_expires_at || new Date(p.sale_expires_at) > new Date());
-          matchesCategory = hasActivePromo;
+          matchesCategory = Boolean(p.hasPromo);
         } else if (isCombos) {
           matchesCategory = p.category?.name.toLowerCase() === 'combos';
         } else {
@@ -390,7 +503,7 @@ const Tienda = () => {
     }
 
     return brands.filter(b => activeBrandIds.has(b.id));
-  }, [brands, products, selectedCategory, categories, modelBrandMap]);
+  }, [brands, resolvedProducts, selectedCategory, categories, modelBrandMap]);
 
   // Reset sub-filters when category changes
   useEffect(() => {
@@ -411,11 +524,127 @@ const Tienda = () => {
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
+  const resolvedSelectedProduct = useMemo(
+    () =>
+      selectedProduct
+        ? resolvedProducts.find((product) => product.id === selectedProduct.id) ?? selectedProduct
+        : null,
+    [selectedProduct, resolvedProducts],
+  );
+
+  // Sincroniza el producto abierto con la URL /producto/:productId
+  useEffect(() => {
+    if (loading) return;
+
+    if (!productId) {
+      if (!location.pathname.startsWith('/producto/')) {
+        setSelectedProduct(null);
+      }
+      return;
+    }
+
+    const matchedProduct = findProductByParam(productId, resolvedProducts);
+    setSelectedProduct(matchedProduct);
+    if (matchedProduct && productId !== buildProductPath(matchedProduct).slice('/producto/'.length)) {
+      navigate(buildProductPath(matchedProduct), { replace: true });
+    }
+  }, [productId, resolvedProducts, loading, location.pathname, navigate]);
+
+  const handleOpenProduct = (product: Product, trackClick = true) => {
+    if (trackClick) {
+      supabase.from('product_clicks').insert({ product_id: product.id });
+    }
+    setSelectedProduct(product);
+    navigate(buildProductPath(product));
+  };
+
+  const handleCloseProduct = () => {
+    setSelectedProduct(null);
+    if (location.pathname.startsWith('/producto/')) {
+      navigate('/tienda', { replace: false });
+    }
+  };
+
+  const selectedProductDescription = resolvedSelectedProduct
+    ? (resolvedSelectedProduct.description?.trim() ||
+      `${resolvedSelectedProduct.name} disponible en Nictech con garantía escrita en Urdinarrain y Gilbert, Entre Ríos. Envíos a todo el país.`)
+    : '';
+
+  const productJsonLd = resolvedSelectedProduct
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: resolvedSelectedProduct.name,
+        url: canonicalProductUrl(resolvedSelectedProduct),
+        description: selectedProductDescription,
+        ...(resolvedSelectedProduct.image_url ? { image: [resolvedSelectedProduct.image_url] } : {}),
+        offers: {
+          '@type': 'Offer',
+          priceCurrency: 'ARS',
+          price: resolvedSelectedProduct.price,
+          availability:
+            resolvedSelectedProduct.stock > 0
+              ? 'https://schema.org/InStock'
+              : 'https://schema.org/OutOfStock',
+          url: canonicalProductUrl(resolvedSelectedProduct),
+        },
+      }
+    : null;
+
+  const catalogJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: 'Catálogo Nictech',
+    itemListElement: displayedProducts.slice(0, 10).map((product, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      url: canonicalProductUrl(product),
+      name: product.name,
+    })),
+  };
+
+  const productNotFound = Boolean(productId && !loading && !findProductByParam(productId, resolvedProducts));
+
   return (
     <>
       <Helmet>
-        <title>Tienda - Nictech | Tecnología con Garantía</title>
-        <meta name="description" content="Compra smartphones, laptops, tablets y accesorios con garantía. Las mejores marcas al mejor precio." />
+        {productNotFound ? (
+          <>
+            <title>Producto no encontrado | Nictech</title>
+            <meta name="robots" content="noindex" />
+          </>
+        ) : selectedProduct ? (
+          <>
+            <title>{`${selectedProduct.name} | Tienda Nictech`}</title>
+            <meta name="description" content={selectedProductDescription} />
+            <meta property="og:title" content={`${selectedProduct.name} | Tienda Nictech`} />
+            <meta property="og:description" content={selectedProductDescription} />
+            <meta property="og:type" content="product" />
+            <meta property="og:url" content={canonicalProductUrl(selectedProduct)} />
+            <link rel="canonical" href={canonicalProductUrl(selectedProduct)} />
+            {selectedProduct.image_url && (
+              <meta property="og:image" content={selectedProduct.image_url} />
+            )}
+            <script type="application/ld+json">{JSON.stringify(productJsonLd)}</script>
+          </>
+        ) : (
+          <>
+            <title>Nictech | Tienda de Celulares, Accesorios y Servicio Técnico en Urdinarrain y Gilbert</title>
+            {(location.pathname === '/tienda' || location.pathname === '/') && (
+              <link rel="canonical" href={location.pathname === '/tienda' ? `${SITE_URL}/tienda` : `${SITE_URL}/`} />
+            )}
+            <meta
+              name="description"
+              content="Comprá celulares nuevos y usados seleccionados con garantía escrita, accesorios y computación, o repará tu equipo en nuestro servicio técnico en Urdinarrain y Gilbert, Entre Ríos. Envíos a todo el país."
+            />
+            <meta property="og:title" content="Nictech | Tienda de Tecnología y Servicio Técnico" />
+            <meta
+              property="og:description"
+              content="Celulares con garantía escrita, accesorios y servicio técnico especializado en Urdinarrain y Gilbert, Entre Ríos. Envíos a todo el país."
+            />
+            <script type="application/ld+json">{JSON.stringify(catalogJsonLd)}</script>
+          </>
+        )}
       </Helmet>
       <Layout>
         {/* Header */}
@@ -429,16 +658,86 @@ const Tienda = () => {
           </div>
 
           <div className="container-main relative z-10">
-            <div className="text-center max-w-2xl mx-auto">
-              <h1 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
-                Nuestra Tienda
+            <div className="max-w-4xl mx-auto text-center">
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground mb-3">
+                Nictech: Tienda y Servicio Técnico
               </h1>
-              <p className="text-muted-foreground text-lg mb-6">
-                Encuentra los mejores productos de tecnología con garantía
+
+              {/* Indicador visible de sucursales locales */}
+              <p className="inline-flex flex-wrap items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-card/85 border border-border text-xs sm:text-sm text-foreground/90 mb-6 shadow-sm">
+                <MapPin className="h-4 w-4 text-primary shrink-0" />
+                <span>
+                  Sucursales en <strong>Urdinarrain</strong> (Héroes de Malvinas 08) y{' '}
+                  <strong>Gilbert</strong> (C.5 y C.19), Entre Ríos · Retiro gratis o envíos a todo el país
+                </span>
               </p>
 
+              {/* Bloque dual: Tienda + Servicio Técnico */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4 text-left mb-7">
+                <div className="bg-card/90 border border-border rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
+                        <ShoppingBag className="h-4 w-4" />
+                      </div>
+                      <h2 className="text-base sm:text-lg font-semibold text-foreground leading-snug">
+                        Comprá tecnología con garantía
+                      </h2>
+                    </div>
+                    <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                      Celulares nuevos y usados seleccionados con 90 días de garantía escrita, accesorios y computación · 10% OFF por transferencia.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <a
+                      href="#catalogo-tienda"
+                      className="inline-flex items-center justify-center min-h-[44px] px-4 rounded-xl bg-primary text-primary-foreground text-xs sm:text-sm font-medium hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      Ver catálogo
+                    </a>
+                    <Link
+                      to="/promos"
+                      className="inline-flex items-center justify-center min-h-[44px] px-3.5 rounded-xl border border-border bg-background text-foreground text-xs sm:text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      Promos
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="bg-card/90 border border-border rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary/10 text-secondary dark:text-sky-300 shrink-0">
+                        <Wrench className="h-4 w-4" />
+                      </div>
+                      <h2 className="text-base sm:text-lg font-semibold text-foreground leading-snug">
+                        Reparamos tu equipo
+                      </h2>
+                    </div>
+                    <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                      Cambio de pantalla, batería, pin de carga y microelectrónica en Urdinarrain y Gilbert.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <Link
+                      to="/servicios"
+                      className="inline-flex items-center justify-center min-h-[44px] px-4 rounded-xl bg-secondary text-secondary-foreground text-xs sm:text-sm font-medium hover:bg-secondary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      Cotizar reparación
+                    </Link>
+                    <Link
+                      to="/seguimiento"
+                      className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 rounded-xl border border-border bg-background text-foreground text-xs sm:text-sm font-medium hover:bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <ClipboardList className="h-3.5 w-3.5 shrink-0" />
+                      Seguimiento de equipo
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
               {/* Search bar */}
-              <div className="relative max-w-md mx-auto mb-8 group">
+              <div id="catalogo-tienda" className="relative max-w-md mx-auto mb-6 group scroll-mt-20">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-xl blur opacity-0 group-focus-within:opacity-100 transition duration-300 pointer-events-none" />
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
@@ -453,13 +752,13 @@ const Tienda = () => {
               </div>
 
               {/* Promos y Combos Quick Access */}
-              <div className="flex justify-center gap-4 mt-6">
+              <div className="flex justify-center gap-4 mt-5">
                 {/* Promos Link */}
                 <Link
                   to="/promos"
-                  className="group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden"
+                  className="group relative flex flex-col items-center justify-center w-28 h-24 rounded-2xl border bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden"
                 >
-                  <div className="flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-250 bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground">
+                  <div className="flex items-center justify-center p-2 rounded-xl mb-1.5 transition-all duration-250 bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground">
                     <Percent className="h-5 w-5 transition-transform duration-250 group-hover:scale-110" />
                   </div>
                   <span className="text-xs tracking-wider uppercase font-semibold">Promos</span>
@@ -468,9 +767,9 @@ const Tienda = () => {
                 {/* Combos Link */}
                 <Link
                   to="/combos"
-                  className="group relative flex flex-col items-center justify-center w-28 h-28 rounded-2xl border bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden"
+                  className="group relative flex flex-col items-center justify-center w-28 h-24 rounded-2xl border bg-card/60 border-border backdrop-blur-sm text-muted-foreground hover:border-primary/30 hover:bg-muted/30 hover:text-foreground transition-all duration-250 ease-out-default active:scale-[0.96] shadow-sm select-none cursor-pointer outline-none overflow-hidden"
                 >
-                  <div className="flex items-center justify-center p-2.5 rounded-xl mb-2 transition-all duration-250 bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground">
+                  <div className="flex items-center justify-center p-2 rounded-xl mb-1.5 transition-all duration-250 bg-muted text-muted-foreground group-hover:bg-muted/80 group-hover:text-foreground">
                     <Gift className="h-5 w-5 transition-transform duration-250 group-hover:scale-110" />
                   </div>
                   <span className="text-xs tracking-wider uppercase font-semibold">Combos</span>
@@ -478,22 +777,22 @@ const Tienda = () => {
               </div>
 
               {/* Medios de Pago representativos */}
-              <div className="flex flex-wrap justify-center items-center gap-x-5 gap-y-2.5 mt-8 text-xs text-muted-foreground/80">
-                <span className="text-[10px] uppercase tracking-wider font-semibold opacity-70">Medios de pago:</span>
-                <div className="flex items-center gap-1.5 bg-card/40 backdrop-blur-sm border border-border/60 px-2.5 py-1 rounded-full">
+              <div className="flex flex-wrap justify-center items-center gap-x-4 gap-y-2.5 mt-6 text-xs text-muted-foreground">
+                <span className="text-[10px] uppercase tracking-wider font-semibold">Medios de pago:</span>
+                <div className="flex items-center gap-1.5 bg-card/60 border border-border/60 px-2.5 py-1 rounded-full">
                   <Wallet className="h-3.5 w-3.5 text-[#009ee3] flex-shrink-0" />
                   <span>Mercado Pago</span>
                 </div>
-                <div className="flex items-center gap-1.5 bg-card/40 backdrop-blur-sm border border-border/60 px-2.5 py-1 rounded-full">
+                <div className="flex items-center gap-1.5 bg-card/60 border border-border/60 px-2.5 py-1 rounded-full">
                   <CreditCard className="h-3.5 w-3.5 text-primary flex-shrink-0" />
                   <span>Tarjetas</span>
                 </div>
-                <div className="flex items-center gap-1.5 bg-card/40 backdrop-blur-sm border border-border/60 px-2.5 py-1 rounded-full">
+                <div className="flex items-center gap-1.5 bg-card/60 border border-border/60 px-2.5 py-1 rounded-full">
                   <Landmark className="h-3.5 w-3.5 text-secondary flex-shrink-0" />
                   <span>Transferencia</span>
                 </div>
-                <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-medium">
-                  <Percent className="h-3.5 w-3.5 flex-shrink-0 animate-pulse" />
+                <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full font-medium">
+                  <Percent className="h-3.5 w-3.5 flex-shrink-0" />
                   <span>10% OFF Transferencia</span>
                 </div>
               </div>
@@ -601,15 +900,11 @@ const Tienda = () => {
                           key={product.id}
                           role="button"
                           tabIndex={0}
-                          onClick={() => {
-                            supabase.from('product_clicks').insert({ product_id: product.id });
-                            setSelectedProduct(product);
-                          }}
+                          onClick={() => handleOpenProduct(product, true)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
-                              supabase.from('product_clicks').insert({ product_id: product.id });
-                              setSelectedProduct(product);
+                              handleOpenProduct(product, true);
                             }
                           }}
                           className="cursor-pointer text-left w-full outline-none transition-all duration-100 ease-out-default active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-primary focus-visible:rounded-2xl"
@@ -619,18 +914,18 @@ const Tienda = () => {
                             id={product.id}
                             name={product.name}
                             price={product.price}
+                            variantPrices={product.variantPrices}
                             price_usd={product.price_usd}
-                            original_price={
-                              product.original_price != null &&
-                              (!product.sale_expires_at || new Date(product.sale_expires_at) > new Date())
-                                ? product.original_price
-                                : null
-                            }
+                            original_price={product.original_price}
+                            sale_expires_at={product.sale_expires_at}
                             stock={product.stock}
                             image_url={product.image_url || undefined}
                             description={product.description || undefined}
                             category={product.category?.name || 'Varios'}
                             tags={product.tags}
+                            condition={product.condition}
+                            hasVariants={product.hasVariants}
+                            onSelectVariant={() => handleOpenProduct(product, false)}
                           />
                         </div>
                       ))}
@@ -655,12 +950,72 @@ const Tienda = () => {
             </div>
           </div>
         </section>
+
+        {/* Confianza local */}
+        <section className="py-10 sm:py-12 border-t border-border bg-muted/30">
+          <div className="container-main">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-1.5">
+                  Confianza local
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Atención presencial y servicio técnico propio en Urdinarrain y Gilbert, Entre Ríos.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                <Button asChild variant="outline" className="min-h-[44px] rounded-xl gap-2 text-xs sm:text-sm">
+                  <Link to="/contacto">
+                    <MapPin className="h-4 w-4 text-primary shrink-0" />
+                    Ver ubicaciones y horarios
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="min-h-[44px] rounded-xl gap-2 text-xs sm:text-sm">
+                  <a
+                    href="https://wa.me/5493446353769"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MessageCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    Consultar por WhatsApp
+                  </a>
+                </Button>
+                {BUSINESS_INFO.googleReviewsUrl && (
+                  <Button asChild variant="outline" className="min-h-[44px] rounded-xl gap-2 text-xs sm:text-sm">
+                    <a href={BUSINESS_INFO.googleReviewsUrl} target="_blank" rel="noopener noreferrer">
+                      <Star className="h-4 w-4 text-primary shrink-0" />
+                      Ver opiniones en Google
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-card border border-border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm text-muted-foreground">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <MapPin className="h-4 w-4 text-primary shrink-0 mt-0.5 sm:mt-0" />
+                <span>
+                  <strong className="text-foreground font-medium">Urdinarrain:</strong> Héroes de Malvinas 08 ·{' '}
+                  <strong className="text-foreground font-medium">Gilbert:</strong> C.5 y C.19, Entre Ríos
+                </span>
+              </div>
+              <Link
+                to="/contacto"
+                className="text-primary font-medium hover:underline inline-flex items-center gap-1 min-h-[44px] sm:min-h-0 shrink-0"
+              >
+                Cómo llegar y contacto
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
+        </section>
       </Layout>
 
       <ProductDetailModal
-        product={selectedProduct}
-        isOpen={!!selectedProduct}
-        onClose={() => setSelectedProduct(null)}
+        product={resolvedSelectedProduct}
+        isOpen={!!resolvedSelectedProduct}
+        onClose={handleCloseProduct}
+        promotionIndex={promotionIndex}
       />
     </>
   );

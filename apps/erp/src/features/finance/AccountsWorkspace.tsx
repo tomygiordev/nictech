@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -6,29 +6,49 @@ import { CircleDollarSign, PlusCircle, CreditCard, Users, Clock, AlertCircle } f
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   createFinancingContract,
+  listBranches,
+  listCustomers,
   listFinancingContracts,
+  listReceivableCashSessions,
+  listReceivablePaymentMethods,
   recordReceivablePayment,
 } from "./api";
 import { financingSchema, receivablePaymentSchema, type FinancingInput, type ReceivablePaymentInput } from "./schemas";
 import { StatePanel, WorkspaceHeader, FeedbackAlert, KpiCard } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
+import type { FinancingContract } from "./types";
 
-const BRANCH_OPTIONS = [
-  { id: "dev-branch-0000", name: "Sucursal Central (Belgrano)" },
-  { id: "dev-branch-0001", name: "Depósito Central" },
-];
+const TERMINAL_CONTRACT_STATUSES = ["paid", "cancelled", "uncollectible"];
+
+const summarizeByCurrency = (
+  contracts: FinancingContract[],
+  amount: (contract: FinancingContract) => number,
+): string => {
+  const totals = contracts.reduce<Record<string, number>>((result, contract) => {
+    const currency = contract.currency_code || "ARS";
+    result[currency] = (result[currency] ?? 0) + amount(contract);
+    return result;
+  }, {});
+  const entries = Object.entries(totals);
+  if (entries.length === 0) return "—";
+  return entries.map(([currency, total]) => formatCurrency(total, currency)).join(" · ");
+};
 
 export const AccountsWorkspace = () => {
   const { hasPermission } = useErpAuth();
   const queryClient = useQueryClient();
   const contractsQuery = useQuery({ queryKey: ["erp", "finance", "contracts"], queryFn: listFinancingContracts });
+  const branchesQuery = useQuery({ queryKey: ["erp", "finance", "branches"], queryFn: listBranches });
+  const customersQuery = useQuery({ queryKey: ["erp", "finance", "customers"], queryFn: listCustomers });
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [formGuardError, setFormGuardError] = useState<string | null>(null);
+  const [paymentGuardError, setPaymentGuardError] = useState<string | null>(null);
 
   const createForm = useForm<FinancingInput>({
     resolver: zodResolver(financingSchema),
     defaultValues: {
-      branchId: "dev-branch-0000",
-      customerId: "dev-cust-0001",
+      branchId: "",
+      customerId: "",
       currency: "ARS",
       principal: "250000",
       downPayment: "50000",
@@ -43,13 +63,119 @@ export const AccountsWorkspace = () => {
   const paymentForm = useForm<ReceivablePaymentInput>({
     resolver: zodResolver(receivablePaymentSchema),
     defaultValues: {
-      branchId: "dev-branch-0000",
+      branchId: "",
       contractId: "",
+      paymentMethodId: "",
+      cashSessionId: "",
       amount: "50000",
+      paymentReference: "",
       operationKey: generateIdempotencyKey("pay"),
       reason: "Cobro de cuota presencial en mostrador",
     },
   });
+
+  const paymentBranchId = paymentForm.watch("branchId");
+  const selectedPaymentMethodId = paymentForm.watch("paymentMethodId");
+  const paymentMethodsQuery = useQuery({
+    queryKey: ["erp", "finance", "receivable-payment-methods", paymentBranchId],
+    queryFn: () => listReceivablePaymentMethods(paymentBranchId),
+    enabled: Boolean(paymentBranchId),
+  });
+  const cashSessionsQuery = useQuery({
+    queryKey: ["erp", "finance", "receivable-cash-sessions", paymentBranchId],
+    queryFn: () => listReceivableCashSessions(paymentBranchId),
+    enabled: Boolean(paymentBranchId),
+  });
+  const selectedPaymentMethod = (paymentMethodsQuery.data ?? []).find(
+    (method) => method.id === selectedPaymentMethodId,
+  );
+  const selectedContract = (contractsQuery.data ?? []).find(
+    (contract) => contract.id === paymentForm.watch("contractId"),
+  );
+  const compatibleCashSessions = useMemo(
+    () => (cashSessionsQuery.data ?? []).filter(
+      (session) => !selectedContract || session.currencies.includes(selectedContract.currency_code),
+    ),
+    [cashSessionsQuery.data, selectedContract],
+  );
+
+  useEffect(() => {
+    paymentForm.setValue("paymentMethodId", "");
+    paymentForm.setValue("cashSessionId", "");
+  }, [paymentBranchId, paymentForm]);
+
+  useEffect(() => {
+    if (selectedPaymentMethod && !selectedPaymentMethod.requires_cash_session) {
+      paymentForm.setValue("cashSessionId", "");
+    }
+  }, [paymentForm, selectedPaymentMethod]);
+
+  const submitFinancing = (values: FinancingInput) => {
+    if (!values.branchId || !values.customerId) {
+      setFormGuardError("Seleccioná una sucursal y un cliente válidos antes de crear la financiación.");
+      return;
+    }
+    if (Number(values.downPayment) > Number(values.principal)) {
+      setFormGuardError("El anticipo no puede superar el monto principal.");
+      return;
+    }
+    setFormGuardError(null);
+    createMutation.mutate(values);
+  };
+
+  const outstandingForContract = (contractId: string): number => {
+    const contract = (contractsQuery.data ?? []).find((c) => c.id === contractId);
+    if (!contract?.financing_installments?.length) return Number.NaN;
+    return contract.financing_installments.reduce((acc, i) => {
+      const due =
+        Number(i.principal_due || 0) + Number(i.interest_due || 0) + Number(i.late_fee_due || 0);
+      const paid =
+        Number(i.paid_principal || 0) + Number(i.paid_interest || 0) + Number(i.paid_late_fee || 0);
+      return acc + (due - paid);
+    }, 0);
+  };
+
+  const submitPayment = (values: ReceivablePaymentInput) => {
+    const contract = (contractsQuery.data ?? []).find((c) => c.id === values.contractId);
+    if (!contract) {
+      setPaymentGuardError("Seleccioná un contrato de financiación válido.");
+      return;
+    }
+    if (TERMINAL_CONTRACT_STATUSES.includes(contract.status)) {
+      setPaymentGuardError(`El contrato está en estado "${contract.status}" y ya no admite cobros.`);
+      return;
+    }
+    if (values.branchId !== contract.branch_id) {
+      setPaymentGuardError("La sucursal del cobro debe coincidir con la sucursal del contrato.");
+      return;
+    }
+    const method = (paymentMethodsQuery.data ?? []).find((item) => item.id === values.paymentMethodId);
+    if (!method) {
+      setPaymentGuardError("Seleccioná un medio de pago habilitado para esta sucursal.");
+      return;
+    }
+    if (method.requires_cash_session) {
+      const session = compatibleCashSessions.find((item) => item.id === values.cashSessionId);
+      if (!session) {
+        setPaymentGuardError(
+          `Seleccioná una caja abierta en ${contract.currency_code} para registrar este cobro.`,
+        );
+        return;
+      }
+    } else if (values.cashSessionId) {
+      setPaymentGuardError("El medio de pago seleccionado no admite una sesión de caja.");
+      return;
+    }
+    const outstanding = outstandingForContract(values.contractId);
+    if (!Number.isNaN(outstanding) && Number(values.amount) > outstanding + 0.001) {
+      setPaymentGuardError(
+        `El importe supera el saldo pendiente (${formatCurrency(outstanding, contract.currency_code)}).`,
+      );
+      return;
+    }
+    setPaymentGuardError(null);
+    paymentMutation.mutate(values);
+  };
 
   const createMutation = useMutation({
     mutationFn: createFinancingContract,
@@ -80,11 +206,31 @@ export const AccountsWorkspace = () => {
   }
 
   const contracts = contractsQuery.data ?? [];
-  const totalPrincipal = contracts.reduce((acc, c) => acc + Number(c.principal_amount || 0), 0);
-  const totalFinanced = contracts.reduce((acc, c) => acc + Number(c.financed_amount || 0), 0);
+  const totalPrincipalLabel = summarizeByCurrency(
+    contracts,
+    (contract) => Number(contract.principal_amount || 0),
+  );
+  const totalFinancedLabel = summarizeByCurrency(
+    contracts,
+    (contract) => Number(contract.financed_amount || 0),
+  );
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const allInstallments = contracts.flatMap((c) => c.financing_installments ?? []);
+  const pendingInstallments = allInstallments.filter((i) => i.status !== "paid" && i.status !== "cancelled").length;
+  const overdueInstallments = allInstallments.filter(
+    (i) => i.status !== "paid" && i.status !== "cancelled" && i.due_date.slice(0, 10) < todayIso,
+  ).length;
+  const averageMonthlyRate =
+    contracts.length > 0
+      ? contracts.reduce((acc, c) => acc + Number(c.monthly_interest_rate || 0), 0) / contracts.length
+      : null;
+  const averageRateLabel =
+    averageMonthlyRate === null ? "—" : `${(averageMonthlyRate * 100).toFixed(1)}% mensual`;
 
   const openPaymentForContract = (contractId: string) => {
+    const contract = contracts.find((item) => item.id === contractId);
     paymentForm.setValue("contractId", contractId);
+    if (contract) paymentForm.setValue("branchId", contract.branch_id);
     paymentForm.setValue("operationKey", generateIdempotencyKey("pay"));
   };
 
@@ -118,24 +264,24 @@ export const AccountsWorkspace = () => {
           icon={CircleDollarSign}
           iconVariant="navy"
           label="Total Financiado"
-          value={formatCurrency(totalFinanced, "ARS")}
-          sublabel="Monto pactado en cuotas"
+          value={totalFinancedLabel}
+          sublabel="Monto pactado, separado por moneda"
         />
 
         <KpiCard
           icon={CreditCard}
           iconVariant="steel"
           label="Capital Prestado"
-          value={formatCurrency(totalPrincipal, "ARS")}
-          sublabel="Principal inicial"
+          value={totalPrincipalLabel}
+          sublabel="Principal inicial, separado por moneda"
         />
 
         <KpiCard
           icon={Clock}
           iconVariant="dark"
-          label="Tasa Promedio Mensual"
-          value="5.0% TNA/TEM"
-          sublabel="Interés pactado de financiación"
+          label="Tasa Promedio Pactada"
+          value={averageRateLabel}
+          sublabel={`${overdueInstallments} cuotas vencidas · ${pendingInstallments} pendientes`}
         />
       </div>
 
@@ -166,12 +312,12 @@ export const AccountsWorkspace = () => {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", margin: "12px 0" }}>
                 <div>
                   <span className="stat-label">Principal</span>
-                  <strong style={{ fontSize: "13px", display: "block" }}>{formatCurrency(Number(contract.principal_amount), "ARS")}</strong>
+                  <strong style={{ fontSize: "13px", display: "block" }}>{formatCurrency(Number(contract.principal_amount), contract.currency_code)}</strong>
                 </div>
                 <div>
                   <span className="stat-label">Financiado</span>
                   <strong style={{ fontSize: "13px", display: "block", color: "var(--brand-primary)" }}>
-                    {formatCurrency(Number(contract.financed_amount), "ARS")}
+                    {formatCurrency(Number(contract.financed_amount), contract.currency_code)}
                   </strong>
                 </div>
                 <div>
@@ -182,27 +328,32 @@ export const AccountsWorkspace = () => {
 
               {contract.financing_installments?.length ? (
                 <ol className="installments-mini-list" style={{ listStyle: "none", padding: 0, margin: "0 0 14px", display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {contract.financing_installments.map((installment) => (
-                    <li
-                      key={installment.id}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "6px 10px",
-                        background: "var(--surface-subtle)",
-                        borderRadius: "6px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      <span>
-                        <strong>Cuota {installment.installment_number}</strong> — Vence: {formatDate(installment.due_date)}
-                      </span>
-                      <span className={`type-badge ${installment.status === "paid" ? "green" : "orange"}`} style={{ fontSize: "10px" }}>
-                        {installment.status === "paid" ? "Pagada" : "Pendiente"}
-                      </span>
-                    </li>
-                  ))}
+                  {[...contract.financing_installments]
+                    .sort((a, b) => {
+                      const byDueDate = a.due_date.slice(0, 10).localeCompare(b.due_date.slice(0, 10));
+                      return byDueDate || a.installment_number - b.installment_number;
+                    })
+                    .map((installment) => (
+                      <li
+                        key={installment.id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "6px 10px",
+                          background: "var(--surface-subtle)",
+                          borderRadius: "6px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <span>
+                          <strong>Cuota {installment.installment_number}</strong> — Vence: {formatDate(installment.due_date)}
+                        </span>
+                        <span className={`type-badge ${installment.status === "paid" ? "green" : "orange"}`} style={{ fontSize: "10px" }}>
+                          {installment.status === "paid" ? "Pagada" : "Pendiente"}
+                        </span>
+                      </li>
+                    ))}
                 </ol>
               ) : null}
 
@@ -234,16 +385,28 @@ export const AccountsWorkspace = () => {
               </div>
             </div>
 
-            <form onSubmit={createForm.handleSubmit((values) => createMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <form onSubmit={createForm.handleSubmit(submitFinancing)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
-                  <label className="erp-form-label">Sucursal</label>
+                  <label className="erp-form-label">Sucursal *</label>
                   <select className="erp-form-select" {...createForm.register("branchId")}>
-                    {BRANCH_OPTIONS.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                    <option value="">Seleccioná una sucursal</option>
+                    {(branchesQuery.data ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
                     ))}
                   </select>
                 </div>
+                <div className="erp-form-group" style={{ marginBottom: "6px" }}>
+                  <label className="erp-form-label">Cliente *</label>
+                  <select className="erp-form-select" {...createForm.register("customerId")}>
+                    <option value="">Seleccioná un cliente</option>
+                    {(customersQuery.data ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>{c.code} - {c.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
                   <label className="erp-form-label">Moneda</label>
                   <input className="erp-form-input" placeholder="Moneda (ARS/USD)" {...createForm.register("currency")} />
@@ -281,6 +444,11 @@ export const AccountsWorkspace = () => {
                 <input className="erp-form-input" placeholder="Financiación de equipo en cuotas fijas" {...createForm.register("reason")} />
               </div>
 
+              {formGuardError ? (
+                <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> {formGuardError}
+                </div>
+              ) : null}
               {createMutation.error ? (
                 <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
                   <AlertCircle size={14} /> {createMutation.error.message}
@@ -304,14 +472,14 @@ export const AccountsWorkspace = () => {
               </div>
             </div>
 
-            <form onSubmit={paymentForm.handleSubmit((values) => paymentMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <form onSubmit={paymentForm.handleSubmit(submitPayment)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div className="erp-form-group">
                 <label className="erp-form-label">Contrato de Financiación *</label>
                 <select className="erp-form-select" {...paymentForm.register("contractId")}>
                   <option value="">Seleccioná un contrato</option>
                   {contracts.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.contract_reference || c.id.slice(0, 8)} — Financiado: {formatCurrency(Number(c.financed_amount), "ARS")}
+                      {c.contract_reference || c.id.slice(0, 8)} — Financiado: {formatCurrency(Number(c.financed_amount), c.currency_code)}
                     </option>
                   ))}
                 </select>
@@ -323,20 +491,76 @@ export const AccountsWorkspace = () => {
                   <input className="erp-form-input" type="number" placeholder="50000" {...paymentForm.register("amount")} />
                 </div>
                 <div className="erp-form-group">
-                  <label className="erp-form-label">Sucursal de Cobro</label>
+                  <label className="erp-form-label">Sucursal de Cobro *</label>
                   <select className="erp-form-select" {...paymentForm.register("branchId")}>
-                    {BRANCH_OPTIONS.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
+                    <option value="">Seleccioná una sucursal</option>
+                    {(branchesQuery.data ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
                     ))}
                   </select>
                 </div>
               </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div className="erp-form-group">
+                  <label className="erp-form-label">Medio de pago *</label>
+                  <select
+                    className="erp-form-select"
+                    {...paymentForm.register("paymentMethodId")}
+                    disabled={!paymentBranchId || paymentMethodsQuery.isLoading}
+                  >
+                    <option value="">Seleccioná un medio de pago</option>
+                    {(paymentMethodsQuery.data ?? []).map((method) => (
+                      <option key={method.id} value={method.id}>
+                        {method.name} ({method.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {selectedPaymentMethod?.requires_cash_session ? (
+                  <div className="erp-form-group">
+                    <label className="erp-form-label">Caja abierta *</label>
+                    <select
+                      className="erp-form-select"
+                      {...paymentForm.register("cashSessionId")}
+                      disabled={cashSessionsQuery.isLoading}
+                    >
+                      <option value="">Seleccioná una caja</option>
+                      {compatibleCashSessions.map((session) => (
+                        <option key={session.id} value={session.id}>
+                          {session.cash_register_code} - {session.cash_register_name} · {session.currencies.join("/")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="erp-form-group">
+                    <label className="erp-form-label">Referencia del pago</label>
+                    <input
+                      className="erp-form-input"
+                      placeholder="Transferencia, cupón o comprobante"
+                      {...paymentForm.register("paymentReference")}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {paymentMethodsQuery.error || cashSessionsQuery.error ? (
+                <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> No se pudieron cargar los medios de cobro habilitados.
+                </div>
+              ) : null}
 
               <div className="erp-form-group">
                 <label className="erp-form-label">Concepto / Comprobante de Cobro</label>
                 <input className="erp-form-input" placeholder="Cobro cuota 1 en efectivo" {...paymentForm.register("reason")} />
               </div>
 
+              {paymentGuardError ? (
+                <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <AlertCircle size={14} /> {paymentGuardError}
+                </div>
+              ) : null}
               {paymentMutation.error ? (
                 <div className="form-error-alert" role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
                   <AlertCircle size={14} /> {paymentMutation.error.message}

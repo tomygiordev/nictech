@@ -26,7 +26,7 @@ values (
   '88000000-0000-0000-0000-000000000099',
   '40000000-0000-0000-0000-000000000001', -- Owner role
   '88000000-0000-0000-0000-000000000099'
-);
+) on conflict do nothing;
 
 create temporary table e_test_ids (
   kind text primary key,
@@ -37,10 +37,10 @@ grant all on e_test_ids to authenticated, service_role;
 
 -- 2. Setup customer and products
 insert into erp.customers(id, organization_id, code, display_name, phone, email)
-values('c2000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','41999888','Pedro Canje','+5491177778888','pedro@test.com');
+values('c2000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','CLI-TRADEIN-0001','Pedro Canje','+5491177778888','pedro@test.com');
 
-insert into erp.products(id, organization_id, product_type_id, item_kind, unit_id, internal_code, internal_name, inventory_tracking)
-values('d3000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000001','product','50000000-0000-0000-0000-000000000001','IPHONE-12-USADO','iPhone 12 64GB Usado','imei');
+insert into erp.products(id, organization_id, product_type_id, item_kind, unit_id, internal_code, internal_name, inventory_tracking, base_sale_price, tax_rate_percent)
+values('d3000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000001','product','50000000-0000-0000-0000-000000000001','IPHONE-12-USADO','iPhone 12 64GB Usado','imei', 250000, 0);
 
 -- Authenticate as staff
 select set_config('request.jwt.claim.role','authenticated',true);
@@ -231,11 +231,15 @@ select is(
 select lives_ok(
   $$
   insert into e_test_ids(kind, id)
-  select 'sale', erp.create_sale(
+  select 'sale', (erp.create_sale_with_invoice(
     '20000000-0000-0000-0000-000000000001'::uuid,
     'c2000000-0000-0000-0000-000000000001'::uuid,
     'ARS',
-    (select id from erp.exchange_rate_snapshots order by captured_at desc limit 1),
+    (select id from erp.exchange_rate_snapshots
+      where organization_id = '10000000-0000-0000-0000-000000000001'::uuid
+        and quote_currency = 'ARS'
+        and rate_to_base = 1
+      order by captured_at desc limit 1),
     'sale-tradein-01',
     'Venta con parte de pago canje',
     jsonb_build_array(jsonb_build_object(
@@ -243,11 +247,14 @@ select lives_ok(
       'product_id', 'd3000000-0000-0000-0000-000000000001'::uuid,
       'from_location_id', '30000000-0000-0000-0000-000000000001'::uuid,
       'quantity', 1,
-      'unit_price', 250000,
+      'expected_unit_price', (erp.resolve_catalog_effective_price('d3000000-0000-0000-0000-000000000001'::uuid)->>'final_price_ars')::numeric,
+      'expected_tax_rate', (erp.resolve_catalog_effective_price('d3000000-0000-0000-0000-000000000001'::uuid)->>'tax_rate_percent')::numeric,
+      'gross_discount_amount', 0,
       'inventory_unit_id', (select inventory_unit_id from erp.trade_ins where id = (select id from e_test_ids where kind = 'trade_in'))
     )),
+    'non_fiscal',
     '[]'::jsonb
-  );
+  )->>'sale_id')::uuid;
   $$,
   'Sale created for trade-in payment'
 );

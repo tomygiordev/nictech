@@ -77,3 +77,56 @@ export type JournalLineInput = {
   currency_code: string;
   exchange_rate: string;
 };
+
+// Filas de las vistas de lectura de Fase G
+// (supabase/migrations/202609070013_erp_reporting_views.sql).
+// Los numeric de Postgres llegan como string|number según el driver:
+// normalizar con Number() antes de operar.
+
+export type IvaVentasRow = {
+  organization_id: string;
+  branch_id: string | null;
+  sale_id: string;
+  sale_date: string | null;
+  alicuota: number | string | null;
+  base_imponible: number | string | null;
+  iva: number | string | null;
+};
+
+export type IvaComprasRow = {
+  organization_id: string;
+  branch_id: string | null;
+  purchase_order_id: string;
+  purchase_date: string | null;
+  // Siempre NULL: la línea de compra no registra alícuota (solo tax_amount).
+  alicuota: number | string | null;
+  base_imponible: number | string | null;
+  iva: number | string | null;
+};
+
+export type TrialBalanceRow = {
+  organization_id: string;
+  period_id: string;
+  period_start: string;
+  period_end: string;
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  total_debit: number | string | null;
+  total_credit: number | string | null;
+  balance: number | string | null;
+};
+
+export type ProfitabilityByLineRow = {
+  organization_id: string;
+  product_id: string;
+  internal_code: string | null;
+  internal_name: string | null;
+  quantity_sold: number | string | null;
+  gross_revenue: number | string | null;
+  // NULL sin recepciones de compra (sin costo promedio real).
+  avg_unit_landed_cost: number | string | null;
+  estimated_cost: number | string | null;
+  // NULL sin recepciones de compra.
+  margin: number | string | null;
+};

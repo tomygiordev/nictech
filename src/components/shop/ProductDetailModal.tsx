@@ -2,42 +2,53 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ShoppingCart, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ShoppingCart, ChevronLeft, ChevronRight, X, MessageCircle, ShieldCheck, Truck } from 'lucide-react';
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from '@/components/ui/carousel';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
+import { buildProductGallery } from '@/lib/product-gallery';
+import { buildProductPath } from '@/lib/product-url';
+import { storefrontSupabase } from '@/integrations/supabase/types.extensions';
 import { getVariantColor, isLightColor } from '@/lib/colors';
-import { calculateOriginalUsdPrice, hasActiveSale } from '@/lib/pricing';
+import { calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
+import { resolveDisplayPrice, type StorefrontPromotionPrice } from '@/lib/promo-pricing';
+import { formatInstallmentsLabel, formatPromoEndLabel } from '@/lib/promo-display';
+import { STOREFRONT_INSTALLMENTS } from '@/config/storefront-offers';
 
 interface Product {
     id: string;
     name: string;
     price: number;
+    legacy_price?: number;
     price_usd?: number | null;
     original_price?: number | null;
+    legacy_original_price?: number | null;
     sale_expires_at?: string | null;
+    legacy_sale_expires_at?: string | null;
     stock: number;
     image_url: string | null;
     additional_images: string[] | null;
     description: string | null;
     category?: { name: string };
     tags?: string[] | null;
+    condition?: string | null;
+    hasVariants?: boolean;
 }
 
 interface ProductDetailModalProps {
     product: Product | null;
     isOpen: boolean;
     onClose: () => void;
+    promotionIndex?: ReadonlyMap<string, StorefrontPromotionPrice> | null;
 }
 
 
-export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailModalProps) => {
+export const ProductDetailModal = ({ product, isOpen, onClose, promotionIndex }: ProductDetailModalProps) => {
     const { addToCart } = useCart();
 
-    const [variants, setVariants] = useState<{ id: string, color: string, stock: number, image_url: string | null }[]>([]);
-    const [selectedVariant, setSelectedVariant] = useState<{ id: string, color: string, stock: number, image_url: string | null } | null>(null);
+    const [variants, setVariants] = useState<{ id: string, color: string, stock: number, image_url: string | null, price?: number | null }[]>([]);
+    const [selectedVariant, setSelectedVariant] = useState<{ id: string, color: string, stock: number, image_url: string | null, price?: number | null } | null>(null);
 
     const [images, setImages] = useState<string[]>([]);
 
@@ -49,17 +60,22 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         api?.scrollTo(0);
         setCurrentImageIndex(0);
 
-        const initialImages = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
-        setImages(initialImages);
+        setImages(buildProductGallery({
+            productImage: product.image_url,
+            additionalImages: product.additional_images,
+            variants,
+            selectedVariantImage: selectedVariant?.image_url,
+        }));
 
         const fetchVariants = async () => {
-            const { data } = await supabase
+            const { data } = await storefrontSupabase
                 .from('product_variants')
                 .select('*')
+                .eq('is_active', true)
                 .eq('product_id', product.id);
 
             if (data && data.length > 0) {
-                const typedData = data as unknown as { id: string, color: string, stock: number, image_url: string | null }[];
+                const typedData = data as unknown as { id: string, color: string, stock: number, image_url: string | null, price?: number | null }[];
                 setVariants(typedData);
                 const firstAvailable = typedData.find(v => v.stock > 0);
                 if (firstAvailable) setSelectedVariant(firstAvailable);
@@ -71,21 +87,17 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
 
     useEffect(() => {
         if (!product) return;
-        const initialImages = [product.image_url, ...(product.additional_images || [])].filter(Boolean) as string[];
-
-        if (selectedVariant && selectedVariant.image_url) {
-            if (!initialImages.includes(selectedVariant.image_url)) {
-                setImages([selectedVariant.image_url, ...initialImages]);
-            } else {
-                const uniqueImages = Array.from(new Set([selectedVariant.image_url, ...initialImages]));
-                setImages(uniqueImages);
-            }
+        setImages(buildProductGallery({
+            productImage: product.image_url,
+            additionalImages: product.additional_images,
+            variants,
+            selectedVariantImage: selectedVariant?.image_url,
+        }));
+        if (selectedVariant) {
             setCurrentImageIndex(0);
             api?.scrollTo(0);
-        } else {
-            setImages(initialImages);
         }
-    }, [selectedVariant, product]);
+    }, [selectedVariant, product, variants]);
 
 
     const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -156,8 +168,34 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         return () => document.removeEventListener('pointerdown', stop, true);
     }, [lightboxOpen]);
 
+    const baseLegacyPrice = product
+        ? (promotionIndex !== undefined ? (product.legacy_price ?? product.price) : product.price)
+        : 0;
+    const baseLegacyOriginalPrice = product
+        ? (promotionIndex !== undefined
+            ? (product.legacy_original_price !== undefined ? product.legacy_original_price : product.original_price)
+            : product.original_price)
+        : null;
+    const baseLegacySaleExpiresAt = product
+        ? (promotionIndex !== undefined
+            ? (product.legacy_sale_expires_at !== undefined ? product.legacy_sale_expires_at : product.sale_expires_at)
+            : product.sale_expires_at)
+        : null;
+    const resolvedPrice = product
+        ? resolveDisplayPrice(
+            {
+                productId: product.id,
+                variantId: selectedVariant?.id ?? null,
+                legacyPrice: selectedVariant?.price ?? baseLegacyPrice,
+                legacyOriginalPrice: baseLegacyOriginalPrice,
+                legacySaleExpiresAt: baseLegacySaleExpiresAt,
+            },
+            promotionIndex,
+        )
+        : null;
+
     const handleAddToCart = () => {
-        if (variants.length > 0 && !selectedVariant) {
+        if (product.hasVariants && !selectedVariant) {
             toast.error('Por favor elige un color antes de agregar al carrito', { duration: 3000 });
             return;
         }
@@ -168,9 +206,14 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         addToCart({
             id: product.id,
             name: productName,
-            price: product.price,
+            price: resolvedPrice?.price ?? product.price,
             maxStock: selectedVariant ? selectedVariant.stock : product.stock,
             image_url: mappedImageUrl,
+            variant: selectedVariant ? {
+                id: selectedVariant.id,
+                color: selectedVariant.color,
+                image_url: selectedVariant.image_url ?? undefined,
+            } : undefined,
         });
 
         toast.success(`${productName} se agregó a tu carrito`, { duration: 3500 });
@@ -178,22 +221,47 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
         onClose();
     };
 
-    if (!product) return null;
+    if (!product || !resolvedPrice) return null;
 
-    const originalUsdPrice = hasActiveSale(product.sale_expires_at)
+    const effectivePrice = resolvedPrice.price;
+    const effectiveOriginalPrice = resolvedPrice.originalPrice;
+    const showDiscount = hasValidDiscount({
+        price: effectivePrice,
+        originalPrice: effectiveOriginalPrice,
+        saleExpiresAt: resolvedPrice.saleExpiresAt,
+    });
+    const promoEndLabel = showDiscount ? formatPromoEndLabel(resolvedPrice.saleExpiresAt) : null;
+    const installmentsLabel = formatInstallmentsLabel(effectivePrice, STOREFRONT_INSTALLMENTS);
+    const originalUsdPrice = showDiscount
         ? calculateOriginalUsdPrice({
-            price: product.price,
+            price: effectivePrice,
             priceUsd: product.price_usd,
-            originalPrice: product.original_price,
+            originalPrice: effectiveOriginalPrice,
         })
         : null;
+    const visibleTags = (product.tags ?? []).filter(
+        (tag) => showDiscount || tag.trim().toUpperCase() !== 'CYBERMONDAY'
+    );
+    const isUsedProduct = Boolean(
+        product.condition?.toLowerCase().includes('usado') ||
+        product.condition?.toLowerCase().includes('reacondicionado') ||
+        /\(usado\)/i.test(product.name) ||
+        /reacondicionado|usado seleccionado/i.test(product.description ?? '')
+    );
+    const productNameForWhatsapp = selectedVariant
+        ? `${product.name} (${selectedVariant.color})`
+        : product.name;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://nictech.com.ar';
+    const productUrl = `${origin}${buildProductPath(product)}`;
+    const whatsappMessage = `Hola Nictech! Quiero consultar por ${productNameForWhatsapp} ($ ${effectivePrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}). ¿Está disponible? ${productUrl}`;
+    const whatsappUrl = `https://wa.me/5493446353769?text=${encodeURIComponent(whatsappMessage)}`;
 
     const renderAddToCartFooter = (isMobile: boolean) => (
         <div className={cn(
-            "pt-4 md:pt-6 border-t border-border/50 bg-background shrink-0 shadow-[0_-10px_20px_-15px_rgba(0,0,0,0.1)]",
-            isMobile ? "md:hidden p-4 pb-6 w-full z-20 sticky bottom-0" : "hidden md:block p-6 md:p-8"
+            "pt-4 md:pt-5 border-t border-border/50 bg-background shrink-0 shadow-[0_-10px_20px_-15px_rgba(0,0,0,0.1)]",
+            isMobile ? "md:hidden p-4 pb-6 w-full z-20 sticky bottom-0" : "hidden md:block p-6"
         )}>
-            <div className="flex items-center justify-between text-sm mb-4">
+            <div className="flex items-center justify-between text-sm mb-3">
                 <span className="text-muted-foreground">Disponibilidad:</span>
                 {variants.length > 0 ? (
                     <span className={cn(
@@ -217,9 +285,9 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
             </div>
 
             <Button
-                className="w-full h-12 text-lg rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90"
+                className="w-full h-11 md:h-12 text-base md:text-lg rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90"
                 size="lg"
-                disabled={variants.length > 0 ? (!selectedVariant || selectedVariant.stock === 0) : product.stock === 0}
+                disabled={product.hasVariants ? (!selectedVariant || selectedVariant.stock === 0) : product.stock === 0}
                 onClick={handleAddToCart}
             >
                 <ShoppingCart className="h-5 w-5 mr-2" />
@@ -227,6 +295,17 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                     ? (!selectedVariant ? 'Seleccionar Color' : selectedVariant.stock > 0 ? 'Añadir a carrito' : 'Sin Stock')
                     : (product.stock > 0 ? 'Añadir a carrito' : 'Sin Stock')
                 }
+            </Button>
+
+            <Button
+                variant="outline"
+                asChild
+                className="w-full h-11 rounded-xl gap-2 mt-2.5 text-sm font-medium"
+            >
+                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+                    <MessageCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    Consultar por este producto en WhatsApp
+                </a>
             </Button>
         </div>
     );
@@ -305,9 +384,9 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                 </div>
 
                                 <div className="mb-6">
-                                    {product.price_usd != null ? (
+                                    {product.price_usd != null && selectedVariant?.price == null ? (
                                         <>
-                                            {originalUsdPrice != null && (
+                                            {showDiscount && originalUsdPrice != null && (
                                                 <p className="text-base text-muted-foreground line-through">
                                                     USD {originalUsdPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                                                 </p>
@@ -319,26 +398,49 @@ export const ProductDetailModal = ({ product, isOpen, onClose }: ProductDetailMo
                                         </>
                                     ) : (
                                         <>
-                                            {product.original_price != null &&
-                                             hasActiveSale(product.sale_expires_at) && (
+                                            {showDiscount && effectiveOriginalPrice != null && (
                                                 <p className="text-base text-muted-foreground line-through">
-                                                    $ {product.original_price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+                                                    $ {effectiveOriginalPrice.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                                                 </p>
                                             )}
                                             <span className="text-2xl md:text-3xl font-bold text-primary">
-                                                $ {product.price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+                                                $ {effectivePrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
                                             </span>
                                         </>
                                     )}
+                                    <p className="inline-flex items-center mt-2 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 text-xs font-medium">
+                                        10% OFF abonando por transferencia bancaria
+                                    </p>
+                                    {promoEndLabel && <p className="text-[10px] sm:text-xs text-muted-foreground">{promoEndLabel}</p>}
+                                    {installmentsLabel && <p className="text-[10px] sm:text-xs text-muted-foreground">{installmentsLabel}</p>}
                                 </div>
 
-                                <div className="prose prose-sm text-muted-foreground mb-8">
+                                <div className="prose prose-sm text-muted-foreground mb-6">
                                     <p className="whitespace-pre-line">{product.description || 'Sin descripción disponible.'}</p>
                                 </div>
 
-                                {product.tags && product.tags.length > 0 && (
+                                <div className="rounded-xl border border-border/70 bg-muted/40 p-3.5 space-y-2.5 mb-6 text-xs text-muted-foreground">
+                                    <div className="flex items-start gap-2.5">
+                                        <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                                        <p>
+                                            <strong className="text-foreground font-semibold">Garantía escrita: </strong>
+                                            {isUsedProduct
+                                                ? 'Usado seleccionado: revisado en laboratorio técnico con 90 días (3 meses) de garantía escrita NicTech.'
+                                                : 'Garantía oficial escrita y respaldo técnico en nuestras sucursales.'}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-start gap-2.5">
+                                        <Truck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                                        <p>
+                                            <strong className="text-foreground font-semibold">Envíos y retiro: </strong>
+                                            Retiro gratis en sucursales Urdinarrain (Héroes de Malvinas 08) y Gilbert (C.5 y C.19) · Envíos a todo el país (despacho en 24 a 48 hs hábiles).
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {visibleTags.length > 0 && (
                                     <div className="flex flex-wrap gap-2 mb-6">
-                                        {product.tags.map((tag, index) => (
+                                        {visibleTags.map((tag, index) => (
                                             <span key={index} className="px-2 py-1 rounded-md bg-secondary text-secondary-foreground text-xs font-medium">
                                                 {tag}
                                             </span>

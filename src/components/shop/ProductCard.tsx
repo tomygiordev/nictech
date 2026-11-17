@@ -3,7 +3,10 @@ import { ShoppingCart, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
-import { calculateOriginalUsdPrice } from '@/lib/pricing';
+import { calculateDiscountPercentage, calculateOriginalUsdPrice, hasValidDiscount } from '@/lib/pricing';
+import { resolveDisplayPrice, type StorefrontPromotionPrice } from '@/lib/promo-pricing';
+import { formatInstallmentsLabel, formatPromoEndLabel } from '@/lib/promo-display';
+import { STOREFRONT_INSTALLMENTS } from '@/config/storefront-offers';
 
 interface ProductCardProps {
   id: string;
@@ -11,11 +14,17 @@ interface ProductCardProps {
   price: number;
   price_usd?: number | null;
   original_price?: number | null;
+  sale_expires_at?: string | null;
+  promotionIndex?: ReadonlyMap<string, StorefrontPromotionPrice> | null;
   stock: number;
   image_url?: string;
   description?: string;
   category: string;
   tags?: string[] | null;
+  condition?: string | null;
+  hasVariants?: boolean;
+  variantPrices?: number[];
+  onSelectVariant?: () => void;
 }
 
 const getTagStyle = (index: number) => {
@@ -34,25 +43,66 @@ export const ProductCard = React.memo(({
   price,
   price_usd,
   original_price,
+  sale_expires_at,
+  promotionIndex,
   stock,
   image_url,
   description,
   category,
   tags,
+  condition,
+  hasVariants = false,
+  variantPrices = [],
+  onSelectVariant,
 }: ProductCardProps) => {
   const { addToCart } = useCart();
-  const originalUsdPrice = calculateOriginalUsdPrice({
-    price,
-    priceUsd: price_usd,
-    originalPrice: original_price,
+  const resolvedPrice = resolveDisplayPrice(
+    {
+      productId: id,
+      legacyPrice: price,
+      legacyOriginalPrice: original_price,
+      legacySaleExpiresAt: sale_expires_at,
+    },
+    promotionIndex,
+  );
+  const displayPrice = variantPrices.length ? Math.min(...variantPrices) : resolvedPrice.price;
+  const hasPriceRange = new Set(variantPrices).size > 1;
+  const showDiscount = hasValidDiscount({
+    price: displayPrice,
+    originalPrice: resolvedPrice.originalPrice,
+    saleExpiresAt: resolvedPrice.saleExpiresAt,
   });
+  const promoEndLabel = showDiscount ? formatPromoEndLabel(resolvedPrice.saleExpiresAt) : null;
+  const installmentsLabel = formatInstallmentsLabel(displayPrice, STOREFRONT_INSTALLMENTS, { fromPrefix: hasPriceRange });
+  const discountPercentage = showDiscount
+    ? calculateDiscountPercentage({ price: displayPrice, originalPrice: resolvedPrice.originalPrice })
+    : null;
+  const originalUsdPrice = showDiscount
+    ? calculateOriginalUsdPrice({
+        price: resolvedPrice.price,
+        priceUsd: price_usd,
+        originalPrice: resolvedPrice.originalPrice,
+      })
+    : null;
+  const visibleTags = (tags ?? []).filter(
+    (tag) => showDiscount || tag.trim().toUpperCase() !== 'CYBERMONDAY'
+  );
+  const isUsedProduct = Boolean(
+    condition?.toLowerCase().includes('usado') ||
+    condition?.toLowerCase().includes('reacondicionado') ||
+    /\(usado\)/i.test(name)
+  );
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (hasVariants) {
+      onSelectVariant?.();
+      return;
+    }
     addToCart({
       id,
       name,
-      price,
+      price: resolvedPrice.price,
       maxStock: stock,
       image_url: image_url || null,
     });
@@ -60,7 +110,7 @@ export const ProductCard = React.memo(({
   };
 
   return (
-    <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover h-full flex flex-col transition-all duration-300 ease-out-default select-none">
+    <div className="group bg-card rounded-2xl border border-border overflow-hidden card-hover h-full flex flex-col transition-all duration-300 ease-out-default">
       {/* Image */}
       <div className="relative aspect-square bg-white overflow-hidden p-1.5 sm:p-2">
         {image_url ? (
@@ -81,21 +131,15 @@ export const ProductCard = React.memo(({
           <span className="px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-background/90 backdrop-blur-sm text-[10px] sm:text-xs font-medium text-foreground shadow-sm">
             {category}
           </span>
-          {original_price != null && (
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[9px] sm:text-[10px] font-bold w-fit shadow-sm">
-              PROMO
+          {showDiscount && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-700 text-white text-[9px] sm:text-[10px] font-bold w-fit shadow-sm">
+              <span>PROMO</span>
+              {discountPercentage ? <span>-{discountPercentage}%</span> : null}
             </span>
           )}
         </div>
 
-        {/* Stock indicator */}
-        {stock <= 5 && stock > 0 && (
-          <div className="absolute top-2 right-2 sm:top-3 sm:right-3 max-w-[55%] z-10">
-            <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-red-600 text-white animate-pulse shadow-sm text-[9px] sm:text-[10px] font-bold leading-tight block text-center">
-              ¡Últimos!
-            </span>
-          </div>
-        )}
+        {/* Out of stock overlay */}
         {stock === 0 && (
           <div className="absolute inset-0 bg-foreground/45 flex items-center justify-center z-10">
             <span className="px-2.5 py-1 sm:px-4 sm:py-2 rounded-full bg-background text-foreground text-xs sm:font-medium shadow-sm">
@@ -110,6 +154,11 @@ export const ProductCard = React.memo(({
         <h3 className="font-semibold text-foreground text-sm sm:text-lg mb-1 line-clamp-2 group-hover:text-primary transition-colors duration-200">
           {name}
         </h3>
+        {isUsedProduct && (
+          <span className="inline-flex items-center w-fit px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25 text-[10px] sm:text-xs font-medium mb-1.5">
+            Usado seleccionado · Garantía 90 días
+          </span>
+        )}
         <div className="mb-3 hidden h-10 sm:block">
           {description ? (
             <p className="h-full overflow-hidden text-sm leading-5 text-muted-foreground line-clamp-2">
@@ -119,9 +168,9 @@ export const ProductCard = React.memo(({
         </div>
 
         {/* Tags */}
-        {tags && tags.length > 0 && (
+        {visibleTags.length > 0 && (
           <div className="flex-wrap gap-1.5 mb-3.5 hidden sm:flex">
-            {tags.slice(0, 3).map((tag, index) => {
+            {visibleTags.slice(0, 3).map((tag, index) => {
               const tagStyle = getTagStyle(index);
               return (
                 <span key={index} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider border ${tagStyle}`}>
@@ -130,22 +179,22 @@ export const ProductCard = React.memo(({
                 </span>
               );
             })}
-            {tags.length > 3 && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground border border-border/40">+{tags.length - 3}</span>
+            {visibleTags.length > 3 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground border border-border/40">+{visibleTags.length - 3}</span>
             )}
           </div>
         )}
 
         <div className="mt-auto flex items-center justify-between pt-2.5 sm:pt-4 border-t border-border/50">
           <div className="min-w-0 flex-1">
-            {price_usd != null ? (
+            {price_usd != null && variantPrices.length === 0 ? (
               <>
-                {originalUsdPrice != null && (
-                  <span className="text-[11px] sm:text-sm text-muted-foreground line-through block truncate">
+                {showDiscount && originalUsdPrice != null && (
+                  <span className="text-[11px] sm:text-sm text-muted-foreground line-through block whitespace-nowrap">
                     USD {originalUsdPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                   </span>
                 )}
-                <span className="text-sm sm:text-2xl font-bold text-green-700 block truncate">
+                <span className="text-sm sm:text-lg xl:text-xl font-bold text-green-700 block whitespace-nowrap tracking-tight">
                   USD {price_usd.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
                 <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 hidden sm:block">
@@ -154,16 +203,21 @@ export const ProductCard = React.memo(({
               </>
             ) : (
               <>
-                {original_price != null && (
-                  <span className="text-[11px] sm:text-sm text-muted-foreground line-through block truncate">
-                    $ {original_price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+                {showDiscount && resolvedPrice.originalPrice != null && (
+                  <span className="text-[11px] sm:text-sm text-muted-foreground line-through block whitespace-nowrap">
+                    $ {resolvedPrice.originalPrice.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
                   </span>
                 )}
-                <span className="text-sm sm:text-2xl font-bold text-primary block truncate">
-                  $ {price.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+                <span className="text-sm sm:text-lg xl:text-xl font-bold text-primary block whitespace-nowrap tracking-tight">
+                  {hasPriceRange ? 'Desde ' : ''}$ {displayPrice.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
                 </span>
+                <p className="text-[10px] sm:text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-0.5">
+                  10% OFF por transferencia
+                </p>
               </>
             )}
+            {promoEndLabel && <p className="text-[10px] sm:text-xs text-muted-foreground">{promoEndLabel}</p>}
+            {installmentsLabel && <p className="text-[10px] sm:text-xs text-muted-foreground">{installmentsLabel}</p>}
             <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
               {stock > 0 ? `${stock} disp.` : 'Sin stock'}
             </p>
@@ -172,7 +226,7 @@ export const ProductCard = React.memo(({
           <Button
             variant="default"
             size="icon"
-            className="rounded-full h-9 w-9 sm:h-11 sm:w-11 shrink-0 ml-1.5 sm:ml-4 hover:bg-primary/90 shadow-sm transition-all duration-100 ease-out-default active:scale-[0.93] select-none"
+            className="rounded-full h-9 w-9 sm:h-11 sm:w-11 shrink-0 ml-1.5 sm:ml-2 hover:bg-primary/90 shadow-sm transition-all duration-100 ease-out-default active:scale-[0.93] select-none"
             disabled={stock === 0}
             onClick={handleAddToCart}
             title="Añadir a carrito"

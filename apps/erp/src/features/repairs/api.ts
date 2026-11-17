@@ -1,4 +1,7 @@
 import { supabase } from "../../lib/supabase";
+import type { ErpDatabase } from "../../lib/supabase";
+import { isManualRepairTransition } from "./transitions";
+import type { Database, Json } from "../../types/supabase";
 
 const client = () => {
   if (!supabase) throw new Error("El ERP no está configurado para conectarse a Supabase.");
@@ -11,6 +14,8 @@ export interface RepairOrderOverview {
   branch_id: string;
   order_number: number;
   order_code: string;
+  public_tracking_code: string;
+  status_public_stage: string | null;
   opened_at: string;
   customer_id: string;
   customer_code: string;
@@ -52,6 +57,11 @@ export interface RepairOrderOverview {
   active_parts_count: number;
   qc_passed: boolean;
 }
+
+export const getRepairStatusLabel = (repair: {
+  delivery_id?: string | null;
+  status_name?: string | null;
+}): string => repair.delivery_id ? "Entregado" : repair.status_name || "Sin estado";
 
 export interface RepairStateEvent {
   id: string;
@@ -100,6 +110,61 @@ export interface TestTemplateVersion {
   definition: Array<{ key: string; label: string; required?: boolean }>;
 }
 
+const parseTestTemplateDefinition = (value: Json): TestTemplateVersion["definition"] => {
+  if (!Array.isArray(value)) {
+    throw new Error("La definición de la plantilla de control debe ser una lista.");
+  }
+
+  return value.map((item, index) => {
+    if (!isJsonObject(item)) {
+      throw new Error(`El ítem ${index + 1} de la plantilla de control no es un objeto válido.`);
+    }
+
+    const { key, label, required } = item;
+    if (typeof key !== "string" || key.trim() === "" || typeof label !== "string" || label.trim() === "") {
+      throw new Error(`El ítem ${index + 1} de la plantilla de control no tiene key y label válidos.`);
+    }
+    if (required !== undefined && typeof required !== "boolean") {
+      throw new Error(`El campo required del ítem ${index + 1} debe ser booleano.`);
+    }
+
+    return required === undefined
+      ? { key: key.trim(), label: label.trim() }
+      : { key: key.trim(), label: label.trim(), required };
+  });
+};
+
+const parseIntakeRepairResult = (value: Json): {
+  repair_order_id: string;
+  order_code: string;
+  tracking_token: string;
+  equipment_id: string;
+  public_tracking_code: string;
+} => {
+  if (!isJsonObject(value)) {
+    throw new Error("La recepción de la reparación devolvió una respuesta inválida.");
+  }
+
+  const { repair_order_id: repairOrderId, order_code: orderCode, tracking_token: trackingToken, equipment_id: equipmentId, public_tracking_code: publicCode } = value;
+  if (
+    typeof repairOrderId !== "string" ||
+    typeof orderCode !== "string" ||
+    typeof trackingToken !== "string" ||
+    typeof equipmentId !== "string" ||
+    typeof publicCode !== "string"
+  ) {
+    throw new Error("La recepción de la reparación devolvió identificadores incompletos.");
+  }
+
+  return {
+    repair_order_id: repairOrderId,
+    order_code: orderCode,
+    tracking_token: trackingToken,
+    equipment_id: equipmentId,
+    public_tracking_code: publicCode,
+  };
+};
+
 export interface TestRunRecord {
   id: string;
   repair_order_id: string;
@@ -109,7 +174,11 @@ export interface TestRunRecord {
   run_sequence: number;
   run_notes: string | null;
   completed_at: string;
-  results: Array<{ item_key: string; result: "pass" | "fail"; notes?: string }>;
+  results: Array<{
+    item_key: string;
+    result: Database["erp"]["Enums"]["repair_test_result"];
+    notes: string | null;
+  }>;
 }
 
 export interface WarrantyRecord {
@@ -145,6 +214,141 @@ export interface ConsumedPartRecord {
   occurred_at: string;
 }
 
+type RepairOrderOverviewRow = ErpDatabase["erp"]["Views"]["repair_orders_overview"]["Row"];
+
+type JsonObject = { [key: string]: Json | undefined };
+
+const isJsonObject = (value: Json): value is JsonObject =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const requireViewValue = <T>(value: T | null, field: string): T => {
+  if (value === null) {
+    throw new Error(`La vista de reparaciones devolvió ${field} nulo.`);
+  }
+  return value;
+};
+
+const parseStringArray = (value: Json | null, field: string): string[] => {
+  if (value === null) return [];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`La vista de reparaciones devolvió ${field} con un formato inválido.`);
+  }
+  return value;
+};
+
+const parseLatestQuote = (value: Json | null): RepairOrderOverview["latest_quote"] => {
+  if (value === null) return null;
+  if (!isJsonObject(value)) {
+    throw new Error("La vista de reparaciones devolvió latest_quote con un formato inválido.");
+  }
+
+  const { id, version, total_amount: totalAmount, currency_code: currencyCode, issued_at: issuedAt, expires_at: expiresAt, decision } = value;
+  const nullableDateIsValid = (date: Json | undefined): date is string | null => date === null || typeof date === "string";
+  const decisionIsValid = decision === null || decision === "approved" || decision === "rejected";
+
+  if (
+    typeof id !== "string" ||
+    typeof version !== "number" ||
+    typeof totalAmount !== "number" ||
+    typeof currencyCode !== "string" ||
+    !nullableDateIsValid(issuedAt) ||
+    !nullableDateIsValid(expiresAt) ||
+    !decisionIsValid
+  ) {
+    throw new Error("La vista de reparaciones devolvió latest_quote incompleto o inválido.");
+  }
+
+  return {
+    id,
+    version,
+    total_amount: totalAmount,
+    currency_code: currencyCode,
+    issued_at: issuedAt,
+    expires_at: expiresAt,
+    decision,
+  };
+};
+
+const mapRepairOrderOverview = (row: RepairOrderOverviewRow): RepairOrderOverview => ({
+  id: requireViewValue(row.id, "id"),
+  organization_id: requireViewValue(row.organization_id, "organization_id"),
+  branch_id: requireViewValue(row.branch_id, "branch_id"),
+  order_number: requireViewValue(row.order_number, "order_number"),
+  order_code: requireViewValue(row.order_code, "order_code"),
+  public_tracking_code: requireViewValue(row.public_tracking_code, "public_tracking_code"),
+  status_public_stage: row.status_public_stage,
+  opened_at: requireViewValue(row.opened_at, "opened_at"),
+  customer_id: requireViewValue(row.customer_id, "customer_id"),
+  customer_code: requireViewValue(row.customer_code, "customer_code"),
+  customer_name: requireViewValue(row.customer_name, "customer_name"),
+  customer_phone: row.customer_phone,
+  customer_email: row.customer_email,
+  equipment_id: requireViewValue(row.equipment_id, "equipment_id"),
+  equipment_type: requireViewValue(row.equipment_type, "equipment_type"),
+  brand_snapshot: requireViewValue(row.brand_snapshot, "brand_snapshot"),
+  model_snapshot: requireViewValue(row.model_snapshot, "model_snapshot"),
+  reported_fault: requireViewValue(row.reported_fault, "reported_fault"),
+  intake_condition: requireViewValue(row.intake_condition, "intake_condition"),
+  intake_damage: row.intake_damage,
+  intake_notes: row.intake_notes,
+  intake_accessories: parseStringArray(row.intake_accessories, "intake_accessories"),
+  status_id: requireViewValue(row.status_id, "status_id"),
+  status_code: requireViewValue(row.status_code, "status_code"),
+  status_name: requireViewValue(row.status_name, "status_name"),
+  status_is_initial: requireViewValue(row.status_is_initial, "status_is_initial"),
+  status_is_terminal: requireViewValue(row.status_is_terminal, "status_is_terminal"),
+  status_requires_final_tests: requireViewValue(row.status_requires_final_tests, "status_requires_final_tests"),
+  status_updated_at: requireViewValue(row.status_updated_at, "status_updated_at"),
+  status_public_message: requireViewValue(row.status_public_message, "status_public_message"),
+  delivery_id: row.delivery_id,
+  recipient_name: row.recipient_name,
+  recipient_document_suffix: row.recipient_document_suffix,
+  delivered_at: row.delivered_at,
+  warranty_id: row.warranty_id,
+  warranty_ends_at: row.warranty_ends_at,
+  latest_quote: parseLatestQuote(row.latest_quote),
+  active_parts_count: row.active_parts_count ?? 0,
+  qc_passed: row.qc_passed ?? false,
+});
+
+export interface RepairLaborRecord {
+  id: string;
+  repair_order_id: string;
+  description: string;
+  quantity_hours: number;
+  unit_cost_base: number;
+  total_cost_base: number | null;
+  performed_at: string;
+}
+
+export interface RepairPaymentRecord {
+  id: string;
+  repair_order_id: string;
+  payment_method_id: string;
+  cash_session_id: string | null;
+  currency_code: string;
+  amount: number;
+  amount_base: number;
+  reversal_of_payment_id: string | null;
+  reason: string;
+  occurred_at: string;
+}
+
+export interface RepairPaymentMethod {
+  id: string;
+  code: string;
+  name: string;
+  requires_cash_session: boolean;
+}
+
+export interface RepairExchangeSnapshot {
+  id: string;
+  quote_currency: string;
+  rate_to_base: number;
+  source: string;
+  quoted_at: string;
+}
+
 // 1. Overview and orders listing
 export const listRepairOrders = async (): Promise<RepairOrderOverview[]> => {
   const { data, error } = await client()
@@ -153,7 +357,7 @@ export const listRepairOrders = async (): Promise<RepairOrderOverview[]> => {
     .order("opened_at", { ascending: false });
 
   if (error) throw error;
-  return (data || []) as RepairOrderOverview[];
+  return (data ?? []).map(mapRepairOrderOverview);
 };
 
 // 2. State events for a ticket
@@ -179,7 +383,7 @@ export const listRepairStateEvents = async (repairOrderId: string): Promise<Repa
 
   if (error) throw error;
 
-  return (data || []).map((row: any) => ({
+  return (data ?? []).map((row) => ({
     id: row.id,
     repair_order_id: row.repair_order_id,
     status_id: row.status_id,
@@ -194,35 +398,35 @@ export const listRepairStateEvents = async (repairOrderId: string): Promise<Repa
 
 // 3. Available transitions from current status
 export const listAvailableTransitions = async (fromStatusId: string): Promise<RepairTransitionOption[]> => {
-  const { data, error } = await client()
+  const { data: transitions, error: transitionsError } = await client()
     .from("repair_status_transitions")
-    .select(`
-      id,
-      to_status_id,
-      repair_statuses!repair_status_transitions_to_status_id_fkey (
-        id,
-        name,
-        code,
-        requires_final_tests,
-        is_terminal
-      )
-    `)
+    .select("id,to_status_id")
     .eq("from_status_id", fromStatusId)
     .eq("is_active", true);
 
-  if (error) {
-    console.warn("Aviso al consultar transiciones:", error.message);
-    return [];
-  }
+  if (transitionsError) throw transitionsError;
+  if (!transitions || transitions.length === 0) return [];
 
-  return (data || []).map((t: any) => ({
-    id: t.id,
-    to_status_id: t.to_status_id,
-    to_status_name: t.repair_statuses?.name ?? "Próximo estado",
-    to_status_code: t.repair_statuses?.code ?? "unknown",
-    requires_final_tests: Boolean(t.repair_statuses?.requires_final_tests),
-    is_terminal: Boolean(t.repair_statuses?.is_terminal),
-  }));
+  const { data: statuses, error: statusesError } = await client()
+    .from("repair_statuses")
+    .select("id,name,code,requires_final_tests,is_terminal")
+    .in("id", transitions.map((transition) => transition.to_status_id));
+
+  if (statusesError) throw statusesError;
+  const statusesById = new Map((statuses ?? []).map((status) => [status.id, status]));
+
+  return transitions.map((transition) => {
+    const status = statusesById.get(transition.to_status_id);
+    if (!status) throw new Error(`La transición ${transition.id} referencia un estado inexistente.`);
+    return {
+      id: transition.id,
+      to_status_id: transition.to_status_id,
+      to_status_name: status.name,
+      to_status_code: status.code,
+      requires_final_tests: status.requires_final_tests,
+      is_terminal: status.is_terminal,
+    };
+  }).filter((transition) => isManualRepairTransition(transition.to_status_code));
 };
 
 // 4. Atomic repair intake
@@ -231,6 +435,7 @@ export const intakeRepairOrder = async (input: IntakeRepairInput): Promise<{
   order_code: string;
   tracking_token: string;
   equipment_id: string;
+  public_tracking_code: string;
 }> => {
   const { data, error } = await client().rpc("intake_repair_order", {
     target_branch_id: input.branchId,
@@ -238,23 +443,18 @@ export const intakeRepairOrder = async (input: IntakeRepairInput): Promise<{
     equipment_type: input.equipmentType,
     brand_name: input.brandName,
     model_name: input.modelName,
-    serial_number: input.serialNumber || null,
-    imei: input.imei || null,
+    serial_number: input.serialNumber || undefined,
+    imei: input.imei || undefined,
     accessories: input.accessories || [],
     intake_condition: input.intakeCondition || "Recibido en taller",
-    intake_damage: input.intakeDamage || null,
-    intake_notes: input.intakeNotes || null,
+    intake_damage: input.intakeDamage || undefined,
+    intake_notes: input.intakeNotes || undefined,
     reported_fault: input.reportedFault,
     operation_reason: input.operationReason || "Ingreso técnico taller",
   });
 
   if (error) throw error;
-  return data as {
-    repair_order_id: string;
-    order_code: string;
-    tracking_token: string;
-    equipment_id: string;
-  };
+  return parseIntakeRepairResult(data);
 };
 
 // 5. Controlled transition
@@ -268,13 +468,13 @@ export const transitionRepairOrder = async (
   const { data, error } = await client().rpc("transition_repair_order", {
     target_repair_order_id: repairOrderId,
     target_status_id: targetStatusId,
-    public_message: publicMessage || null,
+    public_message: publicMessage || "",
     operation_key: opKey,
     operation_reason: internalReason || "Avance de ciclo de taller",
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 // 6. Test Templates and QC Test Runs
@@ -297,12 +497,10 @@ export const getActiveTestTemplate = async (kind: "intake" | "final" = "final"):
 
   if (error) throw error;
 
-  const match = (data || []).find((v: any) => v.repair_test_templates?.kind === kind);
+  const match = (data ?? []).find((version) => version.repair_test_templates?.kind === kind);
   if (!match) return null;
 
-  const tpl = Array.isArray(match.repair_test_templates)
-    ? match.repair_test_templates[0]
-    : (match.repair_test_templates as any);
+  const tpl = match.repair_test_templates;
 
   return {
     id: match.id,
@@ -311,7 +509,7 @@ export const getActiveTestTemplate = async (kind: "intake" | "final" = "final"):
     template_code: tpl?.code ?? "QC",
     kind,
     version: match.version,
-    definition: match.definition,
+    definition: parseTestTemplateDefinition(match.definition),
   };
 };
 
@@ -326,12 +524,12 @@ export const recordRepairTestRun = async (
     target_repair_order_id: repairOrderId,
     target_template_version_id: templateVersionId,
     results,
-    run_notes: notes || null,
+    run_notes: notes || "",
     operation_key: opKey,
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const listRepairTestRuns = async (repairOrderId?: string): Promise<TestRunRecord[]> => {
@@ -343,7 +541,7 @@ export const listRepairTestRuns = async (repairOrderId?: string): Promise<TestRu
       template_version_id,
       kind,
       run_sequence,
-      run_notes,
+      notes,
       completed_at,
       repair_orders ( order_code ),
       repair_test_results ( item_key, result, notes )
@@ -357,14 +555,14 @@ export const listRepairTestRuns = async (repairOrderId?: string): Promise<TestRu
   const { data, error } = await query;
   if (error) throw error;
 
-  return (data || []).map((r: any) => ({
+  return (data ?? []).map((r) => ({
     id: r.id,
     repair_order_id: r.repair_order_id,
-    order_code: r.repair_orders?.order_code,
+    order_code: r.repair_orders?.order_code ?? undefined,
     template_version_id: r.template_version_id,
     kind: r.kind,
     run_sequence: r.run_sequence,
-    run_notes: r.run_notes,
+    run_notes: r.notes,
     completed_at: r.completed_at,
     results: r.repair_test_results || [],
   }));
@@ -383,13 +581,13 @@ export const consumeRepairPart = async (
     target_repair_order_id: repairOrderId,
     target_location_id: locationId,
     target_product_id: productId,
-    target_variant_id: variantId || null,
+    target_variant_id: variantId || undefined,
     target_quantity: quantity,
     operation_reason: reason,
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const reverseRepairPart = async (
@@ -406,7 +604,7 @@ export const reverseRepairPart = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const listRepairParts = async (repairOrderId: string): Promise<ConsumedPartRecord[]> => {
@@ -417,7 +615,146 @@ export const listRepairParts = async (repairOrderId: string): Promise<ConsumedPa
     .order("occurred_at", { ascending: true });
 
   if (error) throw error;
-  return (data || []) as ConsumedPartRecord[];
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    repair_order_id: row.repair_order_id,
+    action: row.action,
+    reservation_batch_id: row.reservation_batch_id,
+    stock_document_id: row.stock_document_id,
+    occurred_at: row.occurred_at,
+  }));
+};
+
+export const listRepairLabor = async (repairOrderId: string): Promise<RepairLaborRecord[]> => {
+  const { data, error } = await client()
+    .from("repair_labor_facts")
+    .select("id,repair_order_id,description,quantity_hours,unit_cost_base,total_cost_base,performed_at")
+    .eq("repair_order_id", repairOrderId)
+    .order("performed_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    repair_order_id: row.repair_order_id,
+    description: row.description,
+    quantity_hours: row.quantity_hours,
+    unit_cost_base: row.unit_cost_base,
+    total_cost_base: row.total_cost_base,
+    performed_at: row.performed_at,
+  }));
+};
+
+export const recordRepairLabor = async (
+  repairOrderId: string,
+  description: string,
+  quantityHours: number,
+  unitCostBase: number,
+  operationKey: string,
+): Promise<string> => {
+  const { data, error } = await client().rpc("record_repair_labor", {
+    target_repair_order_id: repairOrderId,
+    description: description.trim(),
+    quantity_hours: quantityHours,
+    unit_cost_base: unitCostBase,
+    operation_key: operationKey,
+  });
+  if (error) throw error;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al registrar mano de obra.");
+  return data;
+};
+
+export const listRepairPayments = async (repairOrderId: string): Promise<RepairPaymentRecord[]> => {
+  const { data, error } = await client()
+    .from("payments")
+    .select("id,repair_order_id,payment_method_id,cash_session_id,currency_code,amount,amount_base,reversal_of_payment_id,reason,occurred_at")
+    .eq("repair_order_id", repairOrderId)
+    .order("occurred_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    repair_order_id: requireViewValue(row.repair_order_id, "payments.repair_order_id"),
+    payment_method_id: row.payment_method_id,
+    cash_session_id: row.cash_session_id,
+    currency_code: row.currency_code,
+    amount: row.amount,
+    amount_base: row.amount_base,
+    reversal_of_payment_id: row.reversal_of_payment_id,
+    reason: row.reason,
+    occurred_at: row.occurred_at,
+  }));
+};
+
+export const listRepairPaymentMethods = async (): Promise<RepairPaymentMethod[]> => {
+  const { data, error } = await client()
+    .from("payment_methods")
+    .select("id,code,name,requires_cash_session")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    requires_cash_session: row.requires_cash_session,
+  }));
+};
+
+export const listRepairExchangeSnapshots = async (): Promise<RepairExchangeSnapshot[]> => {
+  const { data, error } = await client()
+    .from("exchange_rate_snapshots")
+    .select("id,quote_currency,rate_to_base,source,quoted_at")
+    .order("quoted_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    quote_currency: row.quote_currency,
+    rate_to_base: row.rate_to_base,
+    source: row.source,
+    quoted_at: row.quoted_at,
+  }));
+};
+
+export const recordRepairPayment = async (input: {
+  repairOrderId: string;
+  paymentMethodId: string;
+  cashSessionId: string | null;
+  amount: number;
+  currency: string;
+  exchangeSnapshotId: string;
+  operationKey: string;
+  reason: string;
+  providerReference?: string;
+}): Promise<string> => {
+  const { data, error } = await client().rpc("record_repair_payment", {
+    target_repair_order_id: input.repairOrderId,
+    target_payment_method_id: input.paymentMethodId,
+    target_cash_session_id: input.cashSessionId,
+    payment_amount: input.amount,
+    payment_currency: input.currency,
+    target_exchange_snapshot_id: input.exchangeSnapshotId,
+    operation_key: input.operationKey,
+    operation_reason: input.reason.trim(),
+    provider_reference: input.providerReference?.trim() || undefined,
+  });
+  if (error) throw error;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al registrar el cobro.");
+  return data;
+};
+
+export const reverseRepairPayment = async (input: {
+  paymentId: string;
+  refundCashSessionId: string | null;
+  operationKey: string;
+  reason: string;
+}): Promise<string> => {
+  const { data, error } = await client().rpc("reverse_repair_payment", {
+    target_payment_id: input.paymentId,
+    target_refund_cash_session_id: input.refundCashSessionId || undefined,
+    operation_key: input.operationKey,
+    operation_reason: input.reason.trim(),
+  });
+  if (error) throw error;
+  if (typeof data !== "string") throw new Error("Respuesta inválida al revertir el cobro.");
+  return data;
 };
 
 // 8. Delivery & Warranties (Finding H05, H08)
@@ -442,7 +779,7 @@ export const deliverRepairOrder = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
 };
 
 export const listWarranties = async (): Promise<WarrantyRecord[]> => {
@@ -466,7 +803,7 @@ export const listWarranties = async (): Promise<WarrantyRecord[]> => {
   if (error) throw error;
 
   const now = new Date().toISOString();
-  return (data || []).map((w: any) => ({
+  return (data ?? []).map((w) => ({
     id: w.id,
     repair_order_id: w.repair_order_id,
     delivery_id: w.delivery_id,
@@ -501,14 +838,14 @@ export const listWarrantyClaims = async (): Promise<WarrantyClaimRecord[]> => {
 
   if (error) throw error;
 
-  return (data || []).map((c: any) => ({
+  return (data ?? []).map((c) => ({
     id: c.id,
     warranty_id: c.warranty_id,
     claim_code: c.claim_code,
     reported_issue: c.reported_issue,
     opened_at: c.opened_at,
-    order_code: c.repair_warranties?.repair_orders?.order_code,
-    customer_name: c.repair_warranties?.repair_orders?.customers?.display_name,
+    order_code: c.repair_warranties?.repair_orders?.order_code ?? undefined,
+    customer_name: c.repair_warranties?.repair_orders?.customers?.display_name ?? undefined,
   }));
 };
 
@@ -525,5 +862,22 @@ export const openWarrantyClaim = async (
   });
 
   if (error) throw error;
-  return data as string;
+  return data;
+};
+
+export type RepairNote = ErpDatabase["erp"]["Tables"]["repair_notes"]["Row"];
+export const listRepairNotes = async (repairOrderId: string): Promise<RepairNote[]> => {
+  const { data, error } = await client().from("repair_notes").select("*").eq("repair_order_id", repairOrderId).order("created_at");
+  if (error) throw error;
+  return data ?? [];
+};
+export const addRepairNote = async (repairOrderId: string, content: string, isPublic: boolean): Promise<void> => {
+  const { error } = await client().rpc("add_repair_note", { p_repair_order_id: repairOrderId, p_content: content, p_is_public: isPublic });
+  if (error) throw error;
+};
+
+export const searchRepairsByDocument = async (document: string): Promise<string[]> => {
+  const { data, error } = await client().rpc("search_repairs_by_document", { p_document: document });
+  if (error) throw error;
+  return (data ?? []).map((item) => item.repair_order_id);
 };

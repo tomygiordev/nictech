@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(250);
+select plan(253);
 
 select has_table('erp','customer_equipment','Customer equipment exists');
 select has_table('erp','equipment_ownership_events','Equipment ownership history exists');
@@ -36,6 +36,7 @@ select has_column('erp','payments','repair_order_id','Payments support repair ow
 select has_function('erp','create_repair_order',array['uuid','uuid','uuid','jsonb','text','text','text','text','text','text'],'Checked repair order command exists');
 select has_function('erp','get_repair_credentials',array['uuid'],'Audited credential read command exists');
 select has_function('erp','create_repair_quote_version',array['uuid','text','uuid','jsonb','text','text'],'Quote version command exists');
+select is(has_function_privilege('authenticated','erp.create_repair_quote_version_unchecked(uuid,text,uuid,jsonb,text,text)','EXECUTE'),false,'Authenticated actors cannot bypass service-line quote validation');
 select has_function('erp','reserve_repair_parts',array['uuid','timestamp with time zone','jsonb','text','text'],'Repair reservation wrapper exists');
 select has_function('erp','consume_repair_parts',array['uuid','uuid','text','text'],'Repair consumption wrapper exists');
 select has_function('erp','record_repair_payment',array['uuid','uuid','uuid','numeric','text','uuid','text','text','text'],'Repair payment command exists');
@@ -44,8 +45,8 @@ select has_function('public','respond_repair_quote',array['text','text','text'],
 select has_function('public','register_repair_private_media',array['text','integer','text','text','bigint','text'],'Public metadata registration wrapper exists');
 select has_function('erp','provision_repair_credential_key',array['uuid','bytea','text'],'Service-only credential key provisioning exists');
 select has_function('erp','get_customer_equipment_identifiers',array['uuid'],'Audited equipment identifier RPC exists');
-select ok(pg_get_functiondef('erp.create_repair_quote_version(uuid,text,uuid,jsonb,text,text)'::regprocedure) like '%pg_advisory_xact_lock%hashtextextended%org_id%branch%','Quote cost reads use the canonical organization-branch stock advisory lock');
-select ok(pg_get_functiondef('erp.create_repair_quote_version(uuid,text,uuid,jsonb,text,text)'::regprocedure) like '%jsonb_array_elements(normalized_lines)%','Quote inserts consume the once-frozen normalized line set');
+select ok(pg_get_functiondef('erp.create_repair_quote_version_unchecked(uuid,text,uuid,jsonb,text,text)'::regprocedure) like '%pg_advisory_xact_lock%hashtextextended%org_id%branch%','Quote cost reads use the canonical organization-branch stock advisory lock');
+select ok(pg_get_functiondef('erp.create_repair_quote_version_unchecked(uuid,text,uuid,jsonb,text,text)'::regprocedure) like '%jsonb_array_elements(normalized_lines)%','Quote inserts consume the once-frozen normalized line set');
 select has_function('erp','get_repair_quote_costs',array['uuid'],'Checked quote cost RPC exists');
 
 select ok((select relrowsecurity from pg_class where oid='erp.customer_equipment'::regclass),'Equipment enforces RLS');
@@ -109,6 +110,10 @@ values
 ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-000000000001','authenticated','authenticated','stage7@nictech.local','not-used',now(),'{}','{"display_name":"Stage 7"}',now(),now()),
 ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-000000000002','authenticated','authenticated','stage7-quotes@nictech.local','not-used',now(),'{}','{"display_name":"Stage 7 Quotes"}',now(),now()),
 ('00000000-0000-0000-0000-000000000000','b3000000-0000-0000-0000-000000000003','authenticated','authenticated','stage7-foreign@nictech.local','not-used',now(),'{}','{"display_name":"Stage 7 Foreign"}',now(),now());
+insert into erp.profiles(id,organization_id,display_name)
+select id,case when id='b3000000-0000-0000-0000-000000000003'::uuid then 'b9000000-0000-0000-0000-000000000001'::uuid else '10000000-0000-0000-0000-000000000001'::uuid end, 'Fixture reparación'
+from auth.users where id in ('b3000000-0000-0000-0000-000000000001','b3000000-0000-0000-0000-000000000002','b3000000-0000-0000-0000-000000000003')
+on conflict (id) do nothing;
 update erp.profiles set organization_id='10000000-0000-0000-0000-000000000001' where id in('b3000000-0000-0000-0000-000000000001','b3000000-0000-0000-0000-000000000002');
 update erp.profiles set organization_id='b9000000-0000-0000-0000-000000000001' where id='b3000000-0000-0000-0000-000000000003';
 insert into erp.roles(id,organization_id,code,name,is_system)
@@ -121,9 +126,38 @@ values
 ('10000000-0000-0000-0000-000000000001','b3000000-0000-0000-0000-000000000002','40000000-0000-0000-0000-000000000002','b3000000-0000-0000-0000-000000000001'),
 ('b9000000-0000-0000-0000-000000000001','b3000000-0000-0000-0000-000000000003','b9000000-0000-0000-0000-000000000005','b3000000-0000-0000-0000-000000000003');
 
+-- Keep the suite reproducible even when a demo already contains repair orders.
+create temporary table stage7_expected_order_number as
+select greatest(
+  coalesce((
+    select max(order_number) + 1
+    from erp.repair_orders
+    where organization_id = '10000000-0000-0000-0000-000000000001'
+      and branch_id = '20000000-0000-0000-0000-000000000001'
+  ), 1),
+  coalesce((
+    select next_number
+    from erp.repair_number_counters
+    where organization_id = '10000000-0000-0000-0000-000000000001'
+      and branch_id = '20000000-0000-0000-0000-000000000001'
+  ), 1)
+)::bigint as order_number;
+grant select on stage7_expected_order_number to authenticated;
+
 insert into erp.repair_number_counters(organization_id,branch_id,next_number)
-values('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',1)
-on conflict(organization_id,branch_id) do update set next_number=1;
+select '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', order_number
+from stage7_expected_order_number
+on conflict(organization_id,branch_id) do update set next_number=excluded.next_number;
+
+-- Keep repair-payment coverage independent from the register used by the demo.
+insert into erp.cash_registers (id, organization_id, branch_id, code, name)
+values (
+  '84000000-0000-0000-0000-0000000000c7',
+  '10000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000001',
+  'STAGE7-TEST',
+  'Caja aislada Stage 7'
+);
 
 select set_config('request.jwt.claim.sub','',true);
 select set_config('request.jwt.claim.role','service_role',true);
@@ -137,6 +171,14 @@ select set_config('request.jwt.claim.role','authenticated',true);
 set local role authenticated;
 
 select lives_ok($$select erp.capture_exchange_rate('ARS',1,'stage7-local','2026-08-19 12:00:00+00','stage7-fx','Stage 7 FX')$$,'Base FX snapshot is available');
+select throws_ok(
+  $$select erp.create_repair_quote_version((select id from stage7_ids where kind='order'),'ARS',(select id from erp.exchange_rate_snapshots where source='stage7-local'),'[{"kind":"service","description":"Labor without service catalog","quantity":1,"unit_price":100,"unit_cost":20,"tax_rate_percent":21}]','stage7-service-missing','Service without catalog item')$$,
+  '23503', 'active repair service unavailable on quote line 1', 'Service quote lines require an active catalog service'
+);
+select throws_ok(
+  $$select erp.create_repair_quote_version((select id from stage7_ids where kind='order'),'ARS',(select id from erp.exchange_rate_snapshots where source='stage7-local'),jsonb_build_array(jsonb_build_object('kind','service','product_id','b2000000-0000-0000-0000-000000000001','description','Product used as service','quantity',1,'unit_price',100,'unit_cost',20,'tax_rate_percent',21)),'stage7-service-wrong-kind','Product as service')$$,
+  '23503', 'active repair service unavailable on quote line 1', 'Service quote lines reject ordinary products'
+);
 select lives_ok($$select erp.post_stock_document('opening','20000000-0000-0000-0000-000000000001','stage7-stock','Stage 7 stock','[{"product_id":"b2000000-0000-0000-0000-000000000001","to_location_id":"30000000-0000-0000-0000-000000000002","quantity":10,"unit_cost":25}]')$$,'Repair stock is opened with cost');
 select lives_ok($$insert into stage7_ids(kind,id) values('serial-unit',erp.register_inventory_unit('b2000000-0000-0000-0000-000000000002',null,'STAGE7-SERIAL-1',null,40))$$,'Serialized repair part unit is registered');
 select lives_ok($$select erp.post_stock_document('opening','20000000-0000-0000-0000-000000000001','stage7-serial-stock','Stage 7 serial stock',jsonb_build_array(jsonb_build_object('product_id','b2000000-0000-0000-0000-000000000002','inventory_unit_id',(select id from stage7_ids where kind='serial-unit'),'to_location_id','30000000-0000-0000-0000-000000000002','quantity',1,'unit_cost',40)))$$,'Serialized repair stock is opened with cost');
@@ -163,7 +205,11 @@ select is((select count(*) from erp.equipment_ownership_events where equipment_i
 select lives_ok($$select erp.transfer_customer_equipment('20000000-0000-0000-0000-000000000001',(select id from stage7_ids where kind='equipment'),'b1000000-0000-0000-0000-000000000001','stage7-transfer-back','Return ownership')$$,'Equipment can return through another ownership event');
 
 select lives_ok($$insert into stage7_ids(kind,id,secret) select 'order',repair_order_id,tracking_token from erp.create_repair_order('20000000-0000-0000-0000-000000000001','b1000000-0000-0000-0000-000000000001',(select id from stage7_ids where kind='equipment'),'["charger"]','Scratched','Corner dent','Internal intake note','Does not charge','stage7-order','Receive equipment')$$,'Numbered repair order is created');
-select is((select order_number from erp.repair_orders where id=(select id from stage7_ids where kind='order')),1::bigint,'First branch counter value is deterministic');
+select is(
+  (select order_number from erp.repair_orders where id=(select id from stage7_ids where kind='order')),
+  (select order_number from stage7_expected_order_number),
+  'Repair order uses the next available branch number deterministically'
+);
 select is((select count(*) from erp.repair_state_events where repair_order_id=(select id from stage7_ids where kind='order')),1::bigint,'Initial state event is appended');
 reset role;
 select is((select request_hash from erp.repair_commands where command_name='repair.order.create' and idempotency_key='stage7-order'),encode(extensions.digest(convert_to(jsonb_build_object('customer_id','b1000000-0000-0000-0000-000000000001'::uuid,'equipment_id',(select id from stage7_ids where kind='equipment'),'accessories','["charger"]'::jsonb,'condition','Scratched','damage','Corner dent','notes','Internal intake note','fault','Does not charge','reason','Receive equipment')::text,'UTF8'),'sha256'),'hex'),'Command request identity uses SHA-256');
@@ -290,12 +336,12 @@ select is((select status from erp.inventory_units where id=(select id from stage
 select throws_ok($$select erp.record_repair_labor((select id from stage7_ids where kind='order'),'Invalid labor','NaN'::numeric,10,'stage7-labor-nan')$$,'22023','finite labor values are required','Labor rejects NaN');
 select lives_ok($$select erp.record_repair_labor((select id from stage7_ids where kind='order'),'Bench work',1.5,20,'stage7-labor')$$,'Finite labor cost fact is recorded');
 
-select lives_ok($$select erp.open_cash_session('84000000-0000-0000-0000-000000000001','stage7-cash','Open repair cash','[{"currency_code":"ARS","amount":0}]')$$,'Repair cash session opens under existing rules');
+select lives_ok($$select erp.open_cash_session('84000000-0000-0000-0000-0000000000c7','stage7-cash','Open repair cash','[{"currency_code":"ARS","amount":0}]')$$,'Repair cash session opens under existing rules');
 select lives_ok($$insert into stage7_ids(kind,id) values('deposit',erp.record_repair_payment((select id from stage7_ids where kind='order'),'82000000-0000-0000-0000-000000000001',(select id from erp.cash_sessions where idempotency_key='stage7-cash'),50,'ARS',(select id from erp.exchange_rate_snapshots where source='stage7-local'),'stage7-deposit','Repair deposit',null))$$,'Repair deposit uses generic payment and cash facts');
 select is((select sale_id from erp.payments where id=(select id from stage7_ids where kind='deposit')),null::uuid,'Repair deposit has no fake sale owner');
 select is((select repair_order_id from erp.payments where id=(select id from stage7_ids where kind='deposit')),(select id from stage7_ids where kind='order'),'Repair deposit has exactly one repair owner');
 select is((select count(*) from erp.customer_account_entries where payment_id=(select id from stage7_ids where kind='deposit')),0::bigint,'Repair deposit creates no customer-account entry');
-select lives_ok($$select erp.reverse_repair_payment((select id from stage7_ids where kind='deposit'),'stage7-deposit-reverse','Reverse deposit',null)$$,'Repair payment exact reversal uses current cash session');
+select lives_ok($$select erp.reverse_repair_payment((select id from stage7_ids where kind='deposit'),'stage7-deposit-reverse','Reverse deposit',(select id from erp.cash_sessions where idempotency_key='stage7-cash'))$$,'Repair payment exact reversal uses current cash session');
 select is((select sum(amount) from erp.payments where repair_order_id=(select id from stage7_ids where kind='order')),0::numeric,'Repair payment reversal offsets exactly');
 
 select throws_ok($$select * from erp.create_repair_media_upload_token((select id from stage7_ids where kind='order'),null,1,1000,array['image/jpeg'],'stage7-media-null-expiry')$$,'22023','bounded media token policy and TTL within 24 hours are required','Media token creation rejects NULL expiry');

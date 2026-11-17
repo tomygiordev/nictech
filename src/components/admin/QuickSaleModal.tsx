@@ -469,8 +469,8 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
           </DialogTitle>
         </div>
 
-        {/* Body: two columns */}
-        <div className="flex flex-1 min-h-0 divide-x divide-border">
+        {/* Body: two columns (stacks on mobile) */}
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 divide-y md:divide-y-0 md:divide-x divide-border overflow-y-auto md:overflow-hidden">
 
           {/* ── Left: product search + item config ─── */}
           <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
@@ -682,7 +682,7 @@ export function QuickSaleModal({ open, onClose, onSaleComplete, variantProductId
           </div>
 
           {/* ── Right: cart + checkout ─── */}
-          <div className="w-72 flex-shrink-0 flex flex-col bg-muted/10">
+          <div className="w-full md:w-72 flex-shrink-0 flex flex-col bg-muted/10 border-t md:border-t-0">
 
             {/* Cart header */}
             <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-background">
