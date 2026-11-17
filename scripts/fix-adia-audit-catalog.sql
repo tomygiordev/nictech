@@ -1,3 +1,4 @@
+-- OBSOLETO: NO APLICAR. Se corrió el 16/11/2026 solo en el proyecto viejo tuzpcofywkhglkqplhnn. Para prod usar scripts/adia-catalog-cleanup.sql (ERP como fuente, dry-run por defecto).
 -- =============================================================================
 -- Saneamiento de Catálogo — Auditoría Comercial y Técnica ADIA (16/11/2026)
 -- Cubre hallazgos:
