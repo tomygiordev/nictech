@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCurrency, formatPosCurrency } from "./formatters";
+import { formatCurrency, formatDate, formatDateTime, formatPosCurrency } from "./formatters";
 
 describe("Currency Formatters", () => {
   describe("formatCurrency (Legacy v1, 2 fixed decimals)", () => {
@@ -45,5 +45,21 @@ describe("Currency Formatters", () => {
       expect(formatPosCurrency(NaN)).toBe("—");
       expect(formatPosCurrency("invalid")).toBe("—");
     });
+  });
+});
+
+describe("formatos de fecha de Argentina", () => {
+  const instant = "2026-11-19T01:30:00Z";
+
+  it("muestra el día local de un instante cerca de medianoche UTC", () => {
+    expect(formatDate(instant)).toBe("18/11/2026");
+  });
+
+  it("muestra la fecha y hora de Buenos Aires", () => {
+    expect(formatDateTime(instant)).toMatch(/^18\/11\/2026,?\s+(?:22:30|10:30\s+p\.\s*m\.)$/);
+  });
+
+  it("no desplaza las fechas sin hora", () => {
+    expect(formatDate("2026-11-19")).toBe("19/11/2026");
   });
 });

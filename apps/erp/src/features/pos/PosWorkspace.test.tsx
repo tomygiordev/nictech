@@ -6,6 +6,9 @@ import { PosCoordinator } from "./posCoordinator";
 
 const mocks = vi.hoisted(() => ({
   organizationId: "org-a",
+  branchIds: [] as string[],
+  branchesData: null as Array<{ id: string; code: string; name: string }> | null,
+  locationsData: null as Array<{ id: string; branch_id: string; name: string }> | null,
   rpc: vi.fn(),
   receipt: vi.fn(),
   productLoad: vi.fn(),
@@ -13,15 +16,21 @@ const mocks = vi.hoisted(() => ({
 }));
 const ids = {
   branch: "11111111-1111-4111-8111-111111111111",
+  branchAlt: "11111111-1111-4111-8111-111111111112",
   location: "22222222-2222-4222-8222-222222222222",
+  locationAlt: "22222222-2222-4222-8222-222222222223",
   product: "33333333-3333-4333-8333-333333333333",
+  productZero: "33333333-3333-4333-8333-333333333334",
+  productService: "33333333-3333-4333-8333-333333333335",
   payment: "44444444-4444-4444-8444-444444444444",
   snapshot: "55555555-5555-4555-8555-555555555555",
   customer: "66666666-6666-4666-8666-666666666666",
   sale: "77777777-7777-4777-8777-777777777777",
   document: "88888888-8888-4888-8888-888888888888",
 };
-vi.mock("../../auth/ErpAuthContext", () => ({ useErpAuth: () => ({ organizationId: mocks.organizationId }) }));
+vi.mock("../../auth/ErpAuthContext", () => ({
+  useErpAuth: () => ({ organizationId: mocks.organizationId, branchIds: mocks.branchIds }),
+}));
 vi.mock("../documents/api", () => ({ getDocumentSaleReceipt: (id: string) => mocks.receipt(id) }));
 vi.mock("../../lib/supabase", () => ({
   supabase: {
@@ -30,8 +39,8 @@ vi.mock("../../lib/supabase", () => ({
       const result = () => {
         let data: unknown = [];
         if (table === "exchange_rate_snapshots") data = { rate_to_base: 1000 };
-        if (table === "branches") data = [{ id: ids.branch, name: "Central" }];
-        if (table === "locations") data = [{ id: ids.location, branch_id: ids.branch, name: "Depósito" }];
+        if (table === "branches") data = mocks.branchesData ?? [{ id: ids.branch, code: "CENTRAL", name: "Central" }];
+        if (table === "locations") data = mocks.locationsData ?? [{ id: ids.location, branch_id: ids.branch, name: "Depósito" }];
         if (table === "payment_methods") data = [{ id: ids.payment, code: "BANK", name: "Transferencia",
           settlement_kind: "bank", requires_cash_session: false }];
         if (table === "products") return mocks.productLoad();
@@ -74,6 +83,9 @@ async function charge() {
 describe("POS Workspace financial flow", () => {
   beforeEach(() => {
     mocks.organizationId = "org-a";
+    mocks.branchIds = [];
+    mocks.branchesData = null;
+    mocks.locationsData = null;
     mocks.rpc.mockReset(); mocks.receipt.mockReset(); mocks.productLoad.mockReset(); mocks.catalogQuotes.mockReset();
     mocks.productLoad.mockImplementation(async () => productResponse());
     mocks.catalogQuotes.mockResolvedValue({ data: [quote()], error: null });
@@ -87,6 +99,103 @@ describe("POS Workspace financial flow", () => {
     });
   });
   afterEach(cleanup);
+
+  it("muestra la sucursal única y su ubicación al cargar las opciones", async () => {
+    const coordinator = new PosCoordinator();
+    render(<PosWorkspace coordinator={coordinator} />);
+    await screen.findByRole("option", { name: "Central" });
+
+    expect(coordinator.getCurrentContext()).toMatchObject({
+      branchId: ids.branch,
+      locationId: ids.location,
+    });
+    expect(screen.getByRole("combobox", { name: /Sucursal/ })).toHaveValue(ids.branch);
+    expect(screen.getByRole("combobox", { name: /Ubicación/ })).toHaveValue(ids.location);
+  });
+
+  it("selecciona la sucursal única asignada al usuario cuando hay múltiples sucursales", async () => {
+    mocks.branchIds = [ids.branchAlt];
+    mocks.branchesData = [
+      { id: ids.branch, code: "CENTRAL", name: "Central" },
+      { id: ids.branchAlt, code: "NORTE", name: "Sucursal Norte" },
+    ];
+    mocks.locationsData = [
+      { id: ids.location, branch_id: ids.branch, name: "Depósito Central" },
+      { id: ids.locationAlt, branch_id: ids.branchAlt, name: "Salón Norte" },
+    ];
+    const coordinator = new PosCoordinator();
+    render(<PosWorkspace coordinator={coordinator} />);
+    await screen.findByRole("option", { name: "Sucursal Norte" });
+
+    expect(screen.getByRole("combobox", { name: /Sucursal/ })).toHaveValue(ids.branchAlt);
+    expect(screen.getByRole("combobox", { name: /Ubicación/ })).toHaveValue(ids.locationAlt);
+  });
+
+  it("muestra importes con 2 decimales en UI, emite un único panel de éxito con scrollIntoView y deshabilita '+' sin stock solo en inventario", async () => {
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const scrollIntoViewMock = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+    try {
+      mocks.productLoad.mockResolvedValue({
+        data: [
+          {
+            id: ids.product, internal_code: "ITEM", internal_name: "Producto prueba",
+            base_sale_price: 1500, tax_rate_percent: 21, inventory_tracking: "quantity",
+            product_categories: null, product_variants: [],
+            stock_balances: [{ location_id: ids.location, quantity_on_hand: 10, quantity_reserved: 0, variant_id: null }],
+          },
+          {
+            id: ids.productZero, internal_code: "ZERO", internal_name: "Producto agotado",
+            base_sale_price: 500, tax_rate_percent: 21, inventory_tracking: "quantity",
+            product_categories: null, product_variants: [],
+            stock_balances: [{ location_id: ids.location, quantity_on_hand: 0, quantity_reserved: 0, variant_id: null }],
+          },
+          {
+            id: ids.productService, internal_code: "SRV", internal_name: "Servicio técnico",
+            base_sale_price: 800, tax_rate_percent: 21, inventory_tracking: "none",
+            product_categories: null, product_variants: [],
+            stock_balances: [],
+          },
+        ],
+        error: null,
+      });
+      mocks.catalogQuotes.mockResolvedValue({
+        data: [
+          { product_id: ids.product, variant_id: null, list_price_ars: 1500, final_price_ars: 1500, promotion_id: null, tax_rate_percent: 21 },
+          { product_id: ids.productZero, variant_id: null, list_price_ars: 500, final_price_ars: 500, promotion_id: null, tax_rate_percent: 21 },
+          { product_id: ids.productService, variant_id: null, list_price_ars: 800, final_price_ars: 800, promotion_id: null, tax_rate_percent: 21 },
+        ],
+        error: null,
+      });
+
+      render(<PosWorkspace coordinator={new PosCoordinator()} />);
+      await ready();
+
+      const zeroBtn = screen.getByRole("button", { name: "Agregar Producto agotado al carrito" });
+      expect(zeroBtn).toBeDisabled();
+      expect(zeroBtn).toHaveAttribute("title", "Sin stock en esta ubicación");
+
+      const serviceBtn = screen.getByRole("button", { name: "Agregar Servicio técnico al carrito" });
+      expect(serviceBtn).toBeEnabled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Agregar Producto prueba al carrito" }));
+      // 1500 ARS with 21% VAT -> Net 1239.6694 -> 1.239,67 / IVA 260.3306 -> 260,33
+      expect(screen.getByText(/ARS\s+1\.239,67 \/ ARS\s+260,33/)).toBeInTheDocument();
+      expect(screen.queryByText(/1\.239,6694/)).toBeNull();
+
+      // Service with 0 stock can also be added and incremented
+      fireEvent.click(serviceBtn);
+      expect(screen.getAllByRole("button", { name: "Sumar 1" })[1]).toBeEnabled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Cobrar y Emitir Comprobante" }));
+      await screen.findByTestId("pos-receipt-panel");
+      expect(screen.queryByText(/¡Venta completada!/)).toBeNull();
+      expect(scrollIntoViewMock).toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
 
   it("muestra el precio de lista tachado, usa la cotización POS y recotiza cuando vence", async () => {
     mocks.catalogQuotes.mockResolvedValueOnce({ data: [quote(90, ids.document)], error: null });
@@ -145,7 +254,7 @@ describe("POS Workspace financial flow", () => {
     const originalArgs = saleCalls()[0][1];
     fireEvent.click(screen.getByRole("button", { name: "Vaciar" }));
     mocks.organizationId = "org-b"; view.rerender(<PosWorkspace coordinator={coordinator} />);
-    await screen.findByText("Vuelva a la organización de origen para reintentar el mismo cobro.");
+    await screen.findByText("Volvé a la organización de origen para reintentar el mismo cobro.");
     expect(screen.queryByRole("button", { name: "Reintentar cobro pendiente" })).toBeNull();
     mocks.organizationId = "org-a"; view.rerender(<PosWorkspace coordinator={coordinator} />);
     await ready();

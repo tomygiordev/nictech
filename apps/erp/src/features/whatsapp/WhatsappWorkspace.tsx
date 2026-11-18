@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ErpModuleId } from "@nictech/domain";
 import { Search, Send, Phone, CheckCheck, ShieldCheck, UserCheck } from "lucide-react";
 import { WorkspaceHeader, StatePanel, FeedbackAlert } from "../../components/erp/WorkspaceUi";
+import { Field } from "../../components/erp/FormFeedback";
+import { useErpAuth } from "../../auth/ErpAuthContext";
+import { toUserMessage } from "../../lib/errors";
 import { formatDateTime } from "../../lib/formatters";
 import {
   assignConversation,
@@ -39,11 +42,6 @@ const STATUS_LABEL: Record<CommunicationStatus, string> = {
   failed: "Fallido",
 };
 
-const errorMessage = (err: unknown, fallback: string): string => {
-  if (err instanceof Error && err.message.trim() !== "") return err.message;
-  return fallback;
-};
-
 const digitsOnly = (value: string | null | undefined): string => (value ?? "").replace(/[^0-9]/g, "");
 
 const latestStatusOf = (events: MessageEvent[]): CommunicationStatus | null => {
@@ -60,6 +58,10 @@ export const WhatsappWorkspace = ({
 }: {
   onSelectModule?: (moduleId: ErpModuleId) => void;
 }) => {
+  const { hasPermission } = useErpAuth();
+  const canManageMessages = hasPermission("messages.manage");
+  const canManageCustomers = hasPermission("customers.manage");
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [customers, setCustomers] = useState<ConversationCustomer[]>([]);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -158,7 +160,7 @@ export const WhatsappWorkspace = ({
       }
       setTemplates(await listMessageTemplates());
     } catch (err) {
-      setError(errorMessage(err, "No se pudo cargar la bandeja de WhatsApp."));
+      setError(toUserMessage(err, "No se pudo cargar la bandeja de WhatsApp."));
     } finally {
       setLoading(false);
     }
@@ -181,7 +183,7 @@ export const WhatsappWorkspace = ({
         : undefined;
       setRecipient(customer?.phone ?? "");
     } catch (err) {
-      setFeedback({ type: "error", message: errorMessage(err, "No se pudo cargar la conversación.") });
+      setFeedback({ type: "error", message: toUserMessage(err, "No se pudo cargar la conversación.") });
       setMessages([]);
       setEvents([]);
       setConsents([]);
@@ -216,7 +218,7 @@ export const WhatsappWorkspace = ({
       for (const key of latest?.variable_keys ?? []) initial[key] = "";
       setVariableValues(initial);
     } catch (err) {
-      setFeedback({ type: "error", message: errorMessage(err, "No se pudieron cargar las versiones de la plantilla.") });
+      setFeedback({ type: "error", message: toUserMessage(err, "No se pudieron cargar las versiones de la plantilla.") });
       setVersions([]);
       setVersionId("");
       setVariableValues({});
@@ -239,13 +241,14 @@ export const WhatsappWorkspace = ({
       const id = await fn();
       setFeedback({ type: "success", message: `${successPrefix} Referencia: ${id}` });
     } catch (err) {
-      setFeedback({ type: "error", message: errorMessage(err, "La operación no pudo completarse.") });
+      setFeedback({ type: "error", message: toUserMessage(err, "La operación no pudo completarse.") });
     } finally {
       setBusy(null);
     }
   };
 
   const handleRecordConsent = () => {
+    if (!canManageCustomers) return;
     if (!selectedConversation) {
       setFeedback({ type: "error", message: "Seleccioná una conversación para registrar el consentimiento." });
       return;
@@ -272,6 +275,7 @@ export const WhatsappWorkspace = ({
   };
 
   const handleQueueMessage = () => {
+    if (!canManageMessages) return;
     if (!selectedConversation) {
       setFeedback({ type: "error", message: "Seleccioná una conversación para encolar el mensaje." });
       return;
@@ -324,6 +328,7 @@ export const WhatsappWorkspace = ({
   };
 
   const handleAssign = () => {
+    if (!canManageMessages) return;
     if (!selectedConversation) {
       setFeedback({ type: "error", message: "Seleccioná una conversación para asignarla." });
       return;
@@ -541,40 +546,44 @@ export const WhatsappWorkspace = ({
             <div style={{ padding: "16px 20px", background: "var(--canvas-bg)", borderTop: "1px solid var(--border-line)", display: "flex", flexDirection: "column", gap: "10px" }}>
               <strong style={{ fontSize: "13px" }}>Redactar con plantilla real y encolar</strong>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  Plantilla
-                  <select
-                    className="erp-form-select"
-                    value={templateId}
-                    onChange={(e) => {
-                      setTemplateId(e.target.value);
-                      void loadVersions(e.target.value);
-                    }}
-                  >
-                    <option value="">Seleccionar…</option>
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.code})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  Versión
-                  <select
-                    className="erp-form-select"
-                    value={versionId}
-                    onChange={(e) => handleSelectVersion(e.target.value)}
-                    disabled={versions.length === 0}
-                  >
-                    <option value="">Seleccionar…</option>
-                    {versions.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        v{v.version} · {v.language_code}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <Field label="Plantilla">
+                  {(field) => (
+                    <select
+                      {...field}
+                      className="erp-form-select"
+                      value={templateId}
+                      onChange={(e) => {
+                        setTemplateId(e.target.value);
+                        void loadVersions(e.target.value);
+                      }}
+                    >
+                      <option value="">Seleccionar…</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.code})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+                <Field label="Versión">
+                  {(field) => (
+                    <select
+                      {...field}
+                      className="erp-form-select"
+                      value={versionId}
+                      onChange={(e) => handleSelectVersion(e.target.value)}
+                      disabled={versions.length === 0}
+                    >
+                      <option value="">Seleccionar…</option>
+                      {versions.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          v{v.version} · {v.language_code}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
               </div>
               {selectedVersion && (
                 <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)", whiteSpace: "pre-wrap" }}>
@@ -584,47 +593,54 @@ export const WhatsappWorkspace = ({
               {selectedVersion && selectedVersion.variable_keys.length > 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                   {selectedVersion.variable_keys.map((key) => (
-                    <label key={key} style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                      {key}
-                      <input
-                        type="text"
-                        className="erp-form-input"
-                        value={variableValues[key] ?? ""}
-                        onChange={(e) => setVariableValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                        placeholder={`Valor de ${key}`}
-                      />
-                    </label>
+                    <Field key={key} label={key}>
+                      {(field) => (
+                        <input
+                          {...field}
+                          type="text"
+                          className="erp-form-input"
+                          value={variableValues[key] ?? ""}
+                          onChange={(e) => setVariableValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                          placeholder={`Valor de ${key}`}
+                        />
+                      )}
+                    </Field>
                   ))}
                 </div>
               )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "10px" }}>
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  Destinatario
-                  <input
-                    type="text"
-                    className="erp-form-input"
-                    value={recipient}
-                    onChange={(e) => setRecipient(e.target.value)}
-                    placeholder="+54 9 …"
-                  />
-                </label>
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  Motivo (auditoría)
-                  <input
-                    type="text"
-                    className="erp-form-input"
-                    value={queueReason}
-                    onChange={(e) => setQueueReason(e.target.value)}
-                    placeholder="Ej.: aviso de presupuesto aprobado"
-                  />
-                </label>
+                <Field label="Destinatario">
+                  {(field) => (
+                    <input
+                      {...field}
+                      type="text"
+                      className="erp-form-input"
+                      value={recipient}
+                      onChange={(e) => setRecipient(e.target.value)}
+                      placeholder="+54 9 …"
+                    />
+                  )}
+                </Field>
+                <Field label="Motivo (auditoría)">
+                  {(field) => (
+                    <input
+                      {...field}
+                      type="text"
+                      className="erp-form-input"
+                      value={queueReason}
+                      onChange={(e) => setQueueReason(e.target.value)}
+                      placeholder="Ej.: aviso de presupuesto aprobado"
+                    />
+                  )}
+                </Field>
               </div>
               <div>
                 <button
                   type="button"
                   className="btn-primary"
                   onClick={handleQueueMessage}
-                  disabled={busy !== null}
+                  disabled={busy !== null || !canManageMessages}
+                  title={!canManageMessages ? "Requiere permiso: gestionar mensajes" : undefined}
                 >
                   <Send size={15} /> {busy === "queue" ? "Encolando…" : "Encolar mensaje"}
                 </button>
@@ -636,43 +652,50 @@ export const WhatsappWorkspace = ({
                 <strong style={{ fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
                   <ShieldCheck size={14} /> Consentimiento WhatsApp
                 </strong>
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  Estado
-                  <select
-                    className="erp-form-select"
-                    value={consentGranted ? "granted" : "revoked"}
-                    onChange={(e) => setConsentGranted(e.target.value === "granted")}
-                  >
-                    <option value="granted">Otorgado (opt-in)</option>
-                    <option value="revoked">Revocado (opt-out)</option>
-                  </select>
-                </label>
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  Origen
-                  <input
-                    type="text"
-                    className="erp-form-input"
-                    value={consentSource}
-                    onChange={(e) => setConsentSource(e.target.value)}
-                    placeholder="Ej.: mostrador, web, taller"
-                  />
-                </label>
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  Motivo (auditoría)
-                  <input
-                    type="text"
-                    className="erp-form-input"
-                    value={consentReason}
-                    onChange={(e) => setConsentReason(e.target.value)}
-                    placeholder="Ej.: cliente acepta avisos de taller"
-                  />
-                </label>
+                <Field label="Estado">
+                  {(field) => (
+                    <select
+                      {...field}
+                      className="erp-form-select"
+                      value={consentGranted ? "granted" : "revoked"}
+                      onChange={(e) => setConsentGranted(e.target.value === "granted")}
+                    >
+                      <option value="granted">Otorgado (opt-in)</option>
+                      <option value="revoked">Revocado (opt-out)</option>
+                    </select>
+                  )}
+                </Field>
+                <Field label="Origen">
+                  {(field) => (
+                    <input
+                      {...field}
+                      type="text"
+                      className="erp-form-input"
+                      value={consentSource}
+                      onChange={(e) => setConsentSource(e.target.value)}
+                      placeholder="Ej.: mostrador, web, taller"
+                    />
+                  )}
+                </Field>
+                <Field label="Motivo (auditoría)">
+                  {(field) => (
+                    <input
+                      {...field}
+                      type="text"
+                      className="erp-form-input"
+                      value={consentReason}
+                      onChange={(e) => setConsentReason(e.target.value)}
+                      placeholder="Ej.: cliente acepta avisos de taller"
+                    />
+                  )}
+                </Field>
                 <div>
                   <button
                     type="button"
                     className="pag-btn"
                     onClick={handleRecordConsent}
-                    disabled={busy !== null}
+                    disabled={busy !== null || !canManageCustomers}
+                    title={!canManageCustomers ? "Requiere permiso: gestionar clientes y consentimientos" : undefined}
                   >
                     {busy === "consent" ? "Registrando…" : "Registrar consentimiento"}
                   </button>
@@ -687,32 +710,37 @@ export const WhatsappWorkspace = ({
                     Última: {assignments[0].assigned_user_id ?? "sin asignar"} · {formatDateTime(assignments[0].assigned_at)} · {assignments[0].reason}
                   </p>
                 )}
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  ID de usuario (vacío = desasignar)
-                  <input
-                    type="text"
-                    className="erp-form-input"
-                    value={assigneeId}
-                    onChange={(e) => setAssigneeId(e.target.value)}
-                    placeholder="UUID del agente"
-                  />
-                </label>
-                <label style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  Motivo (auditoría)
-                  <input
-                    type="text"
-                    className="erp-form-input"
-                    value={assignReason}
-                    onChange={(e) => setAssignReason(e.target.value)}
-                    placeholder="Ej.: deriva a ventas"
-                  />
-                </label>
+                <Field label="ID de usuario (vacío = desasignar)">
+                  {(field) => (
+                    <input
+                      {...field}
+                      type="text"
+                      className="erp-form-input"
+                      value={assigneeId}
+                      onChange={(e) => setAssigneeId(e.target.value)}
+                      placeholder="UUID del agente"
+                    />
+                  )}
+                </Field>
+                <Field label="Motivo (auditoría)">
+                  {(field) => (
+                    <input
+                      {...field}
+                      type="text"
+                      className="erp-form-input"
+                      value={assignReason}
+                      onChange={(e) => setAssignReason(e.target.value)}
+                      placeholder="Ej.: deriva a ventas"
+                    />
+                  )}
+                </Field>
                 <div>
                   <button
                     type="button"
                     className="pag-btn"
                     onClick={handleAssign}
-                    disabled={busy !== null}
+                    disabled={busy !== null || !canManageMessages}
+                    title={!canManageMessages ? "Requiere permiso: gestionar mensajes" : undefined}
                   >
                     {busy === "assign" ? "Asignando…" : "Asignar conversación"}
                   </button>

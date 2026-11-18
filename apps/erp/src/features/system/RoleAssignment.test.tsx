@@ -1,19 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ErpAuthContext, type ErpAuthContextValue } from "../../auth/ErpAuthContext";
 import { RoleAssignment } from "./RoleAssignment";
-import { assignProfileRole, listRolesAndAssignments } from "./api";
+import {
+  assignProfileRole,
+  listRoleAssignmentAccess,
+  listRolesAndAssignments,
+} from "./api";
 
-vi.mock("./api", () => ({
-  assignProfileRole: vi.fn(),
-  listRolesAndAssignments: vi.fn(),
-}));
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>();
+  return {
+    ...actual,
+    assignProfileRole: vi.fn(),
+    listRolesAndAssignments: vi.fn(),
+    listRoleAssignmentAccess: vi.fn(),
+  };
+});
 
 const owner = "10000000-0000-0000-0000-000000000001";
 const target = "10000000-0000-0000-0000-000000000002";
 const assignedUser = "10000000-0000-0000-0000-000000000003";
 const inactiveUser = "10000000-0000-0000-0000-000000000004";
 const ownerRole = "20000000-0000-0000-0000-000000000001";
+const adminRole = "20000000-0000-0000-0000-000000000003";
 const salesRole = "20000000-0000-0000-0000-000000000002";
 
 const session = {
@@ -30,14 +41,30 @@ const session = {
   },
 };
 
-const context: ErpAuthContextValue = {
+const baseContext: ErpAuthContextValue = {
   session,
   organizationId: "org",
   branchIds: [],
-  permissions: [],
+  permissions: ["users.manage", "users.view"],
   loading: false,
   error: null,
   hasPermission: () => true,
+};
+
+const renderRoleAssignment = (
+  propsUsers = users,
+  authOverrides: Partial<ErpAuthContextValue> = {},
+) => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ErpAuthContext.Provider value={{ ...baseContext, ...authOverrides }}>
+        <RoleAssignment users={propsUsers} />
+      </ErpAuthContext.Provider>
+    </QueryClientProvider>,
+  );
 };
 
 const users = [
@@ -53,7 +80,7 @@ const users = [
 
 const data = {
   roles: [
-    { id: ownerRole, code: "owner", name: "Responsable" },
+    { id: ownerRole, code: "owner", name: "Responsable del sistema (owner)" },
     { id: salesRole, code: "sales", name: "Ventas" },
   ],
   assignments: [
@@ -70,16 +97,16 @@ const data = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(listRolesAndAssignments).mockResolvedValue(data);
+  vi.mocked(listRoleAssignmentAccess).mockResolvedValue({
+    canManage: true,
+    allowedRoleIds: [ownerRole, salesRole],
+  });
   vi.mocked(assignProfileRole).mockResolvedValue();
 });
 
 describe("asignación de roles", () => {
   it("permite enviar asignación para usuario sin rol", async () => {
-    render(
-      <ErpAuthContext.Provider value={context}>
-        <RoleAssignment users={users} />
-      </ErpAuthContext.Provider>,
-    );
+    renderRoleAssignment();
 
     const item = await screen.findByRole("listitem");
     expect(item).toHaveTextContent(
@@ -93,10 +120,14 @@ describe("asignación de roles", () => {
         "Los usuarios nuevos no tienen acceso hasta que les asignes un rol",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Ventas (sales)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Ventas" })).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "Responsable (owner)" }),
+      screen.getByRole("option", { name: "Responsable del sistema" }),
     ).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Asignar rol" })).toBeEnabled(),
+    );
 
     fireEvent.change(screen.getByLabelText("Operador"), {
       target: { value: target },
@@ -112,28 +143,76 @@ describe("asignación de roles", () => {
     expect(await screen.findByText(/Rol actualizado/)).toBeInTheDocument();
   });
 
-  it("no ofrece asignación a otro rol", async () => {
+  it("deshabilita controles con título cuando el usuario no tiene rol global de responsable o administrador", async () => {
     vi.mocked(listRolesAndAssignments).mockResolvedValue({
       ...data,
       assignments: [],
     });
 
-    render(
-      <ErpAuthContext.Provider value={context}>
-        <RoleAssignment users={users} />
-      </ErpAuthContext.Provider>,
-    );
+    renderRoleAssignment();
 
     const item = await screen.findByRole("listitem");
     expect(item).toHaveTextContent(
       "Operador: Sin rol — pendiente de asignación",
     );
-    expect(
-      screen.getByText("Sin rol — pendiente de asignación"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Asignar rol" }),
-    ).not.toBeInTheDocument();
+
+    const expectedTitle = "Para asignar roles necesitás un rol global de responsable o administrador.";
+    expect(screen.getByLabelText("Operador")).toBeDisabled();
+    expect(screen.getByLabelText("Operador")).toHaveAttribute("title", expectedTitle);
+    expect(screen.getByLabelText("Rol")).toBeDisabled();
+    expect(screen.getByLabelText("Rol")).toHaveAttribute("title", expectedTitle);
+    expect(screen.getByRole("button", { name: "Asignar rol" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Asignar rol" })).toHaveAttribute("title", expectedTitle);
+  });
+
+  it("deshabilita controles con título cuando falta el permiso users.manage", async () => {
+    renderRoleAssignment(users, {
+      permissions: ["users.view"],
+      hasPermission: (perm) => perm !== "users.manage",
+    });
+
+    await screen.findByRole("listitem");
+
+    const expectedTitle = "No tenés permiso para administrar usuarios.";
+    expect(screen.getByLabelText("Operador")).toBeDisabled();
+    expect(screen.getByLabelText("Operador")).toHaveAttribute("title", expectedTitle);
+    expect(screen.getByLabelText("Rol")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Asignar rol" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Asignar rol" })).toHaveAttribute("title", expectedTitle);
+  });
+
+  it("restringe roles sensibles o de administración para administradores sin alcance completo", async () => {
+    vi.mocked(listRolesAndAssignments).mockResolvedValue({
+      roles: [
+        { id: ownerRole, code: "owner", name: "Responsable del sistema (owner)" },
+        { id: adminRole, code: "admin", name: "Administrador" },
+        { id: salesRole, code: "sales", name: "Ventas" },
+      ],
+      assignments: [
+        {
+          profile_id: owner,
+          role_id: adminRole,
+          branch_id: null,
+          valid_from: "2020-01-01T00:00:00Z",
+          valid_until: null,
+        },
+      ],
+    });
+    vi.mocked(listRoleAssignmentAccess).mockResolvedValue({
+      canManage: true,
+      allowedRoleIds: [salesRole],
+    });
+
+    renderRoleAssignment();
+
+    await screen.findByRole("listitem");
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: "Ventas" })).not.toBeDisabled(),
+    );
+
+    const ownerOption = screen.getByRole("option", { name: "Responsable del sistema" });
+    expect(ownerOption).toBeDisabled();
+    expect(ownerOption).toHaveAttribute("title", "No tenés permiso para asignar este rol.");
   });
 
   it("ordena primero a los usuarios activos sin rol", async () => {
@@ -178,11 +257,7 @@ describe("asignación de roles", () => {
       ],
     });
 
-    render(
-      <ErpAuthContext.Provider value={context}>
-        <RoleAssignment users={mixedUsers} />
-      </ErpAuthContext.Provider>,
-    );
+    renderRoleAssignment(mixedUsers);
 
     const list = await screen.findByRole("list");
     const items = within(list).getAllByRole("listitem");
@@ -211,19 +286,15 @@ describe("asignación de roles", () => {
         ],
       });
 
-    render(
-      <ErpAuthContext.Provider value={context}>
-        <RoleAssignment users={users} />
-      </ErpAuthContext.Provider>,
-    );
+    renderRoleAssignment();
 
     const item = await screen.findByRole("listitem");
     expect(item).toHaveTextContent(
       "Operador: Sin rol — pendiente de asignación",
     );
-    expect(
-      screen.getByText("Sin rol — pendiente de asignación"),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Asignar rol" })).toBeEnabled(),
+    );
 
     fireEvent.change(screen.getByLabelText("Operador"), {
       target: { value: target },

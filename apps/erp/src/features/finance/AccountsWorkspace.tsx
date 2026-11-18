@@ -16,6 +16,8 @@ import {
 import { financingSchema, receivablePaymentSchema, type FinancingInput, type ReceivablePaymentInput } from "./schemas";
 import { StatePanel, WorkspaceHeader, FeedbackAlert, KpiCard } from "../../components/erp/WorkspaceUi";
 import { formatCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
+import { addDaysIsoAR, todayIsoAR } from "../../lib/dates";
+import { FINANCING_STATUS_LABELS } from "../../lib/labels";
 import type { FinancingContract } from "./types";
 
 const TERMINAL_CONTRACT_STATUSES = ["paid", "cancelled", "uncollectible"];
@@ -40,6 +42,10 @@ export const AccountsWorkspace = () => {
   const contractsQuery = useQuery({ queryKey: ["erp", "finance", "contracts"], queryFn: listFinancingContracts });
   const branchesQuery = useQuery({ queryKey: ["erp", "finance", "branches"], queryFn: listBranches });
   const customersQuery = useQuery({ queryKey: ["erp", "finance", "customers"], queryFn: listCustomers });
+  const customerNames = useMemo(
+    () => new Map(customersQuery.data?.map((customer) => [customer.id, customer.display_name.trim()])),
+    [customersQuery.data],
+  );
   const [feedback, setFeedback] = useState<string | null>(null);
   const [formGuardError, setFormGuardError] = useState<string | null>(null);
   const [paymentGuardError, setPaymentGuardError] = useState<string | null>(null);
@@ -54,7 +60,7 @@ export const AccountsWorkspace = () => {
       downPayment: "50000",
       interestRate: "0.05",
       installmentsCount: 3,
-      firstDue: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10),
+      firstDue: addDaysIsoAR(todayIsoAR(), 30),
       operationKey: generateIdempotencyKey("fin"),
       reason: "Financiación de equipo en cuotas fijas",
     },
@@ -142,7 +148,7 @@ export const AccountsWorkspace = () => {
       return;
     }
     if (TERMINAL_CONTRACT_STATUSES.includes(contract.status)) {
-      setPaymentGuardError(`El contrato está en estado "${contract.status}" y ya no admite cobros.`);
+      setPaymentGuardError(`El contrato está en estado "${FINANCING_STATUS_LABELS[contract.status]}" y ya no admite cobros.`);
       return;
     }
     if (values.branchId !== contract.branch_id) {
@@ -214,7 +220,7 @@ export const AccountsWorkspace = () => {
     contracts,
     (contract) => Number(contract.financed_amount || 0),
   );
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayIsoAR();
   const allInstallments = contracts.flatMap((c) => c.financing_installments ?? []);
   const pendingInstallments = allInstallments.filter((i) => i.status !== "paid" && i.status !== "cancelled").length;
   const overdueInstallments = allInstallments.filter(
@@ -303,10 +309,10 @@ export const AccountsWorkspace = () => {
                 <div>
                   <strong style={{ fontSize: "15px" }}>{contract.contract_reference ?? contract.id.slice(0, 8)}</strong>
                   <span style={{ fontSize: "11px", color: "var(--text-muted)", display: "block" }}>
-                    Cliente #{contract.customer_id ? contract.customer_id.slice(0, 8) : "General"}
+                    {customerNames.get(contract.customer_id) || "Cliente sin nombre"}
                   </span>
                 </div>
-                <span className="flow-status-pill completed">{contract.status} · {contract.currency_code}</span>
+                <span className="flow-status-pill completed">{FINANCING_STATUS_LABELS[contract.status]} · {contract.currency_code}</span>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px", margin: "12px 0" }}>
@@ -434,8 +440,8 @@ export const AccountsWorkspace = () => {
                   <input className="erp-form-input" type="number" min="1" max="24" {...createForm.register("installmentsCount", { valueAsNumber: true })} />
                 </div>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
-                  <label className="erp-form-label">Primer Vencimiento</label>
-                  <input className="erp-form-input" type="date" {...createForm.register("firstDue")} />
+                  <label className="erp-form-label" htmlFor="financing-first-due">Primer Vencimiento</label>
+                  <input className="erp-form-input" id="financing-first-due" type="date" {...createForm.register("firstDue")} />
                 </div>
               </div>
 

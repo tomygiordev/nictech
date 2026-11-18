@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Users,
   Search,
@@ -17,7 +19,10 @@ import {
   FeedbackAlert,
   KpiCard,
 } from "../../components/erp/WorkspaceUi";
+import { Field, FormError } from "../../components/erp/FormFeedback";
 import { formatCurrency } from "../../lib/formatters";
+import { toUserMessage } from "../../lib/errors";
+import { REPAIR_STATUS_LABELS, labelOf } from "../../lib/labels";
 import { supabase } from "../../lib/supabase";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 
@@ -74,6 +79,8 @@ const customerFormSchema = z
     }
   });
 
+type CustomerFormValues = z.infer<typeof customerFormSchema>;
+
 const createCustomerWithPrivateDetails = async (input: {
   kind: "person" | "business";
   displayName: string;
@@ -108,19 +115,42 @@ export const CustomersWorkspace = () => {
   const [search, setSearch] = useState<string>("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [customerToDeactivate, setCustomerToDeactivate] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<CustomerFeedback | null>(null);
   const [privateDetails, setPrivateDetails] = useState<CustomerPrivateDetails | null>(null);
   const [loadingPrivateDetails, setLoadingPrivateDetails] = useState(false);
   const [privateDetailsError, setPrivateDetailsError] = useState<string | null>(null);
 
-  // Form states for new customer
-  const [name, setName] = useState("");
-  const [docType, setDocType] = useState<"DNI" | "CUIT">("DNI");
-  const [docNumber, setDocNumber] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
+  const form = useForm<CustomerFormValues>({
+    resolver: zodResolver(customerFormSchema),
+    defaultValues: {
+      name: "",
+      docType: "DNI",
+      docNumber: "",
+      email: "",
+      phone: "",
+      notes: "",
+    },
+  });
+
+  const openNewCustomerModal = () => {
+    setCreateError(null);
+    form.reset({
+      name: "",
+      docType: "DNI",
+      docNumber: "",
+      email: "",
+      phone: "",
+      notes: "",
+    });
+    setIsNewModalOpen(true);
+  };
+
+  const closeNewCustomerModal = () => {
+    setIsNewModalOpen(false);
+    setCreateError(null);
+  };
 
   const fetchCustomers = useCallback(async () => {
     try {
@@ -188,7 +218,7 @@ export const CustomersWorkspace = () => {
       });
       setCustomers(mapped);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar clientes");
+      setError(toUserMessage(err, "No se pudieron cargar los clientes."));
     } finally {
       setLoading(false);
     }
@@ -198,46 +228,36 @@ export const CustomersWorkspace = () => {
     void fetchCustomers();
   }, [fetchCustomers]);
 
-  const handleCreateCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateCustomer = async (values: CustomerFormValues) => {
+    setCreateError(null);
     if (!organizationId) {
-      setFeedback({ type: "error", message: "La sesión no tiene una organización activa. Volvé a iniciar sesión." });
+      setCreateError("La sesión no tiene una organización activa. Volvé a iniciar sesión.");
       return;
     }
 
-    const parsed = customerFormSchema.safeParse({ name, docType, docNumber, email, phone, notes });
-    if (!parsed.success) {
-      setFeedback({ type: "error", message: parsed.error.issues[0]?.message ?? "Revisá los datos del cliente." });
-      return;
-    }
-
-    if ((parsed.data.docNumber || parsed.data.notes) && !hasPermission("customers.view_sensitive")) {
-      setFeedback({ type: "error", message: "Tu rol no permite guardar documentos ni notas privadas." });
+    if ((values.docNumber || values.notes) && !hasPermission("customers.view_sensitive")) {
+      setCreateError("Tu rol no permite guardar documentos ni notas privadas.");
       return;
     }
 
     try {
-      const normalizedDocument = parsed.data.docNumber.replace(/\D/g, "") || null;
+      const normalizedDocument = values.docNumber.replace(/\D/g, "") || null;
       await createCustomerWithPrivateDetails({
-        kind: parsed.data.docType === "CUIT" ? "business" : "person",
-        displayName: parsed.data.name,
-        email: parsed.data.email || null,
-        phone: parsed.data.phone || null,
-        taxId: parsed.data.docType === "CUIT" ? normalizedDocument : null,
-        identityDocument: parsed.data.docType === "DNI" ? normalizedDocument : null,
-        internalNotes: parsed.data.notes || null,
+        kind: values.docType === "CUIT" ? "business" : "person",
+        displayName: values.name,
+        email: values.email || null,
+        phone: values.phone || null,
+        taxId: values.docType === "CUIT" ? normalizedDocument : null,
+        identityDocument: values.docType === "DNI" ? normalizedDocument : null,
+        internalNotes: values.notes || null,
       });
 
-      setFeedback({ type: "success", message: `¡Cliente "${parsed.data.name}" registrado correctamente!` });
+      setFeedback({ type: "success", message: `¡Cliente "${values.name}" registrado correctamente!` });
       setIsNewModalOpen(false);
-      setName("");
-      setDocNumber("");
-      setEmail("");
-      setPhone("");
-      setNotes("");
+      form.reset();
       await fetchCustomers();
     } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al registrar cliente" });
+      setCreateError(toUserMessage(err, "No se pudo registrar el cliente."));
     }
   };
 
@@ -260,7 +280,7 @@ export const CustomersWorkspace = () => {
         internal_notes: details.internal_notes,
       } : null);
     } catch (detailsError) {
-      setPrivateDetailsError(detailsError instanceof Error ? detailsError.message : "No se pudieron cargar los datos privados.");
+      setPrivateDetailsError(toUserMessage(detailsError, "No se pudieron cargar los datos privados."));
     } finally {
       setLoadingPrivateDetails(false);
     }
@@ -279,7 +299,7 @@ export const CustomersWorkspace = () => {
       setFeedback({ type: "success", message: "Cliente dado de baja del padrón." });
       await fetchCustomers();
     } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al dar de baja cliente" });
+      setFeedback({ type: "error", message: toUserMessage(err, "No se pudo dar de baja al cliente.") });
     }
   };
 
@@ -305,7 +325,7 @@ export const CustomersWorkspace = () => {
       <WorkspaceHeader
         title="Gestión de Clientes & CRM"
         description="Ficha unificada de clientes, historial de compras y reparaciones activas en taller."
-        badge={`${customers.length} Clientes Registrados`}
+        badge={customers.length === 1 ? "1 cliente registrado" : `${customers.length} clientes registrados`}
       />
 
       {feedback && (
@@ -368,11 +388,11 @@ export const CustomersWorkspace = () => {
             <button
               type="button"
               className="btn-primary"
-              onClick={() => setIsNewModalOpen(true)}
+              onClick={openNewCustomerModal}
               disabled={!hasPermission("customers.manage")}
             >
               <Plus size={16} />
-              Nuevo Cliente
+              Nuevo cliente
             </button>
           </div>
         </div>
@@ -393,7 +413,7 @@ export const CustomersWorkspace = () => {
               {filteredCustomers.length === 0 ? (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", padding: "36px", color: "var(--text-muted)" }}>
-                    {loading ? "Cargando clientes desde la base de datos…" : error ? `Error: ${error}` : "No hay clientes registrados en el sistema."}
+                    {loading ? "Cargando clientes desde la base de datos…" : error ? error : "No hay clientes registrados en el sistema."}
                   </td>
                 </tr>
               ) : (
@@ -428,7 +448,9 @@ export const CustomersWorkspace = () => {
                     </div>
                   </td>
                   <td>
-                    <span className="type-badge green">{c.ordersCount} pedidos</span>
+                    <span className="type-badge green">
+                      {c.ordersCount === 1 ? "1 pedido" : `${c.ordersCount} pedidos`}
+                    </span>
                   </td>
                   <td>
                     {c.activeRepairs > 0 ? (
@@ -526,7 +548,7 @@ export const CustomersWorkspace = () => {
                 )}
               </div>
             ) : (
-              <FeedbackAlert type="info" message="Los documentos y notas privadas requieren el permiso customers.view_sensitive." />
+              <FeedbackAlert type="info" message="Los documentos y notas privadas solo están disponibles para responsables autorizados." />
             )}
 
             {selectedCustomer.repairsList && selectedCustomer.repairsList.length > 0 && (
@@ -553,7 +575,7 @@ export const CustomersWorkspace = () => {
                         <span style={{ marginLeft: "8px", color: "var(--text-main)" }}>{r.brand} {r.model}</span>
                       </div>
                       <span className={`flow-status-pill ${r.status_is_terminal ? "completed" : "processing"}`}>
-                        {r.status}
+                        {labelOf(REPAIR_STATUS_LABELS, r.status, r.status || "En taller")}
                       </span>
                     </div>
                   ))}
@@ -591,87 +613,117 @@ export const CustomersWorkspace = () => {
       {/* Modal: New Customer */}
       <Modal
         isOpen={isNewModalOpen}
-        onClose={() => setIsNewModalOpen(false)}
-        title="Registrar Nuevo Cliente"
-        subtitle="Agrega un cliente particular o corporativo al padrón del ERP"
+        onClose={closeNewCustomerModal}
+        title="Nuevo cliente"
+        subtitle="Agregá un cliente particular o corporativo al padrón del ERP"
         icon={Plus}
         maxWidth="520px"
       >
-        <form onSubmit={handleCreateCustomer} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div className="erp-form-group">
-            <label className="erp-form-label">Nombre Completo o Razón Social *</label>
-            <input
-              type="text"
-              required
-              placeholder="Ej: Florencia Álvarez o Tech Solutions SRL"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="erp-form-input"
-            />
-          </div>
+        <form onSubmit={form.handleSubmit(handleCreateCustomer)} style={{ display: "flex", flexDirection: "column", gap: "12px" }} noValidate>
+          <FormError message={createError} onDismiss={() => setCreateError(null)} />
 
-          {hasPermission("customers.view_sensitive") && <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Tipo Doc.</label>
-              <select
-                value={docType}
-                onChange={(e) => setDocType(e.target.value as "DNI" | "CUIT")}
-                className="erp-form-select"
-              >
-                <option value="DNI">DNI</option>
-                <option value="CUIT">CUIT</option>
-              </select>
-            </div>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Número de Documento</label>
+          <Field
+            label="Nombre completo o razón social"
+            required
+            error={form.formState.errors.name?.message}
+          >
+            {(a11y) => (
               <input
+                {...a11y}
                 type="text"
-                placeholder="Ej: 38920194 o 30-71829104-8"
-                value={docNumber}
-                onChange={(e) => setDocNumber(e.target.value)}
+                placeholder="Ej: Florencia Álvarez o Tech Solutions SRL"
                 className="erp-form-input"
+                {...form.register("name")}
               />
+            )}
+          </Field>
+
+          {hasPermission("customers.view_sensitive") && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
+              <Field
+                label="Tipo de documento"
+                error={form.formState.errors.docType?.message}
+              >
+                {(a11y) => (
+                  <select
+                    {...a11y}
+                    className="erp-form-select"
+                    {...form.register("docType")}
+                  >
+                    <option value="DNI">DNI</option>
+                    <option value="CUIT">CUIT</option>
+                  </select>
+                )}
+              </Field>
+              <Field
+                label="Número de documento"
+                error={form.formState.errors.docNumber?.message}
+              >
+                {(a11y) => (
+                  <input
+                    {...a11y}
+                    type="text"
+                    placeholder="Ej: 38920194 o 30-71829104-8"
+                    className="erp-form-input"
+                    {...form.register("docNumber")}
+                  />
+                )}
+              </Field>
             </div>
-          </div>}
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Email</label>
-              <input
-                type="email"
-                placeholder="cliente@ejemplo.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="erp-form-input"
-              />
-            </div>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Teléfono / WhatsApp</label>
-              <input
-                type="text"
-                placeholder="+54 9 11 4829-1029"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="erp-form-input"
-              />
-            </div>
+            <Field
+              label="Email"
+              error={form.formState.errors.email?.message}
+            >
+              {(a11y) => (
+                <input
+                  {...a11y}
+                  type="email"
+                  placeholder="cliente@ejemplo.com"
+                  className="erp-form-input"
+                  {...form.register("email")}
+                />
+              )}
+            </Field>
+            <Field
+              label="Teléfono / WhatsApp"
+              error={form.formState.errors.phone?.message}
+            >
+              {(a11y) => (
+                <input
+                  {...a11y}
+                  type="text"
+                  placeholder="+54 9 11 4829-1029"
+                  className="erp-form-input"
+                  {...form.register("phone")}
+                />
+              )}
+            </Field>
           </div>
 
-          {hasPermission("customers.view_sensitive") && <div className="erp-form-group">
-            <label className="erp-form-label">Observaciones / Notas</label>
-            <textarea
-              rows={2}
-              placeholder="Detalles sobre preferencias, cuenta corriente..."
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="erp-form-textarea"
-            />
-          </div>}
+          {hasPermission("customers.view_sensitive") && (
+            <Field
+              label="Observaciones / notas"
+              error={form.formState.errors.notes?.message}
+            >
+              {(a11y) => (
+                <textarea
+                  {...a11y}
+                  rows={2}
+                  placeholder="Detalles sobre preferencias, cuenta corriente..."
+                  className="erp-form-textarea"
+                  {...form.register("notes")}
+                />
+              )}
+            </Field>
+          )}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => setIsNewModalOpen(false)}>Cancelar</button>
-            <button type="submit" className="btn-primary">
-              Guardar Cliente
+            <button type="button" className="pag-btn" onClick={closeNewCustomerModal}>Cancelar</button>
+            <button type="submit" className="btn-primary" disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting ? "Guardando…" : "Guardar cliente"}
             </button>
           </div>
         </form>

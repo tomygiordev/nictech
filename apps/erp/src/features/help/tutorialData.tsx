@@ -667,7 +667,7 @@ export const MockStockInteractive: React.FC = () => {
       )}
 
       <div style={{ background: "#fffbeb", border: "1px solid #fde68a", padding: "8px", borderRadius: "6px", fontSize: "10.5px", color: "#92400e", marginTop: "auto" }}>
-        <strong>⚠️ Aclaración Operativa:</strong> La pestaña <em>Conteo físico (pendiente)</em> no tiene aún backend de captura masiva en la nube. Para ajustar diferencias de conteo físico, usá siempre el botón <strong>Ajustar Stock</strong>.
+        <strong>⚠️ Aclaración Operativa:</strong> Para ajustar diferencias de conteo físico en el inventario, usá siempre el botón <strong>Ajustar Stock</strong> indicando el motivo.
       </div>
     </div>
   );
@@ -808,7 +808,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         title: "Entradas, Mermas y Ajustes de Stock",
         badge: "Paso 2: Movimientos",
         explanation: "Si llegó mercadería de un distribuidor que compraste directamente en efectivo o si un técnico rompió un módulo probándolo, usá 'Ajuste de Stock'. Cada ajuste te pide un motivo obligatorio para que los socios o encargados sepan por qué subió o bajó el inventario.",
-        limitations: "La funcionalidad de 'Conteo físico masivo' con planilla de auditoría figura como 'pendiente' en la solapa superior porque se está refinando el backend para la Etapa 3. Si necesitas regularizar el stock de un producto ahora, hacelo con el botón 'Ajustar Stock'.",
+        limitations: "Para regularizar diferencias detectadas en un conteo de mercadería, usá el botón 'Ajustar Stock' e indicá el motivo del movimiento.",
         mockComponent: <MockStockInteractive />,
       },
     ],
@@ -908,7 +908,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
   // 9. TRADE INS
   "trade-ins": {
     workspaceId: "trade-ins",
-    moduleName: "Equipos Usados & Canjes (Trade-Ins)",
+    moduleName: "Equipos usados",
     area: "taller",
     icon: RefreshCw,
     tagline: "Plan canje de celulares, verificación de IMEI/iCloud y cuarentena técnica",
@@ -918,7 +918,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         title: "¿Qué es y cuál es el sentido de Equipos Usados?",
         badge: "Paso 1: Sentido Operativo",
         isIntroduction: true,
-        contentSummary: "Ficha de evaluación técnica de dispositivos usados que los clientes entregan como parte de pago para comprar uno nuevo (trade-in), cálculo de valor de toma según desgaste estético y salud de batería, y envío a cuarentena técnica.",
+        contentSummary: "Ficha de evaluación técnica de dispositivos usados que los clientes entregan como parte de pago para comprar uno nuevo, cálculo de valor de toma según desgaste estético y salud de batería, y envío a cuarentena técnica.",
         operationalSense: "Evita que el local acepte teléfonos con cuentas bloqueadas (iCloud / Google), celulares denunciados como robados, o equipos con fallas ocultas que después no se puedan vender.",
         explanation: "Cuando un cliente dice '¿cuánto me tomás este iPhone 11 por el 13?', abrís este módulo, hacés el checklist y el sistema te da el valor máximo que podés descontarle.",
         mockComponent: <MockRepairsInteractive />,
@@ -1140,10 +1140,6 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
 };
 
 export const KEYBOARD_SHORTCUTS = [
-  { key: "F2 / Ctrl + K", action: "Abrir buscador rápido general de módulos o workspaces" },
-  { key: "Escape", action: "Cerrar modal activo, salir del tutorial o cancelar búsqueda" },
-  { key: "Alt + P / Botón '+'", action: "Acceso directo instantáneo al Punto de Venta (POS)" },
-  { key: "Alt + C", action: "Ir directo al módulo de Caja y Arqueo" },
-  { key: "Alt + T", action: "Ir directo a Servicio Técnico / Taller" },
-  { key: "Alt + S", action: "Ir directo al módulo de Stock y Almacén" },
+  { key: "F2 / Ctrl + K", action: "Enfocar el buscador rápido del menú lateral" },
+  { key: "Escape", action: "Cerrar modal activo, salir del tutorial o limpiar búsqueda" },
 ];

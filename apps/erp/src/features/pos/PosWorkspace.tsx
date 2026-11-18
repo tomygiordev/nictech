@@ -18,9 +18,11 @@ import {
   Loader2,
   RefreshCw,
   Layers,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { WorkspaceHeader, StatePanel, FeedbackAlert } from "../../components/erp/WorkspaceUi";
-import { formatCurrency, formatPosCurrency } from "../../lib/formatters";
+import { formatCurrency } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import { canSubmitWithExchangeRate, ERP_BASE_CURRENCY } from "./schemas";
@@ -91,6 +93,7 @@ export interface CartItem {
   promotionListPriceArs?: number;
   quantity: number;
   availableStock: number;
+  tracksInventory?: boolean;
   locationId: string;
   inventoryUnitId?: string | null;
   taxRatePercent: number;
@@ -122,16 +125,17 @@ function PosAmount({ amount, list }: { amount: number; list?: number }) {
     <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 6px" }}>
       {list !== undefined && (
         <del title="Precio de lista" style={{ color: "var(--text-muted)", fontSize: "0.85em", fontWeight: 500 }}>
-          {formatPosCurrency(list, "ARS")}
+          {formatCurrency(list, "ARS")}
         </del>
       )}
-      <span>{formatPosCurrency(amount, "ARS")}</span>
+      <span>{formatCurrency(amount, "ARS")}</span>
     </span>
   );
 }
 
 interface BranchOption {
   id: string;
+  code: string;
   name: string;
 }
 
@@ -188,7 +192,8 @@ export interface PosWorkspaceProps {
 }
 
 export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externalCoordinator }) => {
-  const { organizationId } = useErpAuth();
+  const { organizationId, branchIds } = useErpAuth();
+  const assignedBranchId = branchIds.length === 1 ? branchIds[0] : undefined;
   const [products, setProducts] = useState<PosProductItem[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -202,6 +207,8 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
   const [staleQuoteDetected, setStaleQuoteDetected] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [lastTicket, setLastTicket] = useState<ConfirmedTicketState | null>(null);
+  const [cartDrawerOpen, setCartDrawerOpen] = useState<boolean>(false);
+  const receiptPanelRef = useRef<HTMLDivElement | null>(null);
   const coordinatorRef = useRef<PosCoordinator | null>(null);
   if (!coordinatorRef.current) {
     coordinatorRef.current = externalCoordinator || new PosCoordinator({
@@ -218,7 +225,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
       branchId: "",
       locationId: "",
       paymentMethodId: "",
-      invoiceKind: "fiscal",
+      invoiceKind: "non_fiscal",
       customerName: "Consumidor Final",
     },
   });
@@ -261,7 +268,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
           .maybeSingle(),
         supabase
           .from("branches")
-          .select("id, name")
+          .select("id, code, name")
           .eq("organization_id", organizationId)
           .eq("is_active", true)
           .order("name"),
@@ -306,7 +313,37 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
       if (firstError) throw firstError;
 
       const branchOptions: BranchOption[] = branchResult.data ?? [];
-      const locationOptions: LocationOption[] = locationResult.data ?? [];
+      const rawUnits: RawInventoryUnit[] = unitResult.data ?? [];
+      const rawProducts: RawProductData[] = productResult.data ?? [];
+      const stockedLocations = new Set<string>();
+      const trackedVariants = new Map<string, Set<string | null>>();
+      for (const product of rawProducts) {
+        if (product.inventory_tracking === "none") continue;
+        const activeVariants = (product.product_variants ?? []).filter((variant) => variant.is_active);
+        const sellableVariants = new Set<string | null>(activeVariants.length
+          ? activeVariants.map((variant) => variant.id)
+          : [null]);
+        if (product.inventory_tracking === "quantity") {
+          for (const balance of product.stock_balances ?? []) {
+            if (sellableVariants.has(balance.variant_id) && balance.quantity_on_hand > balance.quantity_reserved) {
+              stockedLocations.add(balance.location_id);
+            }
+          }
+        } else {
+          trackedVariants.set(product.id, sellableVariants);
+        }
+      }
+      for (const unit of rawUnits) {
+        if (unit.current_location_id && trackedVariants.get(unit.product_id)?.has(unit.variant_id)) {
+          stockedLocations.add(unit.current_location_id);
+        }
+      }
+      const locationOptions: LocationOption[] = [...(locationResult.data ?? [])]
+        .sort((a, b) => Number(stockedLocations.has(b.id)) - Number(stockedLocations.has(a.id)));
+      const stockedBranches = new Set(locationOptions.filter((location) => stockedLocations.has(location.id))
+        .map((location) => location.branch_id));
+      const branchesWithLocations = new Set(locationOptions.map((location) => location.branch_id));
+      const mainBranch = branchOptions.find((branch) => branch.code === "CENTRAL");
       const methodOptions = (paymentResult.data || [])
         .map((method) => {
           const kind = classifyPaymentMethod(method.code, method.settlement_kind);
@@ -318,7 +355,14 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
       const currentCtx = coordinator.getCurrentContext();
       const resolvedBranchId = branchOptions.some((branch) => branch.id === currentCtx.branchId)
         ? currentCtx.branchId
-        : branchOptions[0]?.id || "";
+        : branchOptions.find((branch) => branch.id === assignedBranchId)?.id
+          ?? (mainBranch && stockedBranches.has(mainBranch.id) ? mainBranch.id : undefined)
+          ?? branchOptions.find((branch) => stockedBranches.has(branch.id))?.id
+          ?? (mainBranch && branchesWithLocations.has(mainBranch.id) ? mainBranch.id : undefined)
+          ?? branchOptions.find((branch) => branchesWithLocations.has(branch.id))?.id
+          ?? mainBranch?.id
+          ?? branchOptions[0]?.id
+          ?? "";
       const branchLocations = locationOptions.filter((location) => location.branch_id === resolvedBranchId);
       const resolvedLocationId = branchLocations.some((location) => location.id === currentCtx.locationId)
         ? currentCtx.locationId
@@ -330,8 +374,6 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
       const rawRate = Number(fxResult.data?.rate_to_base);
       const currentRate = Number.isFinite(rawRate) && rawRate > 0 ? rawRate : null;
 
-      const rawUnits: RawInventoryUnit[] = unitResult.data ?? [];
-      const rawProducts: RawProductData[] = productResult.data ?? [];
       const quotes = await listPosCatalogQuotes(rawProducts.map((product) => product.id));
       const priceFor = (productId: string, variantId?: string) => {
         const quote = quotes.get(posQuoteKey(productId, variantId));
@@ -465,7 +507,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
       return mapped;
       },
     });
-  }, [checkoutForm, organizationId, selectedPaymentMethodId, coordinator]);
+  }, [assignedBranchId, checkoutForm, organizationId, selectedPaymentMethodId, coordinator]);
 
   useEffect(() => {
     if (!organizationId) {
@@ -516,6 +558,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
     }
 
     const key = `${product.id}:${variant ? variant.id : "base"}:${inventoryUnit?.id || "quantity"}`;
+    const tracksInventory = product.inventoryTracking !== "none";
     const targetStock = variant ? variant.stock : product.stock;
     const priceArs = variant ? variant.effectiveGrossPrice : product.priceArs;
     const isOutOfRange = variant ? variant.isPriceOutOfRange : product.isPriceOutOfRange;
@@ -541,7 +584,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
         return prev;
       }
 
-      if (currentQty + 1 > targetStock) {
+      if (tracksInventory && currentQty + 1 > targetStock) {
         setFeedback({
           type: "error",
           message: `Stock insuficiente para ${displayName}. Máximo disponible: ${targetStock}`,
@@ -568,6 +611,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
           promotionListPriceArs: variant ? variant.promotionListPriceArs : product.promotionListPriceArs,
           quantity: 1,
           availableStock: targetStock,
+          tracksInventory,
           locationId: selectedLocationId,
           inventoryUnitId: inventoryUnit?.id || null,
           taxRatePercent: product.taxRatePercent,
@@ -616,7 +660,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
               return item;
             }
             const nextQty = item.quantity + delta;
-            if (nextQty > item.availableStock) {
+            if (item.tracksInventory !== false && nextQty > item.availableStock) {
               setFeedback({
                 type: "error",
                 message: `Stock insuficiente para ${item.displayName}. Máximo disponible: ${item.availableStock}`,
@@ -672,8 +716,8 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
         saleOrgId: attempt.origin.organizationId }),
       onSuccess: (result, receipt) => {
         setLastTicket({ info: result, receipt, saleOrgId: attempt.origin.organizationId,
-          recoveryError: receipt ? null : "Venta confirmada. Puede recuperar el comprobante sin volver a cobrar." });
-        setFeedback({ type: "success", message: `Venta confirmada: ${result.documentNumber}.` });
+          recoveryError: receipt ? null : "Venta confirmada. Podés recuperar el comprobante sin volver a cobrar." });
+        setFeedback(null);
       },
       onError: (error) => setFeedback({ type: "error", message: error.message }),
       onClearCart: () => setCart([]),
@@ -689,11 +733,11 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
     if (submittingSale || coordinator.isCheckoutActive() || coordinator.isRequoteActive()) return;
     const pendingAttempt = coordinator.getFinancialAttempt();
     if (pendingAttempt && ["uncertain", "dispatched"].includes(pendingAttempt.status)) {
-      setFeedback({ type: "error", message: "Resuelva el cobro pendiente antes de iniciar otra venta." });
+      setFeedback({ type: "error", message: "Resolvé el cobro pendiente antes de iniciar otra venta." });
       return;
     }
     if (staleQuoteDetected) {
-      setFeedback({ type: "error", message: "Actualice los precios del carrito antes de volver a cobrar." });
+      setFeedback({ type: "error", message: "Actualizá los precios del carrito antes de volver a cobrar." });
       return;
     }
 
@@ -726,7 +770,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
 
     // Check available stock limits before posting
     for (const item of cart) {
-      if (item.quantity > item.availableStock) {
+      if (item.tracksInventory !== false && item.quantity > item.availableStock) {
         setFeedback({
           type: "error",
           message: `No se puede procesar: ${item.displayName} supera el stock disponible (${item.availableStock}).`,
@@ -794,10 +838,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
             ? null
             : `Venta confirmada en ERP (${res.documentNumber}). No se pudo obtener el comprobante para impresión. Podés recuperarlo ahora.`,
         });
-        setFeedback({
-          type: "success",
-          message: `¡Venta completada! Comprobante ${res.invoiceKind === "fiscal" ? "fiscal" : "no fiscal"} ${res.documentNumber} registrado en el ERP. Stock descontado atómicamente.`,
-        });
+        setFeedback(null);
       },
       onError: (err) => {
         const norm = typeof err === "string" ? { message: err, isStaleQuote: false } : err;
@@ -831,6 +872,13 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
   const activeLocation = locations.find((location) => location.id === selectedLocationId);
   const availableLocations = locations.filter((location) => location.branch_id === selectedBranchId);
   const hasTransferMethod = paymentMethods.some((method) => method.kind === "transfer");
+  const lastTicketDocumentId = lastTicket?.info.documentId;
+  const lastTicketVisible = Boolean(lastTicket && (!lastTicket.saleOrgId || lastTicket.saleOrgId === organizationId));
+
+  useEffect(() => {
+    if (!lastTicketDocumentId || !lastTicketVisible) return;
+    receiptPanelRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }, [lastTicketDocumentId, lastTicketVisible]);
 
   return (
     <div className="flow-dashboard">
@@ -854,9 +902,9 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
 
       {hasUnresolvedAttempt && (
         <div role="status" className="erp-alert erp-alert-warning">
-          <p>Hay un cobro con resultado incierto. No inicie otra venta hasta resolverlo.</p>
+          <p>Hay un cobro con resultado incierto. No inicies otra venta hasta resolverlo.</p>
           {financialAttempt?.origin.organizationId !== organizationId ? (
-            <p>Vuelva a la organización de origen para reintentar el mismo cobro.</p>
+            <p>Volvé a la organización de origen para reintentar el mismo cobro.</p>
           ) : (
             <button type="button" className="btn-secondary" onClick={() => { void handleRetryUncertain(); }}
               disabled={loading || submittingSale || !coordinator.isIdle()}>
@@ -866,21 +914,23 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
         </div>
       )}
       {lastTicket && (!lastTicket.saleOrgId || lastTicket.saleOrgId === organizationId) && (
-        <PosReceiptPanel
-          key={lastTicket.info.documentId}
-          ticket={lastTicket}
-          onClose={() => setLastTicket(null)}
-          onRecover={handleRecover}
-        />
+        <div ref={receiptPanelRef} className="pos-receipt-anchor">
+          <PosReceiptPanel
+            key={lastTicket.info.documentId}
+            ticket={lastTicket}
+            onClose={() => setLastTicket(null)}
+            onRecover={handleRecover}
+          />
+        </div>
       )}
 
       {lastTicket && lastTicket.saleOrgId && lastTicket.saleOrgId !== organizationId && (
         <div style={{ padding: "12px 16px", background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: "8px", color: "var(--amber-accent, #f59e0b)", fontSize: "13px", marginBottom: "16px" }}>
-          El comprobante emitido ({lastTicket.info.documentNumber}) corresponde a otra organización. Vuelva a la organización original para consultarlo o imprimirlo.
+          El comprobante emitido ({lastTicket.info.documentNumber}) corresponde a otra organización. Volvé a la organización original para consultarlo o imprimirlo.
         </div>
       )}
 
-      <div className="pos-workspace-grid" style={{ gap: "24px" }}>
+      <div className="pos-workspace-grid">
         {/* Left: Product Catalog & Search */}
         <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
           {/* Search & Filter Bar */}
@@ -896,7 +946,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               </button>
 
-              <div className="flow-search-pill" style={{ flex: 1, minWidth: "240px" }}>
+              <div className="flow-search-pill">
                 <Barcode size={16} color="var(--brand-primary)" />
                 <input
                   type="text"
@@ -936,8 +986,12 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
               message="Verificá el término de búsqueda o seleccioná otra categoría."
             />
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "16px" }}>
-              {filteredProducts.map((product) => (
+            <div className="pos-catalog-grid">
+              {filteredProducts.map((product) => {
+                const tracksInventory = product.inventoryTracking !== "none";
+                const isOutOfStock = tracksInventory && product.stock <= 0;
+                const isPriceInvalid = Boolean(product.isPriceOutOfRange || product.priceArs < 0);
+                return (
                 <div
                   key={product.id}
                   className="flow-card"
@@ -957,11 +1011,11 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                       </span>
                       <span
                         className={`flow-status-pill ${
-                          product.stock > 5 ? "completed" : product.stock > 0 ? "pending" : "cancelled"
+                          !tracksInventory ? "completed" : product.stock > 5 ? "completed" : product.stock > 0 ? "pending" : "cancelled"
                         }`}
                         style={{ fontSize: "10px" }}
                       >
-                        Stock: {product.stock}
+                        {tracksInventory ? `Stock: ${product.stock}` : "Servicio"}
                       </span>
                     </div>
 
@@ -1023,6 +1077,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                               ) : (
                                 (() => {
                                   const isInvalidPrice = v.isPriceOutOfRange || v.effectiveGrossPrice < 0;
+                                  const isVariantOutOfStock = tracksInventory && v.stock <= 0;
                                   return (
                                     <button
                                       type="button"
@@ -1033,31 +1088,35 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                                         borderRadius: "6px",
                                         borderColor: isInvalidPrice
                                           ? "var(--rose-accent, #f43f5e)"
-                                          : v.stock > 0
+                                          : !isVariantOutOfStock
                                             ? "var(--brand-border)"
                                             : "var(--border-line)",
                                         background: isInvalidPrice
                                           ? "var(--rose-soft, #fff1f2)"
-                                          : v.stock > 0
+                                          : !isVariantOutOfStock
                                             ? "var(--brand-soft)"
                                             : "var(--canvas-bg)",
                                         color: isInvalidPrice
                                           ? "var(--rose-accent, #e11d48)"
-                                          : v.stock > 0
+                                          : !isVariantOutOfStock
                                             ? "var(--brand-primary)"
                                             : "var(--text-light)",
                                         fontWeight: 700,
-                                        cursor: isInvalidPrice || v.stock <= 0 ? "not-allowed" : "pointer",
+                                        cursor: isInvalidPrice || isVariantOutOfStock ? "not-allowed" : "pointer",
                                       }}
-                                      disabled={v.stock <= 0 || isInvalidPrice || coordinator.isCheckoutActive() || submittingSale}
+                                      disabled={isVariantOutOfStock || isInvalidPrice || coordinator.isCheckoutActive() || submittingSale}
                                       onClick={() => addToCart(product, v)}
                                       title={
                                         isInvalidPrice
                                           ? (v.priceRangeError || `Precio inválido (${v.effectiveGrossPrice})`)
-                                          : `Agregar variante ${v.name} (Stock: ${v.stock})`
+                                          : isVariantOutOfStock
+                                            ? "Sin stock en esta ubicación"
+                                            : tracksInventory
+                                              ? `Agregar variante ${v.name} (Stock: ${v.stock})`
+                                              : `Agregar variante ${v.name}`
                                       }
                                     >
-                                      {v.name} {isInvalidPrice ? `(${v.priceRangeError ? "Fuera de rango" : "Inválido"})` : `(${v.stock})`}
+                                      {v.name} {isInvalidPrice ? `(${v.priceRangeError ? "Fuera de rango" : "Inválido"})` : tracksInventory ? `(${v.stock})` : ""}
                                       {!isInvalidPrice && v.promotionListPriceArs !== undefined && (
                                         <> · <PosAmount amount={v.effectiveGrossPrice} list={v.promotionListPriceArs} /></>
                                       )}
@@ -1123,15 +1182,27 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                     {!product.hasVariants && product.inventoryTracking !== "serial" && product.inventoryTracking !== "imei" && (
                       <button
                         type="button"
-                        className="header-action-btn"
+                        className="header-action-btn pos-add-btn"
                         style={{
                           width: "32px",
                           height: "32px",
-                          background: product.isPriceOutOfRange ? "var(--rose-soft, #fff1f2)" : "var(--brand-soft)",
-                          color: product.isPriceOutOfRange ? "var(--rose-accent, #e11d48)" : "var(--brand-primary)",
-                          border: product.isPriceOutOfRange ? "1px solid var(--rose-accent, #f43f5e)" : "1px solid var(--brand-border)",
+                          background: product.isPriceOutOfRange
+                            ? "var(--rose-soft, #fff1f2)"
+                            : isOutOfStock
+                              ? "var(--canvas-bg)"
+                              : "var(--brand-soft)",
+                          color: product.isPriceOutOfRange
+                            ? "var(--rose-accent, #e11d48)"
+                            : isOutOfStock
+                              ? "var(--text-light)"
+                              : "var(--brand-primary)",
+                          border: product.isPriceOutOfRange
+                            ? "1px solid var(--rose-accent, #f43f5e)"
+                            : isOutOfStock
+                              ? "1px solid var(--border-line)"
+                              : "1px solid var(--brand-border)",
                         }}
-                        disabled={product.stock <= 0 || product.priceArs < 0 || product.isPriceOutOfRange || coordinator.isCheckoutActive() || submittingSale}
+                        disabled={isOutOfStock || isPriceInvalid || coordinator.isCheckoutActive() || submittingSale}
                         onClick={() => addToCart(product)}
                         aria-label={`Agregar ${product.name} al carrito`}
                         title={
@@ -1139,8 +1210,8 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                             ? (product.priceRangeError || "Precio fuera de rango")
                             : product.priceArs < 0
                               ? "Precio negativo inválido"
-                              : product.stock <= 0
-                                ? "Sin stock"
+                              : isOutOfStock
+                                ? "Sin stock en esta ubicación"
                                 : "Agregar al carrito"
                         }
                       >
@@ -1149,59 +1220,64 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
         {/* Right: Cart & Checkout Summary */}
         <form
-          onSubmit={checkoutForm.handleSubmit(handleCheckout)}
+          onSubmit={checkoutForm.handleSubmit(handleCheckout, () => setCartDrawerOpen(true))}
           noValidate
-          className="flow-card"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            height: "fit-content",
-            position: "sticky",
-            top: "88px",
-          }}
+          className={`flow-card pos-cart-panel ${cartDrawerOpen ? "pos-cart-panel--expanded" : ""}`}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "16px",
-              paddingBottom: "12px",
-              borderBottom: "1px solid var(--border-light)",
-            }}
-          >
+          <div className="pos-cart-header">
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <ShoppingCart size={18} color="var(--brand-primary)" />
               <strong style={{ fontSize: "16px", fontWeight: 800 }}>Carrito de Venta</strong>
               <span className="type-badge green">{cart.reduce((a, c) => a + c.quantity, 0)}</span>
             </div>
 
-            {cart.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {cart.length > 0 && (
+                <button
+                  type="button"
+                  className="flow-link-btn"
+                  style={{ color: "var(--rose-accent)", fontSize: "11px" }}
+                  disabled={coordinator.isCheckoutActive() || submittingSale}
+                  onClick={clearCart}
+                >
+                  Vaciar
+                </button>
+              )}
               <button
                 type="button"
-                className="flow-link-btn"
-                style={{ color: "var(--rose-accent)", fontSize: "11px" }}
-                disabled={coordinator.isCheckoutActive() || submittingSale}
-                onClick={clearCart}
+                className="pos-cart-drawer-toggle"
+                aria-expanded={cartDrawerOpen}
+                onClick={() => setCartDrawerOpen((prev) => !prev)}
               >
-                Vaciar
+                {cartDrawerOpen ? (
+                  <>
+                    Ocultar <ChevronDown size={14} />
+                  </>
+                ) : (
+                  <>
+                    Detalle <ChevronUp size={14} />
+                  </>
+                )}
               </button>
-            )}
+            </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "10px" }}>
+          <div className="pos-cart-drawer-body">
+          <div className="pos-context-grid">
             <div className="erp-form-group">
               <label className="erp-form-label" htmlFor="pos-branch">Sucursal</label>
               <select
                 id="pos-branch"
                 className="erp-form-input"
+                value={selectedBranchId}
                 disabled={coordinator.isCheckoutActive() || submittingSale}
                 {...checkoutForm.register("branchId", {
                   onChange: (event) => {
@@ -1223,7 +1299,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                   },
                 })}
               >
-                <option value="">Sin sucursal</option>
+                {branches.length === 0 && <option value="">Sin sucursal</option>}
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>{branch.name}</option>
                 ))}
@@ -1234,6 +1310,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
               <select
                 id="pos-location"
                 className="erp-form-input"
+                value={selectedLocationId}
                 disabled={coordinator.isCheckoutActive() || submittingSale}
                 {...checkoutForm.register("locationId", {
                   onChange: (event) => {
@@ -1252,7 +1329,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                   },
                 })}
               >
-                <option value="">Sin ubicación habilitada</option>
+                {availableLocations.length === 0 && <option value="">Sin ubicación habilitada</option>}
                 {availableLocations.map((location) => (
                   <option key={location.id} value={location.id}>{location.name}</option>
                 ))}
@@ -1332,14 +1409,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
           <div
             role="group"
             aria-label="Artículos del carrito"
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "10px",
-              maxHeight: "300px",
-              overflowY: "auto",
-              marginBottom: "16px",
-            }}
+            className="pos-cart-items"
           >
             {cart.length === 0 ? (
               <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-light)" }}>
@@ -1390,9 +1460,11 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                       {item.promotionListPriceArs !== undefined && item.quantity > 1 && (
                         <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>c/u</span>
                       )}
-                      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-                        (disp: {item.availableStock})
-                      </span>
+                      {item.tracksInventory !== false && (
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                          (disp: {item.availableStock})
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1428,7 +1500,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                         display: "grid",
                         placeItems: "center",
                       }}
-                      disabled={item.quantity >= item.availableStock || coordinator.isCheckoutActive() || submittingSale}
+                      disabled={(item.tracksInventory !== false && item.quantity >= item.availableStock) || coordinator.isCheckoutActive() || submittingSale}
                       onClick={() => updateQuantity(item.key, 1)}
                       aria-label="Sumar 1"
                     >
@@ -1468,7 +1540,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
             >
               Medio de Pago
             </span>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
+            <div className="pos-payment-grid">
               {paymentMethods.map((method) => {
                 const Icon = method.kind === "cash"
                   ? Banknote
@@ -1516,7 +1588,9 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
               </p>
             )}
           </div>
+          </div>
 
+          <div className="pos-cart-footer">
           {/* Totals & Confirm */}
           <div
             style={{
@@ -1536,16 +1610,16 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
             >
               <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 600 }}>Total en Pesos:</span>
               <strong style={{ fontSize: "20px", fontWeight: 900, color: "var(--text-main)" }}>
-                {formatPosCurrency(subtotalArs, "ARS")}
+                {formatCurrency(subtotalArs, "ARS")}
               </strong>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div className="pos-cart-summary-extra" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span style={{ fontSize: "11px", color: "var(--text-light)", fontWeight: 600 }}>Neto / IVA:</span>
               <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--text-muted)" }}>
-                {formatPosCurrency(subtotalNetArs, "ARS")} / {formatPosCurrency(totalTaxArs, "ARS")}
+                {formatCurrency(subtotalNetArs, "ARS")} / {formatCurrency(totalTaxArs, "ARS")}
               </span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div className="pos-cart-summary-extra" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span style={{ fontSize: "11px", color: "var(--text-light)", fontWeight: 600 }}>Equivalente USD:</span>
               <span style={{ fontSize: "13px", fontWeight: 800, color: "var(--brand-primary)" }}>
                 {dollarRate ? formatCurrency(subtotalUsd, "USD") : "Sin cotización"}
@@ -1586,7 +1660,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
               }}
             >
               <span style={{ fontSize: "12px", color: "var(--rose-accent, #e11d48)", fontWeight: 700 }}>
-                El catálogo cambió mientras armaba el carrito. Actualice los precios antes de confirmar.
+                El catálogo cambió mientras armabas el carrito. Actualizá los precios antes de confirmar.
               </span>
               <button
                 type="button"
@@ -1632,6 +1706,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
               </>
             )}
           </button>
+          </div>
         </form>
       </div>
     </div>

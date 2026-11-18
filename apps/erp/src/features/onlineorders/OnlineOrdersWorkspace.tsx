@@ -20,7 +20,17 @@ import {
   Modal,
   FeedbackAlert,
   KpiCard,
+  StatusPill,
 } from "../../components/erp/WorkspaceUi";
+import { FormError } from "../../components/erp/FormFeedback";
+import { toUserMessage } from "../../lib/errors";
+import {
+  DELIVERY_STATE_LABELS,
+  SALE_PAYMENT_STATE_LABELS,
+  WEB_ORDER_STATUS_LABELS,
+  WEB_PAYMENT_STATUS_LABELS,
+  labelOf,
+} from "../../lib/labels";
 import { formatCurrency, formatDateTime } from "../../lib/formatters";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
@@ -38,28 +48,69 @@ import {
   onlineOrderRefundSchema,
 } from "./schemas";
 
-type OrderFilter = "all" | "fulfilled" | "paid" | "pending";
+type OrderFilter = "all" | "fulfilled" | "paid" | "pending" | "cancelled";
 type LifecycleAction = "preparing" | "ready" | "delivered" | "cancelled" | "refund";
 
 const shortId = (id: string): string => id.slice(0, 8).toUpperCase();
 
-const deliveryLabel = (state: string | null): string => {
-  switch (state) {
-    case "pending": return "Pendiente";
-    case "preparing": return "Preparando";
-    case "ready": return "Listo";
-    case "dispatched": return "Despachado";
-    case "delivered": return "Entregado";
-    case "returned": return "Devuelto";
-    default: return "Sin estado";
-  }
+const ORDER_EVENT_REASON_LABELS: Readonly<Record<string, string>> = {
+  "Web order placed": "Pedido web recibido",
+  "Awaiting payment": "Esperando el pago",
+  "Awaiting preparation": "Esperando preparación",
+  "Mercado Pago approved; prepare storefront order": "Pago aprobado por Mercado Pago; preparar pedido",
+  "Mercado Pago approved; storefront order ready for fulfillment": "Pago aprobado por Mercado Pago; pedido listo para despachar",
+  "Mercado Pago approved storefront fulfillment": "Pago aprobado por Mercado Pago",
+  "Provider payment status pending": "Pago pendiente en proveedor",
+  "Provider payment status approved": "Pago aprobado por el proveedor",
+  "Provider payment status rejected": "Pago rechazado por el proveedor",
+  "Provider payment status cancelled": "Pago cancelado por el proveedor",
+  "Provider payment status refunded": "Pago reembolsado por el proveedor",
 };
 
+const ORDER_EVENT_REASON_LOWER = new Map<string, string>(
+  Object.entries(ORDER_EVENT_REASON_LABELS).map(([key, value]) => [key.toLowerCase(), value]),
+);
+
+const UNKNOWN_ENGLISH_OR_TECHNICAL = /\b(?:the|and|for|with|from|into|this|that|was|were|been|have|has|had|not|but|due|until|after|before|while|because|awaiting|waiting|order|orders|payment|payments|provider|status|placed|fulfilled|fulfillment|prepared|preparation|storefront|cancelled|canceled|refunded|rejected|approved|pending|dispatched|delivered|returned|failed|error|unknown|timeout|expired|processing|completed|created|updated|reservation|released|webhook|gateway|reason|missing|invalid|unexpected|already|cannot|could|would|should)\b|\b[a-z\d]+(?:_[a-z\d]+)+\b/i;
+
+const formatEventReason = (reason: string | null | undefined): string | null => {
+  const trimmed = reason?.trim() ?? "";
+  if (!trimmed) return null;
+
+  const mapped = ORDER_EVENT_REASON_LOWER.get(trimmed.toLowerCase());
+  if (mapped) return mapped;
+
+  if (/\b[a-z\d]+(?:_[a-z\d]+)+\b/i.test(trimmed)) return null;
+  if (/[áéíóúñü¿¡]/i.test(trimmed)) return trimmed;
+  if (UNKNOWN_ENGLISH_OR_TECHNICAL.test(trimmed)) return null;
+
+  return trimmed;
+};
+
+const orderStateLabel = (state: string | null): string => {
+  if (!state) return "Sin estado";
+  if (state === "fulfilled") return "Despachado";
+  return labelOf(WEB_ORDER_STATUS_LABELS, state, "Sin estado");
+};
+
+const deliveryLabel = (state: string | null): string =>
+  state ? labelOf(DELIVERY_STATE_LABELS, state, "Sin estado") : "Sin estado";
+
 const eventLabel = (event: DbOrder["events"][number]): string => {
-  if (event.order_state) return `Pedido: ${event.order_state}`;
-  if (event.payment_state) return `Pago: ${event.payment_state}`;
+  if (event.order_state) return `Pedido: ${orderStateLabel(event.order_state)}`;
+  if (event.payment_state) return `Pago: ${labelOf(SALE_PAYMENT_STATE_LABELS, event.payment_state, "Actualizado")}`;
   if (event.delivery_state) return `Entrega: ${deliveryLabel(event.delivery_state)}`;
   return "Evento operativo";
+};
+
+const isClosedOrder = (order: DbOrder): boolean =>
+  order.order_state === "cancelled" || order.order_state === "refunded" || order.payment_state === "refunded";
+
+const customerDisplay = (order: DbOrder): string => {
+  if ("customer_name" in order && typeof order.customer_name === "string" && order.customer_name.trim()) {
+    return order.customer_name.trim();
+  }
+  return "Cliente de la tienda";
 };
 
 const actionTitle: Record<LifecycleAction, string> = {
@@ -102,21 +153,11 @@ const availableLifecycleActions = (
   return actions;
 };
 
-/** Etiqueta de pago derivada del último evento (nunca inventada): paid/partial/... o "—" sin eventos. */
+/** Etiqueta de pago derivada del último evento (nunca inventada). */
 const paymentLabel = (order: DbOrder): string => {
-  if (order.fulfilled || order.order_state === "fulfilled") return "Cumplido";
-  switch (order.payment_state) {
-    case "paid":
-      return "Aprobado";
-    case "partial":
-      return "Parcial";
-    case "refunded":
-      return "Reembolsado";
-    case "unpaid":
-      return "Pendiente";
-    default:
-      return order.last_payment_status ?? "—";
-  }
+  if (order.payment_state) return labelOf(SALE_PAYMENT_STATE_LABELS, order.payment_state, "—");
+  if (order.last_payment_status) return labelOf(WEB_PAYMENT_STATUS_LABELS, order.last_payment_status, "—");
+  return "—";
 };
 
 export const OnlineOrdersWorkspace = () => {
@@ -150,8 +191,7 @@ export const OnlineOrdersWorkspace = () => {
       setOrders(data);
       setSelectedOrder((current) => current ? data.find((order) => order.id === current.id) ?? null : null);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al cargar pedidos";
-      setError(msg);
+      setError(toUserMessage(err, "No se pudieron cargar los pedidos. Reintentá."));
     } finally {
       setLoading(false);
     }
@@ -186,22 +226,25 @@ export const OnlineOrdersWorkspace = () => {
       setFulfilling(true);
       setFulfillError(null);
       setFulfillResult(null);
-      const parsed = onlineOrderDispatchSchema.parse({ paymentReference, reason: operationReason });
+      const parsed = onlineOrderDispatchSchema.safeParse({ paymentReference, reason: operationReason });
+      if (!parsed.success) {
+        setFulfillError(parsed.error.issues[0]?.message ?? "Revisá los datos del despacho.");
+        return;
+      }
       const result = await fulfillOnlineOrder(
         fulfillOrder.id,
-        parsed.paymentReference,
-        parsed.reason,
+        parsed.data.paymentReference,
+        parsed.data.reason,
         fulfillOperationKey,
       );
       setFulfillResult(result);
       setFeedback({
         type: "success",
-        message: `Pedido cumplido. Venta ${shortId(result.sale_id)} · Stock ${shortId(result.stock_document_id)} · Asiento ${shortId(result.journal_entry_id)}.`,
+        message: `Pedido despachado. Venta ${shortId(result.sale_id)} · Stock ${shortId(result.stock_document_id)} · Asiento ${shortId(result.journal_entry_id)}.`,
       });
       await fetchOrders();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Error al despachar el pedido";
-      setFulfillError(msg);
+      setFulfillError(toUserMessage(err, "No se pudo despachar el pedido."));
     } finally {
       setFulfilling(false);
     }
@@ -229,20 +272,29 @@ export const OnlineOrdersWorkspace = () => {
       setLifecycleError(null);
       const { order, kind, operationKey } = lifecycleAction;
       if (kind === "refund") {
-        const parsed = onlineOrderRefundSchema.parse({
+        const parsed = onlineOrderRefundSchema.safeParse({
           reason: lifecycleReason,
           physicalReturnConfirmed,
         });
-        if (!order.refundable_payment_event_id) {
-          throw new Error("Todavía no existe un evento de reembolso del proveedor pendiente de aplicar.");
+        if (!parsed.success) {
+          setLifecycleError(parsed.error.issues[0]?.message ?? "Revisá los datos del reembolso.");
+          return;
         }
-        await refundOnlineOrder(order.id, order.refundable_payment_event_id, parsed.reason, operationKey);
+        if (!order.refundable_payment_event_id) {
+          setLifecycleError("Todavía no existe un evento de reembolso del proveedor pendiente de aplicar.");
+          return;
+        }
+        await refundOnlineOrder(order.id, order.refundable_payment_event_id, parsed.data.reason, operationKey);
       } else {
-        const parsed = onlineOrderReasonSchema.parse({ reason: lifecycleReason });
+        const parsed = onlineOrderReasonSchema.safeParse({ reason: lifecycleReason });
+        if (!parsed.success) {
+          setLifecycleError(parsed.error.issues[0]?.message ?? "Indicá el motivo de la operación.");
+          return;
+        }
         await transitionOnlineOrder(
           order.id,
           kind === "cancelled" ? { orderState: "cancelled" } : { deliveryState: kind },
-          parsed.reason,
+          parsed.data.reason,
           operationKey,
         );
       }
@@ -250,7 +302,7 @@ export const OnlineOrdersWorkspace = () => {
       closeLifecycleAction();
       await fetchOrders();
     } catch (err: unknown) {
-      setLifecycleError(err instanceof Error ? err.message : "No se pudo actualizar el pedido.");
+      setLifecycleError(toUserMessage(err, "No se pudo actualizar el pedido."));
     } finally {
       setLifecycleBusy(false);
     }
@@ -280,9 +332,11 @@ export const OnlineOrdersWorkspace = () => {
       case "fulfilled":
         return o.fulfilled;
       case "paid":
-        return !o.fulfilled && o.payment_state === "paid";
+        return !o.fulfilled && !isClosedOrder(o) && o.payment_state === "paid";
       case "pending":
-        return !o.fulfilled && o.payment_state !== "paid";
+        return !o.fulfilled && !isClosedOrder(o) && o.payment_state !== "paid";
+      case "cancelled":
+        return isClosedOrder(o);
       default:
         return true;
     }
@@ -303,8 +357,9 @@ export const OnlineOrdersWorkspace = () => {
   }, [orders, activeFilter, search]);
 
   const fulfilledCount = orders.filter((o) => o.fulfilled).length;
-  const paidCount = orders.filter((o) => !o.fulfilled && o.payment_state === "paid").length;
-  const pendingCount = orders.filter((o) => !o.fulfilled && o.payment_state !== "paid").length;
+  const paidCount = orders.filter((o) => !o.fulfilled && !isClosedOrder(o) && o.payment_state === "paid").length;
+  const pendingCount = orders.filter((o) => !o.fulfilled && !isClosedOrder(o) && o.payment_state !== "paid").length;
+  const closedCount = orders.filter((o) => isClosedOrder(o)).length;
   const paidRevenue = orders
     .filter((o) => o.payment_state === "paid" || o.fulfilled)
     .reduce((a, b) => a + Number(b.total_amount || 0), 0);
@@ -314,7 +369,7 @@ export const OnlineOrdersWorkspace = () => {
       <WorkspaceHeader
         title="Pedidos de la tienda online"
         description="Consulta y gestión de pedidos web: pago, preparación, despacho y cambios registrados."
-        badge={`${orders.length} Pedidos en Base de Datos`}
+        badge={`${orders.length} Pedidos`}
       />
 
       {feedback && (
@@ -399,9 +454,10 @@ export const OnlineOrdersWorkspace = () => {
         <div style={{ display: "flex", gap: "8px", marginBottom: "16px", overflowX: "auto" }}>
           {[
             { id: "all", label: `Todos (${orders.length})` },
-            { id: "paid", label: `Pagados p/ cumplir (${paidCount})` },
+            { id: "paid", label: `Pagados para despachar (${paidCount})` },
             { id: "pending", label: `Pendientes (${pendingCount})` },
             { id: "fulfilled", label: `Despachados (${fulfilledCount})` },
+            { id: "cancelled", label: `Cancelados / Reembolsados (${closedCount})` },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -436,7 +492,7 @@ export const OnlineOrdersWorkspace = () => {
                   <th>ID Orden</th>
                   <th>Total</th>
                   <th>Estado pago</th>
-                  <th>Cumplimiento</th>
+                  <th>Despacho</th>
                   <th>Creada</th>
                   <th className="text-right">Acción</th>
                 </tr>
@@ -468,22 +524,28 @@ export const OnlineOrdersWorkspace = () => {
                     </td>
                     <td>
                       {order.payment_state === "paid" ? (
-                        <span className="flow-status-pill completed">Aprobado</span>
+                        <span className="flow-status-pill completed">{labelOf(SALE_PAYMENT_STATE_LABELS, "paid")}</span>
                       ) : order.payment_state === "partial" ? (
-                        <span className="flow-status-pill processing">Parcial</span>
+                        <span className="flow-status-pill processing">{labelOf(SALE_PAYMENT_STATE_LABELS, "partial")}</span>
                       ) : order.payment_state === "refunded" ? (
-                        <span className="flow-status-pill processing">Reembolsado</span>
+                        <StatusPill variant="rose">{labelOf(SALE_PAYMENT_STATE_LABELS, "refunded")}</StatusPill>
                       ) : order.payment_state === "unpaid" ? (
-                        <span className="flow-status-pill pending">Pendiente</span>
+                        <span className="flow-status-pill pending">{labelOf(SALE_PAYMENT_STATE_LABELS, "unpaid")}</span>
                       ) : (
-                        <span className="flow-status-pill pending">{order.last_payment_status ?? "Sin eventos"}</span>
+                        <span className="flow-status-pill pending">
+                          {order.last_payment_status ? labelOf(WEB_PAYMENT_STATUS_LABELS, order.last_payment_status, "Sin eventos") : "Sin eventos"}
+                        </span>
                       )}
                     </td>
                     <td>
                       {order.fulfilled ? (
-                        <span className="flow-status-pill completed">Cumplido</span>
+                        <span className="flow-status-pill completed">Despachado</span>
+                      ) : order.order_state === "cancelled" ? (
+                        <StatusPill variant="rose">Cancelado</StatusPill>
+                      ) : order.order_state === "refunded" ? (
+                        <StatusPill variant="rose">Reembolsado</StatusPill>
                       ) : (
-                        <span className="flow-status-pill pending">Pendiente</span>
+                        <span className="flow-status-pill pending">{deliveryLabel(order.delivery_state)}</span>
                       )}
                     </td>
                     <td>
@@ -508,7 +570,7 @@ export const OnlineOrdersWorkspace = () => {
                             style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
                             onClick={() => openFulfill(order)}
                           >
-                            <CheckCircle2 size={12} /> Cumplir
+                            <CheckCircle2 size={12} /> Despachar
                           </button>
                         )}
                       </div>
@@ -534,12 +596,33 @@ export const OnlineOrdersWorkspace = () => {
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <div style={{ padding: "12px", background: "var(--surface-white)", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
               <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", display: "block", marginBottom: "8px" }}>
-                Estado derivado (despacho + último cambio)
+                Estado actual del pedido
               </span>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-                <span className="flow-status-pill processing">{paymentLabel(selectedOrder)}</span>
+                {selectedOrder.order_state === "cancelled" || selectedOrder.order_state === "refunded" ? (
+                  <StatusPill variant="rose">Pedido: {orderStateLabel(selectedOrder.order_state)}</StatusPill>
+                ) : (
+                  <span className={`flow-status-pill ${selectedOrder.fulfilled ? "completed" : "confirmed"}`}>
+                    Pedido: {orderStateLabel(selectedOrder.order_state)}
+                  </span>
+                )}
+                {selectedOrder.payment_state === "refunded" ? (
+                  <StatusPill variant="rose">Pago: {paymentLabel(selectedOrder)}</StatusPill>
+                ) : (
+                  <span
+                    className={`flow-status-pill ${
+                      selectedOrder.payment_state === "paid"
+                        ? "completed"
+                        : selectedOrder.payment_state === "partial"
+                          ? "processing"
+                          : "pending"
+                    }`}
+                  >
+                    Pago: {paymentLabel(selectedOrder)}
+                  </span>
+                )}
                 <span className={`flow-status-pill ${selectedOrder.fulfilled ? "completed" : "pending"}`}>
-                  Stock: {selectedOrder.fulfilled ? "remitido" : "pendiente"}
+                  Entrega: {selectedOrder.fulfilled ? "Despachado" : deliveryLabel(selectedOrder.delivery_state)}
                 </span>
                 {canFulfillOrder(selectedOrder) && (
                   <button
@@ -552,16 +635,18 @@ export const OnlineOrdersWorkspace = () => {
                       openFulfill(current);
                     }}
                   >
-                    <CheckCircle2 size={12} /> Cumplir pedido
+                    <CheckCircle2 size={12} /> Despachar pedido
                   </button>
                 )}
               </div>
-              <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "8px 0 0" }}>
-                order_state: {selectedOrder.order_state ?? "—"} · payment_state: {selectedOrder.payment_state ?? "—"} · delivery_state: {selectedOrder.delivery_state ?? "—"}
-                {selectedOrder.fulfilled && selectedOrder.sale_id ? ` · venta ${shortId(selectedOrder.sale_id)}` : ""}
-                {selectedOrder.fulfilled && selectedOrder.stock_document_id ? ` · stock ${shortId(selectedOrder.stock_document_id)}` : ""}. El cumplimiento se ejecuta
-                vía transacción (venta + stock + asiento). No hay cambios manuales de estado.
-              </p>
+              {selectedOrder.fulfilled && (selectedOrder.sale_id || selectedOrder.stock_document_id) && (
+                <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "8px 0 0" }}>
+                  {[
+                    selectedOrder.sale_id ? `Venta ${shortId(selectedOrder.sale_id)}` : null,
+                    selectedOrder.stock_document_id ? `Movimiento de stock ${shortId(selectedOrder.stock_document_id)}` : null,
+                  ].filter(Boolean).join(" · ")}
+                </p>
+              )}
             </div>
 
             {availableLifecycleActions(selectedOrder, canManageOrders, canRefundOrders).length > 0 && (
@@ -587,41 +672,48 @@ export const OnlineOrdersWorkspace = () => {
             )}
 
             <div style={{ background: "var(--surface-white)", padding: "12px", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
-              <span className="stat-label" style={{ display: "block", marginBottom: "8px" }}>Timeline de eventos</span>
+              <span className="stat-label" style={{ display: "block", marginBottom: "8px" }}>Historial de eventos</span>
               {selectedOrder.events.length === 0 ? (
                 <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Todavía no hay eventos operativos registrados.</span>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {selectedOrder.events.map((event) => (
-                    <div key={event.id} style={{ display: "grid", gridTemplateColumns: "44px 1fr auto", gap: "8px", alignItems: "start", borderBottom: "1px solid var(--border-light)", paddingBottom: "8px" }}>
-                      <span className="type-badge green" style={{ fontFamily: "monospace", fontSize: "10px" }}>#{event.event_sequence}</span>
-                      <div>
-                        <strong style={{ display: "block", fontSize: "12px" }}>
-                          {eventLabel(event)}
-                        </strong>
-                        <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>{event.reason}</span>
-                        <span style={{ display: "block", fontSize: "10px", color: "var(--text-muted)" }}>
-                          {event.actor_name ?? (event.actor_id ? `Usuario ${shortId(event.actor_id)}` : "Sistema")}
-                        </span>
+                  {selectedOrder.events.map((event) => {
+                    const reasonText = formatEventReason(event.reason);
+                    return (
+                      <div key={event.id} style={{ display: "grid", gridTemplateColumns: "44px 1fr auto", gap: "8px", alignItems: "start", borderBottom: "1px solid var(--border-light)", paddingBottom: "8px" }}>
+                        <span className="type-badge green" style={{ fontFamily: "monospace", fontSize: "10px" }}>#{event.event_sequence}</span>
+                        <div>
+                          <strong style={{ display: "block", fontSize: "12px" }}>
+                            {eventLabel(event)}
+                          </strong>
+                          {reasonText && (
+                            <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>{reasonText}</span>
+                          )}
+                          <span style={{ display: "block", fontSize: "10px", color: "var(--text-muted)" }}>
+                            {event.actor_name ?? (event.actor_id ? `Usuario ${shortId(event.actor_id)}` : "Sistema")}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{formatDateTime(event.occurred_at)}</span>
                       </div>
-                      <span style={{ fontSize: "10px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{formatDateTime(event.occurred_at)}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", background: "var(--canvas-bg)", padding: "12px", borderRadius: "10px" }}>
               <div>
-                <span className="stat-label">Cliente (ID)</span>
-                <strong style={{ display: "block", fontSize: "12px", marginTop: "2px", fontFamily: "monospace" }}>
-                  {selectedOrder.customer_id ? shortId(selectedOrder.customer_id) : "—"}
+                <span className="stat-label">Cliente</span>
+                <strong style={{ display: "block", fontSize: "12px", marginTop: "2px" }}>
+                  {customerDisplay(selectedOrder)}
                 </strong>
               </div>
               <div>
                 <span className="stat-label">Último pago (evento)</span>
                 <span style={{ display: "block", fontSize: "12px", marginTop: "2px", fontWeight: 600 }}>
-                  {selectedOrder.last_payment_status ?? "Sin eventos"}
+                  {selectedOrder.last_payment_status
+                    ? labelOf(WEB_PAYMENT_STATUS_LABELS, selectedOrder.last_payment_status, "Sin eventos")
+                    : "Sin eventos"}
                   {selectedOrder.last_payment_amount != null ? ` · ${formatCurrency(selectedOrder.last_payment_amount, "ARS")}` : ""}
                 </span>
               </div>
@@ -635,7 +727,7 @@ export const OnlineOrdersWorkspace = () => {
 
             {selectedOrder.lines.length > 0 && (
               <div style={{ background: "var(--surface-white)", padding: "12px", borderRadius: "10px", border: "1px solid var(--border-line)" }}>
-                <span className="stat-label" style={{ marginBottom: "6px", display: "block" }}>Ítems Comprados (web_order_lines):</span>
+                <span className="stat-label" style={{ marginBottom: "6px", display: "block" }}>Ítems comprados</span>
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {selectedOrder.lines.map((it, idx: number) => (
                     <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border-light)", paddingBottom: "6px" }}>
@@ -658,28 +750,29 @@ export const OnlineOrdersWorkspace = () => {
         <Modal
           isOpen={Boolean(fulfillOrder)}
           onClose={closeFulfill}
-          title={`Cumplir pedido ORD-${shortId(fulfillOrder.id)}`}
-          subtitle={`Total ${formatCurrency(Number(fulfillOrder.total_amount || 0), "ARS")} • Transacción: venta + stock + asiento`}
+          title={`Despachar pedido ORD-${shortId(fulfillOrder.id)}`}
+          subtitle={`Total ${formatCurrency(Number(fulfillOrder.total_amount || 0), "ARS")} • Registra venta, stock y asiento`}
           icon={CheckCircle2}
           maxWidth="520px"
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <FormError message={fulfillError} onDismiss={() => setFulfillError(null)} />
             <div>
               <label htmlFor="fulfill-payment-ref" style={{ fontSize: "12px", fontWeight: 700, display: "block", marginBottom: "4px" }}>
-                Referencia de pago (MercadoPago) *
+                Referencia de pago (Mercado Pago) *
               </label>
               <input
                 id="fulfill-payment-ref"
                 type="text"
                 className="flow-input"
-                placeholder="Ej. provider_payment_id aprobado por el total"
+                placeholder="Ej. 1234567890 (ID de pago aprobado)"
                 value={paymentReference}
                 onChange={(e) => setPaymentReference(e.target.value)}
                 disabled={fulfilling}
                 style={{ width: "100%" }}
               />
               <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: "4px 0 0" }}>
-                El RPC exige pago aprobado por el total y referencia coincidente con el provider payment.
+                Requiere pago aprobado por el total y referencia coincidente con Mercado Pago.
               </p>
             </div>
 
@@ -691,7 +784,7 @@ export const OnlineOrdersWorkspace = () => {
                 id="fulfill-reason"
                 type="text"
                 className="flow-input"
-                placeholder="Cumplimiento de pedido online"
+                placeholder="Despacho de pedido online"
                 value={operationReason}
                 onChange={(e) => setOperationReason(e.target.value)}
                 disabled={fulfilling}
@@ -699,16 +792,12 @@ export const OnlineOrdersWorkspace = () => {
               />
             </div>
 
-            {fulfillError && (
-              <StatePanel type="error" title="No se pudo cumplir el pedido" message={fulfillError} />
-            )}
-
             {fulfillResult && (
               <div style={{ background: "var(--canvas-bg)", padding: "12px", borderRadius: "10px", fontSize: "12px" }}>
-                <strong style={{ display: "block", marginBottom: "6px" }}>Transacción completada:</strong>
-                <span style={{ display: "block", fontFamily: "monospace" }}>sale_id: {fulfillResult.sale_id}</span>
-                <span style={{ display: "block", fontFamily: "monospace" }}>stock_document_id: {fulfillResult.stock_document_id}</span>
-                <span style={{ display: "block", fontFamily: "monospace" }}>journal_entry_id: {fulfillResult.journal_entry_id}</span>
+                <strong style={{ display: "block", marginBottom: "6px" }}>Despacho completado:</strong>
+                <span style={{ display: "block", fontFamily: "monospace" }}>Venta: {shortId(fulfillResult.sale_id)}</span>
+                <span style={{ display: "block", fontFamily: "monospace" }}>Movimiento de stock: {shortId(fulfillResult.stock_document_id)}</span>
+                <span style={{ display: "block", fontFamily: "monospace" }}>Asiento contable: {shortId(fulfillResult.journal_entry_id)}</span>
               </div>
             )}
 
@@ -725,7 +814,7 @@ export const OnlineOrdersWorkspace = () => {
                   style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   {fulfilling && <Loader2 size={14} className="animate-spin" />}
-                  Confirmar fulfill
+                  Confirmar despacho
                 </button>
               )}
             </div>
@@ -743,8 +832,9 @@ export const OnlineOrdersWorkspace = () => {
           maxWidth="520px"
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <FormError message={lifecycleError} onDismiss={() => setLifecycleError(null)} />
             <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
-              La acción se valida de nuevo en el RPC según estado, permisos e idempotencia. El motivo queda registrado en el timeline.
+              La acción se valida según el estado actual y los permisos. El motivo queda registrado en el historial.
             </p>
             {lifecycleAction.kind === "refund" && (
               <label style={{ display: "flex", gap: "8px", alignItems: "flex-start", fontSize: "12px" }}>
@@ -772,7 +862,6 @@ export const OnlineOrdersWorkspace = () => {
                 style={{ width: "100%" }}
               />
             </div>
-            {lifecycleError && <StatePanel type="error" title="No se pudo actualizar el pedido" message={lifecycleError} />}
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
               <button type="button" className="pag-btn" onClick={closeLifecycleAction} disabled={lifecycleBusy}>Cancelar</button>
               <button

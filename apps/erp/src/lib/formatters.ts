@@ -2,6 +2,8 @@
  * NicTech ERP - Common Data Formatters & Utilities
  */
 
+import { AR_TIME_ZONE } from "./dates";
+
 export function formatCurrency(amount: number | null | undefined, currency: string = "ARS"): string {
   if (amount === null || amount === undefined || !Number.isFinite(amount)) {
     return "—";
@@ -75,6 +77,7 @@ export function formatDate(dateInput: string | number | Date | null | undefined)
     const d = new Date(dateInput);
     if (isNaN(d.getTime())) return String(dateInput);
     return d.toLocaleDateString("es-AR", {
+      timeZone: AR_TIME_ZONE,
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
@@ -90,6 +93,7 @@ export function formatDateTime(dateInput: string | number | Date | null | undefi
     const d = new Date(dateInput);
     if (isNaN(d.getTime())) return String(dateInput);
     return d.toLocaleString("es-AR", {
+      timeZone: AR_TIME_ZONE,
       day: "2-digit",
       month: "2-digit",
       year: "numeric",

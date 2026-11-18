@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowDownRight, Package, AlertCircle, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import { ArrowDownRight, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import type { z } from "zod";
+import { Field, FormError } from "../../components/erp/FormFeedback";
 import { Modal } from "../../components/erp/WorkspaceUi";
+import { toUserMessage } from "../../lib/errors";
 import { supabase } from "../../lib/supabase";
 import {
   type DbCatalogProduct,
   type MasterLocation,
-  stockIntakeSchema,
   buildStockIntakePayload,
   createStockOperationKey,
   calculateStockSummary,
-  getErrorMessage,
 } from "./schemas";
+import { getSellableLocations, isZeroStockCost, stockIntakeSchema } from "./sheetSchema";
 
 export interface StockIntakeModalProps {
   isOpen: boolean;
@@ -21,10 +23,8 @@ export interface StockIntakeModalProps {
   onSuccess: (message: string) => void;
 }
 
-interface PendingStockAttempt {
-  payload: ReturnType<typeof buildStockIntakePayload>;
-  error: string;
-}
+type StockPayload = ReturnType<typeof buildStockIntakePayload>;
+type StockFieldErrors = z.inferFlattenedErrors<typeof stockIntakeSchema>["fieldErrors"];
 
 export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
   isOpen,
@@ -35,37 +35,44 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
   onSuccess,
 }) => {
   const [selectedVariantId, setSelectedVariantId] = useState<string>("");
-  const [selectedLocationId, setSelectedLocationId] = useState<string>("");
-  const [quantity, setQuantity] = useState<string>("1");
-  const [unitCost, setUnitCost] = useState<string>("0");
-  const [reason, setReason] = useState<string>("Ingreso formal de stock en catálogo");
+  const [chosenLocationId, setChosenLocationId] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [unitCost, setUnitCost] = useState("");
+  const [confirmZeroCost, setConfirmZeroCost] = useState(false);
+  const [reason, setReason] = useState("Ingreso de stock de catálogo");
   const [operationKey, setOperationKey] = useState<string>(() => createStockOperationKey("intake"));
 
   const [submitting, setSubmitting] = useState<boolean>(false);
   const isSubmittingRef = useRef<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<StockFieldErrors>({});
 
   // Ambiguous attempt retention for safe idempotent retry
-  const [pendingAttempt, setPendingAttempt] = useState<PendingStockAttempt | null>(null);
+  const [pendingAttempt, setPendingAttempt] = useState<StockPayload | null>(null);
   const [showConfirmDiscard, setShowConfirmDiscard] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedVariantId(initialVariantId || (product?.product_variants?.[0]?.id ?? ""));
-      setSelectedLocationId(locations[0]?.id ?? "");
-      setQuantity("1");
-      setUnitCost(product?.base_cost ? product.base_cost.toString() : "0");
-      setReason("Ingreso formal de stock en catálogo");
+      setSelectedVariantId(initialVariantId || (product?.product_variants?.length === 1 ? product.product_variants[0].id : ""));
+      setChosenLocationId("");
+      setQuantity("");
+      setUnitCost("");
+      setConfirmZeroCost(false);
+      setReason("Ingreso de stock de catálogo");
       setOperationKey(createStockOperationKey("intake"));
       setError(null);
+      setFieldErrors({});
       setPendingAttempt(null);
       setShowConfirmDiscard(false);
     }
-  }, [isOpen, product, initialVariantId, locations]);
+  }, [isOpen, product, initialVariantId]);
 
   if (!product) return null;
 
   const variants = product.product_variants || [];
+  const sellableLocations = getSellableLocations(locations);
+  const targetLocation = sellableLocations.find((location) => location.id === chosenLocationId)
+    ?? (sellableLocations.length === 1 ? sellableLocations[0] : undefined);
   const hasVariants = variants.length > 0;
   const currentSummary = calculateStockSummary(
     product.stock_balances,
@@ -87,7 +94,7 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
     onClose();
   };
 
-  const executeIntake = async (payload: ReturnType<typeof buildStockIntakePayload>) => {
+  const executeIntake = async (payload: StockPayload) => {
     if (isSubmittingRef.current || submitting) return;
 
     try {
@@ -99,24 +106,24 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
       if (rpcErr) throw rpcErr;
 
       setPendingAttempt(null);
-      const line = payload.lines[0];
-      const targetLoc = locations.find((l) => l.id === line?.to_location_id);
+      const [line] = payload.lines;
+      const targetLoc = locations.find((l) => l.id === line.to_location_id);
       const locName = targetLoc?.name ?? "depósito";
-      const variantName = hasVariants && line?.variant_id
+      const variantName = hasVariants && line.variant_id
         ? variants.find((v) => v.id === line.variant_id)?.name ?? "Variante"
         : null;
 
       const successMsg = variantName
-        ? `¡Ingreso asentado! Se agregaron ${line?.quantity} u. a "${product.internal_name} (${variantName})" en ${locName}.`
-        : `¡Ingreso asentado! Se agregaron ${line?.quantity} u. a "${product.internal_name}" en ${locName}.`;
+        ? `Ingreso registrado. Se agregaron ${line.quantity} u. a "${product.internal_name} (${variantName})" en ${locName}.`
+        : `Ingreso registrado. Se agregaron ${line.quantity} u. a "${product.internal_name}" en ${locName}.`;
 
       onSuccess(successMsg);
       onClose();
     } catch (err: unknown) {
-      const msg = getErrorMessage(err, "Error al registrar movimiento en el ledger de stock");
+      const msg = toUserMessage(err, "No se pudo registrar el ingreso. Reintentá.");
       setError(msg);
       // Freeze payload and operation_key for safe retry without generating a new key
-      setPendingAttempt({ payload, error: msg });
+      setPendingAttempt(payload);
     } finally {
       isSubmittingRef.current = false;
       setSubmitting(false);
@@ -129,34 +136,42 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
 
     // If there is already a pending ambiguous attempt, retry sending the exact same payload!
     if (pendingAttempt) {
-      await executeIntake(pendingAttempt.payload);
+      await executeIntake(pendingAttempt);
       return;
     }
 
     setError(null);
 
-    const targetLocation = locations.find((l) => l.id === selectedLocationId);
-    if (!targetLocation) {
-      setError("Seleccioná una ubicación de depósito válida.");
-      return;
-    }
-
     const parseResult = stockIntakeSchema.safeParse({
       productId: product.id,
       variantId: hasVariants ? (selectedVariantId || null) : null,
-      branchId: targetLocation.branch_id,
-      locationId: targetLocation.id,
+      branchId: targetLocation?.branch_id ?? "",
+      locationId: targetLocation?.id ?? "",
       quantity,
-      unitCost: unitCost || 0,
+      unitCost,
+      confirmZeroCost,
       reason,
       operationKey,
     });
 
     if (!parseResult.success) {
-      setError(parseResult.error.issues[0]?.message ?? "Revisá los datos del ingreso de stock.");
+      const { fieldErrors } = parseResult.error.flatten();
+      if (hasVariants && !selectedVariantId) {
+        fieldErrors.variantId = ["Elegí una variante."];
+      }
+      setFieldErrors(fieldErrors);
+      if (!fieldErrors.locationId && (fieldErrors.branchId || fieldErrors.productId || fieldErrors.operationKey)) {
+        setError("No se pudo preparar el ingreso. Cerrá la ventana y volvé a abrirla.");
+      }
       return;
     }
 
+    if (hasVariants && !selectedVariantId) {
+      setFieldErrors({ variantId: ["Elegí una variante."] });
+      return;
+    }
+
+    setFieldErrors({});
     const payload = buildStockIntakePayload(parseResult.data);
     await executeIntake(payload);
   };
@@ -167,10 +182,11 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title="Carga Formal de Stock"
-      subtitle={`Asentar movimiento de ingreso para ${product.internal_name}`}
+      title="Cargar stock"
+      subtitle={`Registrá un ingreso para ${product.internal_name}`}
       icon={ArrowDownRight}
       maxWidth="560px"
+      scrollBody
     >
       {showConfirmDiscard ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "14px", padding: "4px" }}>
@@ -193,9 +209,7 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
                 ¿Descartar intento con resultado pendiente?
               </strong>
               <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>
-                Hubo un fallo de red o comunicación previa (clave de operación:{" "}
-                <code style={{ fontFamily: "monospace" }}>{pendingAttempt?.payload.operation_key}</code>).
-                Si cerrás y abrís una nueva operación con otra clave, el servidor podría asentar ambas si la anterior llegó a registrarse.
+                No pudimos verificar si se registró el ingreso. Reintentá desde esta ventana para evitar cargar el mismo stock dos veces.
               </p>
             </div>
           </div>
@@ -206,7 +220,7 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
               className="pag-btn"
               onClick={() => setShowConfirmDiscard(false)}
             >
-              Volver y Reintentar
+              Volver y reintentar
             </button>
             <button
               type="button"
@@ -214,42 +228,12 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
               style={{ background: "var(--rose-accent)" }}
               onClick={handleConfirmDiscard}
             >
-              Descartar de Todas Formas
+              Descartar de todas formas
             </button>
           </div>
         </div>
       ) : (
         <form noValidate onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-          {error && (
-            <div
-              className="state-panel"
-              role="alert"
-              style={{
-                borderColor: "var(--rose-accent)",
-                background: "var(--rose-soft)",
-                padding: "10px 14px",
-                borderRadius: "6px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <AlertCircle size={18} style={{ color: "var(--rose-accent)", flexShrink: 0 }} />
-                <span style={{ fontSize: "13px", color: "var(--rose-accent)", fontWeight: 600 }}>
-                  {error}
-                </span>
-              </div>
-              {pendingAttempt && (
-                <span style={{ fontSize: "11px", color: "var(--text-muted)", marginLeft: "26px" }}>
-                  La operación quedó congelada para reintento seguro con la misma clave de idempotencia (
-                  <code style={{ fontFamily: "monospace" }}>{pendingAttempt.payload.operation_key}</code>
-                  ). No se generará una clave nueva.
-                </span>
-              )}
-            </div>
-          )}
-
           {/* Product / Balance Summary Card */}
           <div
             style={{
@@ -285,123 +269,127 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
             </div>
           </div>
 
-          {/* Variant Selection if available */}
           {hasVariants && (
-            <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="stock-variant-select">
-                Variante de Color / Combinación *
-              </label>
-              <select
-                id="stock-variant-select"
-                className="erp-form-select"
-                disabled={isFrozen}
-                value={selectedVariantId}
-                onChange={(e) => setSelectedVariantId(e.target.value)}
-                required
-              >
-                {variants.map((v) => {
-                  const vSummary = calculateStockSummary(product.stock_balances, v.id);
-                  return (
+            <Field label="Variante" required error={fieldErrors.variantId?.[0]}>
+              {(a11y) => (
+                <select
+                  {...a11y}
+                  className="erp-form-select"
+                  disabled={isFrozen}
+                  value={selectedVariantId}
+                  onChange={(e) => {
+                    setSelectedVariantId(e.target.value);
+                    setFieldErrors((errors) => ({ ...errors, variantId: undefined }));
+                  }}
+                  required
+                >
+                  <option value="">Elegí una variante…</option>
+                  {variants.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.name} ({v.code}) — {vSummary.available} u. disponibles
+                      {v.name} ({v.code}) · {calculateStockSummary(product.stock_balances, v.id).available} u. disponibles
                     </option>
-                  );
-                })}
-              </select>
-            </div>
+                  ))}
+                </select>
+              )}
+            </Field>
           )}
 
-          {/* Location Selector */}
-          <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-location-select">
-              Ubicación / Depósito de Ingreso *
-            </label>
-            <select
-              id="stock-location-select"
-              className="erp-form-select"
-              disabled={isFrozen}
-              value={selectedLocationId}
-              onChange={(e) => setSelectedLocationId(e.target.value)}
-              required
-            >
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name} ({loc.code}) {loc.allows_sale ? "• Habilitada p/ Venta" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Field
+            label="Ubicación de ingreso"
+            required
+            error={fieldErrors.locationId?.[0]}
+            hint={!sellableLocations.length ? "No hay ubicaciones activas habilitadas para venta." : null}
+          >
+            {(a11y) => (
+              <select
+                {...a11y}
+                className="erp-form-select"
+                disabled={isFrozen}
+                value={targetLocation?.id ?? ""}
+                onChange={(e) => setChosenLocationId(e.target.value)}
+                required
+              >
+                <option value="" disabled>Elegí una ubicación…</option>
+                {sellableLocations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>{loc.name} ({loc.code})</option>
+                ))}
+              </select>
+            )}
+          </Field>
 
           <div className="erp-form-row">
-            <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="stock-quantity-input">
-                Cantidad a Ingresar *
-              </label>
+            <Field label="Cantidad a ingresar" required error={fieldErrors.quantity?.[0]}>
+              {(a11y) => (
+                <input
+                  {...a11y}
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
+                  disabled={isFrozen}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="erp-form-input"
+                />
+              )}
+            </Field>
+            <Field label="Costo unitario (ARS)" required error={fieldErrors.unitCost?.[0]}>
+              {(a11y) => (
+                <input
+                  {...a11y}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  disabled={isFrozen}
+                  value={unitCost}
+                  onChange={(e) => {
+                    setUnitCost(e.target.value);
+                    setConfirmZeroCost(false);
+                    setFieldErrors((errors) => ({ ...errors, confirmZeroCost: undefined }));
+                  }}
+                  className="erp-form-input"
+                />
+              )}
+            </Field>
+          </div>
+
+          {isZeroStockCost(unitCost) && (
+            <Field label="Confirmo que el costo es cero" error={fieldErrors.confirmZeroCost?.[0]}>
+              {(a11y) => (
+                <input
+                  {...a11y}
+                  type="checkbox"
+                  required
+                  disabled={isFrozen}
+                  checked={confirmZeroCost}
+                  onChange={(e) => {
+                    setConfirmZeroCost(e.target.checked);
+                    setFieldErrors((errors) => ({ ...errors, confirmZeroCost: undefined }));
+                  }}
+                  style={{ alignSelf: "flex-start" }}
+                />
+              )}
+            </Field>
+          )}
+
+          <Field label="Motivo del ingreso" required error={fieldErrors.reason?.[0]}>
+            {(a11y) => (
               <input
-                id="stock-quantity-input"
-                type="number"
-                min="1"
-                step="1"
+                {...a11y}
+                type="text"
                 required
+                minLength={3}
+                maxLength={240}
                 disabled={isFrozen}
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
                 className="erp-form-input"
               />
-            </div>
+            )}
+          </Field>
 
-            <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="stock-unit-cost-input">
-                Costo Unitario de Adquisición ($ ARS)
-              </label>
-              <input
-                id="stock-unit-cost-input"
-                type="number"
-                min="0"
-                step="0.01"
-                disabled={isFrozen}
-                value={unitCost}
-                onChange={(e) => setUnitCost(e.target.value)}
-                className="erp-form-input"
-              />
-            </div>
-          </div>
-
-          <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-reason-input">
-              Motivo de Auditoría *
-            </label>
-            <input
-              id="stock-reason-input"
-              type="text"
-              required
-              minLength={3}
-              maxLength={240}
-              disabled={isFrozen}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="erp-form-input"
-            />
-          </div>
-
-          {/* Audit safety note */}
-          <div
-            style={{
-              fontSize: "12px",
-              color: "var(--text-muted)",
-              background: "var(--surface-subtle)",
-              padding: "8px 12px",
-              borderRadius: "6px",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
-          >
-            <Package size={14} />
-            <span>
-              El stock se asienta formalmente en el ledger de movimientos del ERP con control de concurrencia e idempotencia.
-            </span>
-          </div>
+          <FormError message={error} />
 
           <div
             style={{
@@ -423,10 +411,10 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
                 </>
               ) : pendingAttempt ? (
                 <>
-                  <RefreshCw size={14} /> Reintentar Operación
+                  <RefreshCw size={14} /> Reintentar ingreso
                 </>
               ) : (
-                "Confirmar Ingreso"
+                "Confirmar ingreso"
               )}
             </button>
           </div>

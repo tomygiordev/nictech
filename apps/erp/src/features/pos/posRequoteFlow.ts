@@ -1,4 +1,4 @@
-import { formatPosCurrency } from "../../lib/formatters";
+import { formatCurrency } from "../../lib/formatters";
 import { ERP_BASE_CURRENCY } from "./schemas";
 import {
   syncCartWithCatalog,
@@ -102,12 +102,12 @@ export async function executePosRequoteFlow<T extends CartItemToSync>(
           }`,
       )
       .join(", ");
-    message = `Precios sincronizados: ${changesDesc}. Total nuevo: ${formatPosCurrency(
+    message = `Precios sincronizados: ${changesDesc}. Total nuevo: ${formatCurrency(
       syncResult.newTotalArs,
       ERP_BASE_CURRENCY,
     )}. Revise el carrito y confirme la venta.`;
   } else {
-    message = `Los precios del carrito ya coinciden con el catálogo vigente. Total: ${formatPosCurrency(
+    message = `Los precios del carrito ya coinciden con el catálogo vigente. Total: ${formatCurrency(
       syncResult.newTotalArs,
       ERP_BASE_CURRENCY,
     )}. Puede confirmar la venta.`;

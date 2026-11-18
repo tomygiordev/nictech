@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { ErpAuthContext } from "./auth/ErpAuthContext";
+import { KEYBOARD_SHORTCUTS } from "./features/help/tutorialData";
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -173,7 +174,7 @@ describe("ERP App Navigation & Workspaces", () => {
     // 2. Trade-ins (Equipos usados)
     const tradeInsBtn = screen.getByRole("button", { name: "Equipos usados" });
     await user.click(tradeInsBtn);
-    expect(await screen.findByText("Equipos Usados & Canjes en Parte de Pago (Trade-in)", {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Equipos usados" }, { timeout: 4000 })).toBeInTheDocument();
 
     // 3. Documents (internal ERP invoices; provider authorization is future work)
     const docsBtn = screen.getByRole("button", { name: "Documentos y facturas" });
@@ -212,6 +213,28 @@ describe("ERP App Navigation & Workspaces", () => {
     );
     expect(screen.getByText("Ingreso NicTech ERP")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Ingresar al Sistema/i })).toBeInTheDocument();
+  });
+
+  it("oculta Conteo físico del menú lateral y de las pestañas de Stock", async () => {
+    renderAppWithPermissions(ALL_PERMISSIONS);
+    const user = userEvent.setup();
+
+    const searchInput = screen.getByPlaceholderText("Buscar en ERP...");
+    fireEvent.change(searchInput, { target: { value: "conteo" } });
+    expect(screen.queryByRole("button", { name: "Stock y almacén" })).not.toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: "Stock y almacén" }));
+
+    expect(await screen.findByRole("heading", { name: "Gestión de Existencias & Variantes" }, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Conteo físico/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Conteo físico/i)).not.toBeInTheDocument();
+  });
+
+  it("expone solo los atajos de teclado reales en la ayuda", () => {
+    expect(KEYBOARD_SHORTCUTS).toHaveLength(2);
+    expect(KEYBOARD_SHORTCUTS.map((item) => item.key)).toEqual(["F2 / Ctrl + K", "Escape"]);
+    expect(KEYBOARD_SHORTCUTS.some((item) => /alt/i.test(item.key) || /alt/i.test(item.action))).toBe(false);
   });
 });
 

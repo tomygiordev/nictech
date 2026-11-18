@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { CatalogSheetModal } from "./CatalogSheetModal";
-import type { DbCatalogProduct } from "./schemas";
+import type { DbCatalogProduct, MasterLocation } from "./schemas";
 
 const mock = vi.hoisted(() => ({ rpc: vi.fn(), upload: vi.fn(), publicUrl: vi.fn(), loadError: null as { code: string; message: string } | null }));
 const color = { id: "60000000-0000-4000-8000-000000000006", name: "Negro" };
@@ -20,11 +20,46 @@ const category = { id: "10000000-0000-4000-8000-000000000001", code: "ACC", name
 const brand = { id: "20000000-0000-4000-8000-000000000002", code: "GEN", name: "Genérico" };
 const product: DbCatalogProduct = { id: "90000000-0000-4000-8000-000000000009", internal_code: "ACC-001", internal_name: "Cable USB", public_name: null, public_description: "Anterior", category_id: category.id, brand_id: brand.id, base_sale_price: 100, tax_rate_percent: 21, is_active: true, item_kind: "product", inventory_tracking: "quantity", created_at: "2026-01-01", updated_at: "2026-01-01T00:00:00.123456+00:00", sheet_template: "accesorio", web_status: "draft", media_initialized: true };
 const location = { id: "30000000-0000-4000-8000-000000000003", branch_id: "40000000-0000-4000-8000-000000000004", code: "DEP", name: "Depósito", allows_sale: true, is_active: true };
-const renderSheet = (item: DbCatalogProduct | null = null, onClose = vi.fn()) => render(<CatalogSheetModal isOpen onClose={onClose} onSuccess={vi.fn()} product={item} categories={[category]} brands={[brand]} models={[]} locations={[location]} />);
-const fill = () => { fireEvent.change(screen.getByLabelText("Categoría *"), { target: { value: category.id } }); fireEvent.change(screen.getByLabelText("Marca *"), { target: { value: brand.id } }); fireEvent.change(screen.getByLabelText("Nombre *"), { target: { value: "Cable USB" } }); fireEvent.change(screen.getByLabelText("Costo estimado ARS *"), { target: { value: "50" } }); };
+const quarantine = { ...location, id: "30000000-0000-4000-8000-000000000006", name: "Cuarentena de canjes", allows_sale: false };
+const inactive = { ...location, id: "30000000-0000-4000-8000-000000000007", name: "Depósito inactivo", is_active: false };
+const counter = { ...location, id: "30000000-0000-4000-8000-000000000008", name: "Mostrador" };
+const renderSheet = (item: DbCatalogProduct | null = null, onClose = vi.fn(), locations: MasterLocation[] = [location]) => render(<CatalogSheetModal isOpen onClose={onClose} onSuccess={vi.fn()} product={item} categories={[category]} brands={[brand]} models={[]} locations={locations} />);
+const fill = () => { fireEvent.change(screen.getByLabelText("Categoría (obligatorio)"), { target: { value: category.id } }); fireEvent.change(screen.getByLabelText("Marca (obligatorio)"), { target: { value: brand.id } }); fireEvent.change(screen.getByLabelText("Nombre (obligatorio)"), { target: { value: "Cable USB" } }); fireEvent.change(screen.getByLabelText("Costo estimado ARS (obligatorio)"), { target: { value: "50" } }); };
+const addColor = () => {
+  fireEvent.change(screen.getByLabelText("Color del catálogo"), { target: { value: color.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Agregar color" }));
+};
+const save = () => fireEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
 beforeEach(() => { mock.loadError = null; mock.rpc.mockReset(); mock.upload.mockReset(); mock.publicUrl.mockReset(); mock.rpc.mockResolvedValue({ data: {}, error: null }); });
 afterEach(cleanup);
 describe("ficha guiada", () => {
+  it("muestra el error de categoría junto al campo y con estilo de error", async () => {
+    renderSheet();
+    await screen.findByRole("option", { name: "Negro" });
+    fill();
+    const select = screen.getByLabelText("Categoría (obligatorio)");
+    fireEvent.change(select, { target: { value: "" } });
+    save();
+
+    const alert = await screen.findByText("Elegí una categoría.");
+    expect(alert).toHaveAttribute("role", "alert");
+    expect(alert.getAttribute("style")).toContain("--rose-accent");
+    expect(select).toHaveAttribute("aria-invalid", "true");
+    expect(select).toHaveAccessibleDescription("Elegí una categoría.");
+    expect(mock.rpc).not.toHaveBeenCalled();
+  });
+  it("solo ofrece ubicaciones activas de venta y no elige una si hay varias", async () => {
+    renderSheet(null, vi.fn(), [quarantine, location, inactive, counter]);
+    await screen.findByRole("option", { name: "Negro" });
+    addColor();
+
+    const select = screen.getByLabelText("Ubicación inicial Negro");
+    expect(select).toHaveValue("");
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Elegí una ubicación…", "Depósito", "Mostrador",
+    ]);
+    expect(screen.getByLabelText("Sirve para")).toHaveClass("erp-form-select");
+  });
   it("crea el producto con el RPC de ficha sin publicar", async () => {
     renderSheet(); await screen.findByRole("option", { name: "Negro" }); fill(); fireEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
     await waitFor(() => expect(mock.rpc).toHaveBeenCalledWith("save_catalog_product_sheet", expect.objectContaining({ payload: expect.objectContaining({ internal_name: "Cable USB", base_cost: 50 }) })));
@@ -37,20 +72,44 @@ describe("ficha guiada", () => {
     await waitFor(() => expect(mock.rpc).toHaveBeenCalledWith("save_catalog_product_sheet", { payload: { id: product.id, internal_description: "Uso interno" }, p_expected_updated_at: product.updated_at }));
   });
   it("envía el ingreso inicial por color y ubicación", async () => {
-    renderSheet(); await screen.findByRole("option", { name: "Negro" }); fill();
-    fireEvent.change(screen.getByLabelText("Color del catálogo"), { target: { value: color.id } });
-    fireEvent.click(screen.getByRole("button", { name: "Agregar color" }));
+    renderSheet(null, vi.fn(), [quarantine, location, inactive]); await screen.findByRole("option", { name: "Negro" }); fill();
+    addColor();
+    expect(screen.getByLabelText("Ubicación inicial Negro")).toHaveValue(location.id);
+    expect(screen.getByLabelText("Cantidad inicial Negro")).toHaveDisplayValue("");
+    expect(screen.getByLabelText("Costo unitario inicial Negro")).toHaveDisplayValue("");
     fireEvent.change(screen.getByLabelText("Cantidad inicial Negro"), { target: { value: "3" } });
-    fireEvent.change(screen.getByLabelText("Ubicación inicial Negro"), { target: { value: location.id } });
     fireEvent.change(screen.getByLabelText("Costo unitario inicial Negro"), { target: { value: "12" } });
     fireEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
     await waitFor(() => expect(mock.rpc).toHaveBeenCalledWith("save_catalog_product_sheet", expect.objectContaining({ payload: expect.objectContaining({ initial_stock: [expect.objectContaining({ quantity: 3, location_id: location.id, unit_cost: 12, variant_code: expect.any(String) })] }) })));
+  });
+  it("pide costo inicial explícito y confirma el costo cero antes de guardar", async () => {
+    renderSheet();
+    await screen.findByRole("option", { name: "Negro" });
+    fill();
+    addColor();
+    fireEvent.change(screen.getByLabelText("Cantidad inicial Negro"), { target: { value: "3" } });
+    save();
+    expect(await screen.findByText("Ingresá el costo unitario.")).toHaveAttribute("role", "alert");
+    expect(mock.rpc).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Costo unitario inicial Negro"), { target: { value: "0" } });
+    save();
+    expect(await screen.findByText("Confirmá que el costo es cero.")).toHaveAttribute("role", "alert");
+    expect(mock.rpc).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Confirmo que el costo es cero" }));
+    save();
+    await waitFor(() => expect(mock.rpc).toHaveBeenCalledWith("save_catalog_product_sheet", expect.objectContaining({
+      payload: expect.objectContaining({ initial_stock: [expect.objectContaining({ unit_cost: 0 })] }),
+    })));
   });
   it("sin stock omite initial_stock y no cierra si falla el RPC", async () => {
     const onClose = vi.fn(); mock.rpc.mockResolvedValue({ data: null, error: { message: "Error al guardar" } });
     renderSheet(null, onClose); await screen.findByRole("option", { name: "Negro" }); fill();
     fireEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
-    expect(await screen.findByText("Error al guardar")).toBeInTheDocument();
+    const alert = await within(screen.getByRole("dialog")).findByRole("alert");
+    expect(alert).toHaveTextContent("Error al guardar");
+    expect(alert.getAttribute("style")).toContain("--rose-accent");
     expect(mock.rpc.mock.calls[0][1].payload).not.toHaveProperty("initial_stock");
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -63,11 +122,12 @@ describe("ficha guiada", () => {
   it("editar descripción no envía nombre ni existencias y conserva timestamp exacto", async () => {
     renderSheet(product); await screen.findByRole("option", { name: "Negro" }); fireEvent.change(screen.getByLabelText("Descripción web"), { target: { value: "Nueva" } }); fireEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
     await waitFor(() => expect(mock.rpc).toHaveBeenCalledWith("save_catalog_product_sheet", { payload: { id: product.id, public_description: "Nueva" }, p_expected_updated_at: product.updated_at }));
-    expect(screen.getByLabelText("Nombre *")).toHaveValue("Cable USB");
+    expect(screen.getByLabelText("Nombre (obligatorio)")).toHaveValue("Cable USB");
   });
   it("agregar color lo envía como variante de catálogo", async () => {
     renderSheet(); await screen.findByRole("option", { name: "Negro" }); fill(); fireEvent.change(screen.getByLabelText("Color del catálogo"), { target: { value: color.id } }); fireEvent.click(screen.getByRole("button", { name: "Agregar color" })); fireEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
     await waitFor(() => expect(mock.rpc).toHaveBeenCalledWith("save_catalog_product_sheet", expect.objectContaining({ payload: expect.objectContaining({ variants: [expect.objectContaining({ color_id: color.id, name: "Negro", final_price_mode: "inherit" })] }) })));
+    expect(mock.rpc.mock.calls[0][1].payload).not.toHaveProperty("initial_stock");
   });
   it("si falla una foto informa el archivo y no llama al RPC", async () => {
     mock.upload.mockResolvedValue({ error: { message: "Storage no disponible" } }); renderSheet(); await screen.findByRole("option", { name: "Negro" }); fill();
@@ -98,9 +158,9 @@ describe("ficha guiada", () => {
     renderSheet();
     await screen.findByRole("option", { name: "Negro" });
     fill();
-    fireEvent.change(screen.getByLabelText("Precio final ARS con IVA incluido *"), { target: { value: "120" } });
+    fireEvent.change(screen.getByLabelText("Precio final ARS con IVA incluido (obligatorio)"), { target: { value: "120" } });
     fireEvent.change(screen.getByLabelText("Agregar fotos"), { target: { files: [new File(["x"], "foto.jpg", { type: "image/jpeg" })] } });
-    expect(screen.getByLabelText("Nombre *")).toHaveValue("Cable USB");
+    expect(screen.getByLabelText("Nombre (obligatorio)")).toHaveValue("Cable USB");
   });
 
   it("confirma la recodificación en el diálogo del ERP", async () => {

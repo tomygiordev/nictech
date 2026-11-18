@@ -8,7 +8,18 @@ import { NavigationVisibilityContext } from "./navigation";
 import { WorkspaceModuleTabs } from "../../components/erp/WorkspaceModuleTabs";
 import { listSystemSettings, guardarAjuste } from "./api";
 
-vi.mock("./api", () => ({ listSystemSettings: vi.fn(), guardarAjuste: vi.fn(), listBranches: vi.fn().mockResolvedValue([]), listSystemUsers: vi.fn().mockResolvedValue([]), listRolesAndAssignments: vi.fn().mockResolvedValue({ roles: [], assignments: [] }) }));
+vi.mock("./api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api")>();
+  return {
+    ...actual,
+    listSystemSettings: vi.fn(),
+    guardarAjuste: vi.fn(),
+    listBranches: vi.fn().mockResolvedValue([]),
+    listSystemUsers: vi.fn().mockResolvedValue([]),
+    listRolesAndAssignments: vi.fn().mockResolvedValue({ roles: [], assignments: [] }),
+    listRoleAssignmentAccess: vi.fn().mockResolvedValue({ canManage: false, allowedRoleIds: [] }),
+  };
+});
 const auth: ErpAuthContextValue = {
   session: null, organizationId: "org", branchIds: [], permissions: [], loading: false, error: null, hasPermission: () => true,
 };
@@ -39,10 +50,11 @@ describe("visibilidad de módulos", () => {
     wrap(<NavigationVisibilityContext.Provider value={["stock", "labels"]}><WorkspaceModuleTabs moduleIds={["stock", "stock-counts", "labels"]} activeModuleId="stock" onSelectModule={vi.fn()} /></NavigationVisibilityContext.Provider>);
     expect(screen.getByRole("tab", { name: "Existencias" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /Conteo físico/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Codigos y etiquetas" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Códigos y etiquetas" })).toBeInTheDocument();
   });
   it("guarda perfil personalizado de alcance global", async () => {
     wrap(<NavigationSettings />);
+    expect(screen.queryByRole("checkbox", { name: /Conteo físico/i })).not.toBeInTheDocument();
     const checkbox = await screen.findByRole("checkbox", { name: "Compras" });
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByRole("button", { name: "Guardar módulos" }));
@@ -52,6 +64,6 @@ describe("visibilidad de módulos", () => {
     expect(branch).toBeUndefined();
     expect(value).toEqual(expect.objectContaining({ profile: "salida", visible: expect.arrayContaining(["settings", "users", "purchases"]) }));
     expect(await screen.findByText("Visibilidad de módulos guardada.")).toBeInTheDocument();
-    expect(within(screen.getByRole("group", { name: /Personalizar módulos/ })).getByRole("checkbox", { name: "Configuracion" })).toBeDisabled();
+    expect(within(screen.getByRole("group", { name: /Personalizar módulos/ })).getByRole("checkbox", { name: "Configuración" })).toBeDisabled();
   });
 });

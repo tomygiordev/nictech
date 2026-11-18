@@ -1,8 +1,10 @@
 import { useState, type ReactNode, type FormEvent } from "react";
 import { useErpAuth } from "./ErpAuthContext";
 import { StatePanel } from "../components/erp/WorkspaceUi";
+import { FormError } from "../components/erp/FormFeedback";
+import { toUserMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
-import { Lock, Mail, KeyRound, Loader2, AlertCircle } from "lucide-react";
+import { Lock, Mail, KeyRound, Loader2 } from "lucide-react";
 
 type ErpAccessGateProps = {
   permission?: string;
@@ -23,7 +25,7 @@ export const ErpAccessGate = ({ permission, children }: ErpAccessGateProps) => {
       const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
       if (signOutError) throw signOutError;
     } catch (signOutError) {
-      setLoginError(signOutError instanceof Error ? signOutError.message : "No se pudo cerrar la sesión.");
+      setLoginError(toUserMessage(signOutError, "No se pudo cerrar la sesión."));
     } finally {
       setLoginLoading(false);
     }
@@ -40,10 +42,10 @@ export const ErpAccessGate = ({ permission, children }: ErpAccessGateProps) => {
         password,
       });
       if (authErr) {
-        setLoginError(authErr.message);
+        setLoginError(toUserMessage(authErr, "No se pudo iniciar sesión. Reintentá."));
       }
     } catch (err) {
-      setLoginError(err instanceof Error ? err.message : "Error inesperado al iniciar sesión.");
+      setLoginError(toUserMessage(err, "No se pudo iniciar sesión. Reintentá."));
     } finally {
       setLoginLoading(false);
     }
@@ -104,21 +106,8 @@ export const ErpAccessGate = ({ permission, children }: ErpAccessGateProps) => {
           </div>
 
           {loginError && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "10px 14px",
-                borderRadius: "8px",
-                backgroundColor: "rgba(239, 68, 68, 0.1)",
-                color: "#ef4444",
-                fontSize: "13px",
-                marginBottom: "18px",
-              }}
-            >
-              <AlertCircle size={16} />
-              <span>{loginError}</span>
+            <div style={{ marginBottom: "18px" }}>
+              <FormError message={loginError} onDismiss={() => setLoginError(null)} />
             </div>
           )}
 

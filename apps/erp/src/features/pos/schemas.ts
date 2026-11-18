@@ -10,7 +10,7 @@ const currencyCode = requiredText
 const finiteAmount = z
   .number()
   .finite()
-  .max(POS_MAX_AMOUNT_ARS, `El importe supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString()} ARS`);
+  .max(POS_MAX_AMOUNT_ARS, `El importe supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS`);
 
 export const ERP_BASE_CURRENCY = "ARS" as const;
 
@@ -52,7 +52,7 @@ export const posSaleLineSchema = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["quantity"],
-      message: `El subtotal de la línea supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString()} ARS`,
+      message: `El subtotal de la línea supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS`,
     });
   }
   const effectiveDiscount = round4(line.gross_discount_amount ?? line.discount_amount);
@@ -94,7 +94,7 @@ export const saleSchema: z.ZodType<PosSaleInput> = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["lines"],
-      message: totals.error ?? `El total de la venta supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString()} ARS`,
+      message: totals.error ?? `El total de la venta supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS`,
     });
   }
 });

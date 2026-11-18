@@ -19,7 +19,11 @@ import {
   Modal,
   FeedbackAlert,
 } from "../../components/erp/WorkspaceUi";
+import { FormError } from "../../components/erp/FormFeedback";
+import { useErpAuth } from "../../auth/ErpAuthContext";
 import { type ErpModuleId } from "@nictech/domain";
+import { toUserMessage } from "../../lib/errors";
+import { STOCK_DOCUMENT_KIND_LABELS, labelOf } from "../../lib/labels";
 import { formatDateTime } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
 
@@ -150,6 +154,11 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
   activeModuleId = "stock",
   onSelectModule,
 }) => {
+  const { hasPermission } = useErpAuth();
+  const canAdjustStock = hasPermission("stock.adjust") && hasPermission("stock.move");
+  const canTransferStock = hasPermission("stock.move");
+  const hasRowActions = canAdjustStock || canTransferStock;
+
   const [stockSubTab, setStockSubTab] = useState<"locations" | "movements">("locations");
   const [stockBalances, setStockBalances] = useState<DbStockRow[]>([]);
   const [locations, setLocations] = useState<DbLocation[]>([]);
@@ -162,6 +171,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
   // Form states for adjustment
   const [isAdjModalOpen, setIsAdjModalOpen] = useState<boolean>(false);
+  const [adjError, setAdjError] = useState<string | null>(null);
   const [adjRowId, setAdjRowId] = useState<string>("");
   const [adjType, setAdjType] = useState<"in" | "out">("in");
   const [adjQty, setAdjQty] = useState<string>("1");
@@ -169,6 +179,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
   const [adjReason, setAdjReason] = useState<string>("");
   const [adjOperationKey, setAdjOperationKey] = useState<string>(() => createOperationKey("adjustment"));
   const [isTransferModalOpen, setIsTransferModalOpen] = useState<boolean>(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
   const [transferSourceRowId, setTransferSourceRowId] = useState<string>("");
   const [transferDestinationLocationId, setTransferDestinationLocationId] = useState<string>("");
   const [transferQty, setTransferQty] = useState<string>("1");
@@ -249,33 +260,48 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
       if (docError) throw docError;
       setRecentDocs(docData || []);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error al cargar datos de inventario");
+      setError(toUserMessage(e, "No se pudieron cargar los datos de inventario."));
     } finally {
       setLoading(false);
     }
   }, [labelTargetId, showInactive]);
 
   useEffect(() => {
-    if (activeModuleId !== "stock-counts") fetchStockData();
+    fetchStockData();
   }, [activeModuleId, fetchStockData]);
 
   useEffect(() => {
     setIsAdjModalOpen(false);
+    setAdjError(null);
     setIsTransferModalOpen(false);
+    setTransferError(null);
   }, [activeModuleId]);
+
+  const openAdjustmentModal = (rowId?: string) => {
+    if (!canAdjustStock) return;
+    if (rowId) {
+      setAdjRowId(rowId);
+    } else if (stockBalances.length > 0 && !adjRowId) {
+      setAdjRowId(stockBalances[0].id);
+    }
+    setAdjError(null);
+    setAdjOperationKey(createOperationKey("adjustment"));
+    setIsAdjModalOpen(true);
+  };
 
   // Handle transactional stock adjustment via post_stock_document
   const handleCreateAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canAdjustStock) return;
     const targetRow = stockBalances.find((r) => r.id === adjRowId);
     if (!targetRow) {
-      setError("Seleccioná una existencia para ajustar.");
+      setAdjError("Seleccioná una existencia para ajustar.");
       return;
     }
 
     try {
       setSubmitting(true);
-      setError(null);
+      setAdjError(null);
       const parsed = adjustmentSchema.safeParse({
         stockBalanceId: adjRowId,
         direction: adjType,
@@ -310,22 +336,24 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
       setFeedback({
         type: "success",
-        message: `¡Movimiento de stock registrado correctamente en el ledger ERP!`,
+        message: "Movimiento de stock registrado.",
       });
       setIsAdjModalOpen(false);
+      setAdjError(null);
       setAdjQty("1");
       setAdjUnitCost("");
       setAdjReason("");
       setAdjOperationKey(createOperationKey("adjustment"));
       await fetchStockData();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error al registrar movimiento");
+      setAdjError(toUserMessage(err, "No se pudo registrar el movimiento de stock."));
     } finally {
       setSubmitting(false);
     }
   };
 
   const openTransferModal = (sourceRowId: string) => {
+    if (!canTransferStock) return;
     const source = stockBalances.find((row) => row.id === sourceRowId);
     const destination = locations.find(
       (location) => location.branch_id === source?.locations?.branch_id && location.id !== source?.location_id,
@@ -335,21 +363,23 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
     setTransferDestinationLocationId(destination?.id || "");
     setTransferQty("1");
     setTransferReason("");
+    setTransferError(null);
     setTransferOperationKey(createOperationKey("transfer"));
     setIsTransferModalOpen(true);
   };
 
   const handleCreateTransfer = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canTransferStock) return;
     const sourceRow = stockBalances.find((row) => row.id === transferSourceRowId);
     if (!sourceRow) {
-      setError("Seleccioná una existencia de origen para transferir.");
+      setTransferError("Seleccioná una existencia de origen para transferir.");
       return;
     }
 
     try {
       setSubmitting(true);
-      setError(null);
+      setTransferError(null);
       const parsed = transferSchema.safeParse({
         stockBalanceId: transferSourceRowId,
         destinationLocationId: transferDestinationLocationId,
@@ -398,9 +428,10 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         message: `Transferencia registrada: ${parsed.data.quantity} u. movidas a ${destination.name}.`,
       });
       setIsTransferModalOpen(false);
+      setTransferError(null);
       await fetchStockData();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error al transferir stock");
+      setTransferError(toUserMessage(err, "No se pudo transferir el stock."));
     } finally {
       setSubmitting(false);
     }
@@ -457,37 +488,32 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
   }, [locations, stockBalances, transferSourceRowId]);
 
   const isLabelsMode = activeModuleId === "labels";
-  const isStockCountsMode = activeModuleId === "stock-counts";
 
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
         title={
-          isStockCountsMode
-            ? "Conteo físico: backend pendiente"
-            : isLabelsMode
-              ? "Generación & Impresión de Código de Barras"
-              : "Gestión de Existencias & Variantes"
+          isLabelsMode
+            ? "Generación & Impresión de Código de Barras"
+            : "Gestión de Existencias & Variantes"
         }
         description={
-          isStockCountsMode
-            ? "Esta pantalla no inicia ni guarda conteos. El ERP todavía no expone operaciones seguras de conteo físico."
-            : isLabelsMode
-              ? "Rotulado físico para fundas y accesorios con códigos de barras individuales por variante."
-              : "Control centralizado de inventario por variante de color, ubicación y trazabilidad de movimientos."
+          isLabelsMode
+            ? "Rotulado físico para fundas y accesorios con códigos de barras individuales por variante."
+            : "Control centralizado de inventario por variante de color, ubicación y trazabilidad de movimientos."
         }
-        badge={isStockCountsMode ? "No habilitado" : `${stockBalances.length} Variantes en Existencia`}
+        badge={`${stockBalances.length} Variantes en Existencia`}
       />
 
       {onSelectModule && (
         <WorkspaceModuleTabs
-          moduleIds={["stock", "stock-counts", "labels"]}
-          activeModuleId={activeModuleId}
+          moduleIds={["stock", "labels"]}
+          activeModuleId={isLabelsMode ? "labels" : "stock"}
           onSelectModule={onSelectModule}
         />
       )}
 
-      {!isStockCountsMode && <label><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Ver inactivos</label>}
+      <label><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Ver inactivos</label>
 
       {error && (
         <FeedbackAlert
@@ -510,42 +536,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         />
       )}
 
-      {isStockCountsMode ? (
-        <section className="flow-card" aria-labelledby="stock-counts-pending-title">
-          <div className="flow-card__header">
-            <div>
-              <h2 id="stock-counts-pending-title" className="flow-card__title">No se puede registrar un conteo todavía</h2>
-              <p className="flow-card__subtitle">
-                No mostramos saldos, ajustes ni transferencias como si fueran un conteo físico.
-              </p>
-            </div>
-          </div>
-          <div style={{ padding: "16px 20px 20px" }}>
-            <StatePanel
-              type="info"
-              title="El guardado requiere soporte transaccional del ERP"
-              message="El esquema tiene tablas de conteo, pero la sesión de conteo y sus diferencias no se pueden escribir ni contabilizar con los permisos actuales."
-            />
-            <div style={{ marginTop: "20px" }}>
-              <h3 className="flow-card__title" style={{ fontSize: "15px" }}>Backend necesario para habilitarlo</h3>
-              <ul style={{ margin: "10px 0 0", paddingLeft: "22px", color: "var(--text-muted)", lineHeight: 1.7 }}>
-                <li>RPC transaccional para crear la sesión por sucursal/ubicación y capturar una instantánea de existencias esperadas.</li>
-                <li>Operaciones autorizadas para iniciar, guardar/editar cantidades, enviar a revisión y cancelar conteos con transición de estados y trazabilidad de usuario.</li>
-                <li>Permisos de escritura y políticas RLS por sucursal para <code>inventory_counts</code> y <code>inventory_count_lines</code>; hoy solo tienen grants y políticas de lectura.</li>
-                <li>RPC de contabilización que valide las diferencias, proteja las reservas, publique atómicamente el documento <code>physical_count</code> en el ledger y enlace <code>posted_document_id</code>.</li>
-                <li>Permiso de gestión/contabilización de conteos con alcance por sucursal; el esquema actual solo define lectura mediante <code>stock_counts.view</code>.</li>
-              </ul>
-            </div>
-            {onSelectModule && (
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
-                <button type="button" className="pag-btn" onClick={() => onSelectModule("stock")}>
-                  Ir a existencias
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-      ) : !isLabelsMode ? (
+      {!isLabelsMode ? (
         <>
           {/* Sub Navigation */}
           <div className="flow-tabs-nav flow-tabs-nav--switcher" style={{ marginBottom: "16px" }} role="tablist" aria-label="Vista de inventario">
@@ -603,20 +594,17 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                   <button
                     type="button"
                     className="btn-primary"
-                    onClick={() => {
-                      if (stockBalances.length > 0 && !adjRowId) {
-                        setAdjRowId(stockBalances[0].id);
-                      }
-                      setAdjOperationKey(createOperationKey("adjustment"));
-                      setIsAdjModalOpen(true);
-                    }}
+                    disabled={!canAdjustStock}
+                    title={!canAdjustStock ? "Requiere permiso: ajustar y mover stock" : undefined}
+                    onClick={() => openAdjustmentModal()}
                   >
                     <Plus size={16} /> Ajustar Stock
                   </button>
                   <button
                     type="button"
                     className="pag-btn"
-                    disabled={stockBalances.length === 0}
+                    disabled={!canTransferStock || stockBalances.length === 0}
+                    title={!canTransferStock ? "Requiere permiso: mover stock" : undefined}
                     onClick={() => openTransferModal(adjRowId || stockBalances[0]?.id || "")}
                   >
                     <ArrowRightLeft size={16} /> Transferir stock
@@ -636,21 +624,21 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                       <th>En Mano</th>
                       <th>Reservado</th>
                       <th>Disponible</th>
-                      <th className="text-right">Acción</th>
+                      {hasRowActions && <th className="text-right">Acción</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={9} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
+                        <td colSpan={hasRowActions ? 9 : 8} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
                           <Loader2 size={24} className="animate-spin" style={{ margin: "0 auto 8px" }} />
-                          Cargando inventario ERP...
+                          Cargando existencias…
                         </td>
                       </tr>
                     ) : filteredBalances.length === 0 ? (
                       <tr>
-                        <td colSpan={9} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-                          No se encontraron existencias registradas en la base de datos.
+                        <td colSpan={hasRowActions ? 9 : 8} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
+                          No se encontraron existencias registradas.
                         </td>
                       </tr>
                     ) : (
@@ -718,29 +706,31 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                                 {available} u.
                               </strong>
                             </td>
-                            <td className="text-right">
-                              <button
-                                type="button"
-                                className="pag-btn"
-                                style={{ fontSize: "11px", padding: "4px 8px" }}
-                                onClick={() => {
-                                  setAdjRowId(row.id);
-                                  setAdjOperationKey(createOperationKey("adjustment"));
-                                  setIsAdjModalOpen(true);
-                                }}
-                              >
-                                <Plus size={11} /> Ajustar
-                              </button>
-                              <button
-                                type="button"
-                                className="pag-btn"
-                                style={{ fontSize: "11px", padding: "4px 8px", marginLeft: "6px" }}
-                                disabled={available <= 0}
-                                onClick={() => openTransferModal(row.id)}
-                              >
-                                <ArrowRightLeft size={11} /> Transferir
-                              </button>
-                            </td>
+                            {hasRowActions && (
+                              <td className="text-right">
+                                {canAdjustStock && (
+                                  <button
+                                    type="button"
+                                    className="pag-btn"
+                                    style={{ fontSize: "11px", padding: "4px 8px" }}
+                                    onClick={() => openAdjustmentModal(row.id)}
+                                  >
+                                    <Plus size={11} /> Ajustar
+                                  </button>
+                                )}
+                                {canTransferStock && (
+                                  <button
+                                    type="button"
+                                    className="pag-btn"
+                                    style={{ fontSize: "11px", padding: "4px 8px", marginLeft: canAdjustStock ? "6px" : 0 }}
+                                    disabled={available <= 0}
+                                    onClick={() => openTransferModal(row.id)}
+                                  >
+                                    <ArrowRightLeft size={11} /> Transferir
+                                  </button>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         );
                       })
@@ -764,8 +754,8 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                   <thead>
                     <tr>
                       <th>Fecha / Hora</th>
-                      <th>Tipo Doc</th>
-                      <th>Motivo / Razón</th>
+                      <th>Tipo</th>
+                      <th>Motivo</th>
                       <th>Líneas de Movimiento</th>
                     </tr>
                   </thead>
@@ -773,7 +763,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                     {recentDocs.length === 0 ? (
                       <tr>
                         <td colSpan={4} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-                          No hay documentos de stock registrados recientemente.
+                          No hay movimientos de stock registrados recientemente.
                         </td>
                       </tr>
                     ) : (
@@ -785,8 +775,8 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                             </span>
                           </td>
                           <td>
-                            <span className="type-badge blue" style={{ textTransform: "uppercase" }}>
-                              {doc.kind}
+                            <span className="type-badge blue">
+                              {labelOf(STOCK_DOCUMENT_KIND_LABELS, doc.kind, "Movimiento")}
                             </span>
                           </td>
                           <td>
@@ -826,8 +816,9 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
             <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginTop: "12px" }}>
               <div className="erp-form-group">
-                <label className="erp-form-label">Variante / Artículo a Rotular *</label>
+                <label className="erp-form-label" htmlFor="stock-label-item">Variante / Artículo a Rotular *</label>
                 <select
+                  id="stock-label-item"
                   value={labelTargetId}
                   onChange={(e) => {
                     setLabelTargetId(e.target.value);
@@ -844,8 +835,9 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
               </div>
 
               <div className="erp-form-group">
-                <label className="erp-form-label">Formato de Etiqueta</label>
+                <label className="erp-form-label" htmlFor="stock-label-format">Formato de Etiqueta</label>
                 <select
+                  id="stock-label-format"
                   value={labelFormat}
                   onChange={(e) => setLabelFormat(e.target.value)}
                   className="erp-form-input"
@@ -909,7 +901,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                   Código de barras 100% escaneable por lectores láser / 2D
                 </p>
               </div>
-              <span className="type-badge green">Código Real Persistido</span>
+              <span className="type-badge green">Código registrado</span>
             </div>
 
             {selectedLabelItem ? (
@@ -990,7 +982,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                 </div>
               </div>
             ) : (
-              <StatePanel type="empty" title="Sin artículo seleccionado" message="Selecciona una variante para previsualizar rótulo." />
+              <StatePanel type="empty" title="Sin artículo seleccionado" message="Seleccioná una variante para ver la vista previa." />
             )}
           </div>
         </div>
@@ -999,13 +991,14 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
       {/* Modal: New Stock Adjustment */}
       <Modal
         isOpen={isAdjModalOpen}
-        onClose={() => setIsAdjModalOpen(false)}
-        title="Registrar Movimiento en Ledger de Stock"
-        subtitle="Movimiento transaccional con actualización inmediata en stock_balances"
+        onClose={() => { setAdjError(null); setIsAdjModalOpen(false); }}
+        title="Registrar movimiento de stock"
+        subtitle="El stock se actualiza al confirmar."
         icon={ArrowRightLeft}
         maxWidth="500px"
       >
-        <form onSubmit={handleCreateAdjustment} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <form noValidate onSubmit={handleCreateAdjustment} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <FormError message={adjError} onDismiss={() => setAdjError(null)} />
           <div className="erp-form-group">
             <label className="erp-form-label" htmlFor="stock-adjustment-balance">Variante / Ubicación a Ajustar *</label>
             <select
@@ -1099,13 +1092,14 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
       <Modal
         isOpen={isTransferModalOpen}
-        onClose={() => setIsTransferModalOpen(false)}
+        onClose={() => { setTransferError(null); setIsTransferModalOpen(false); }}
         title="Transferir stock entre ubicaciones"
         subtitle="El movimiento conserva el costo y queda registrado en el historial de stock."
         icon={ArrowRightLeft}
         maxWidth="500px"
       >
-        <form onSubmit={handleCreateTransfer} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <form noValidate onSubmit={handleCreateTransfer} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <FormError message={transferError} onDismiss={() => setTransferError(null)} />
           <div className="erp-form-group">
             <label className="erp-form-label" htmlFor="stock-transfer-source">Origen *</label>
             <select

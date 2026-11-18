@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   DollarSign,
   ShieldCheck,
   ShoppingCart,
   Layers,
   FileText,
-  TrendingUp,
   Package,
   Wrench,
   Warehouse,
@@ -24,293 +23,165 @@ import {
   Tooltip,
 } from "recharts";
 import { type ErpModuleId } from "@nictech/domain";
+import { z } from "zod";
 import { KpiCard, StatePanel } from "../../components/erp/WorkspaceUi";
-import { formatCurrency, formatCurrencyCompact, getInitials } from "../../lib/formatters";
 import { useErpAuth } from "../../auth/ErpAuthContext";
+import { addDaysIsoAR, addMonthsIsoAR, AR_TIME_ZONE, todayIsoAR } from "../../lib/dates";
+import { toUserMessage } from "../../lib/errors";
+import { formatCurrency, getInitials } from "../../lib/formatters";
+import { labelOf, REPAIR_STATUS_LABELS } from "../../lib/labels";
 import { supabase } from "../../lib/supabase";
-import { getRepairStatusLabel } from "../repairs/api";
+import { fetchDashboardMetrics, type DashboardMetrics, type DashboardRange } from "./dashboardApi";
 
 export interface DashboardOverviewProps {
   onSelectModule: (moduleId: ErpModuleId) => void;
 }
 
-interface RecentRepairItem {
-  id: string;
-  tracking_code: string;
-  client_name: string | null;
-  device_brand: string | null;
-  device_model: string | null;
-  status: string;
-  is_terminal: boolean;
-  created_at: string;
-}
-
-interface LowStockProductItem {
-  id: string;
-  name: string;
-  stock: number | null;
-}
-
-interface OrderRecordItem {
-  id: string;
-  total: number;
-  status: string;
-  created_at: string;
-  payment_state?: string | null;
-}
-
 type PeriodType = "year" | "6m" | "month" | "30d";
+type LoadState<T> =
+  | { status: "loading" }
+  | { status: "success"; data: T }
+  | { status: "error"; message: string };
 
-interface ChartPoint {
-  label: string;
-  fullLabel: string;
-  revenue: number;
-  orders: number;
+const localCurrency = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+const axisCurrency = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+const shortDay = new Intl.DateTimeFormat("es-AR", { day: "numeric", month: "short", timeZone: AR_TIME_ZONE });
+const fullDay = new Intl.DateTimeFormat("es-AR", { dateStyle: "long", timeZone: AR_TIME_ZONE });
+const shortMonth = new Intl.DateTimeFormat("es-AR", { month: "short", timeZone: AR_TIME_ZONE });
+const fullMonth = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric", timeZone: AR_TIME_ZONE });
+
+const asCalendarDate = (iso: string) => new Date(`${iso}T12:00:00Z`);
+const currencyValue = (value: number) => (
+  <span style={{ overflowWrap: "anywhere" }}>{localCurrency.format(value)}</span>
+);
+
+function getDashboardRange(period: PeriodType): DashboardRange {
+  const today = todayIsoAR();
+  const monthStart = `${today.slice(0, 7)}-01`;
+  let start = monthStart;
+  if (period === "year") start = `${today.slice(0, 4)}-01-01`;
+  if (period === "30d") start = addDaysIsoAR(today, -29);
+  if (period === "6m") start = addMonthsIsoAR(monthStart, -5);
+  return { date_from: start, date_to: today };
 }
 
-const MONTHS_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-const MONTHS_FULL = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-];
+type DailyMetrics = DashboardMetrics["series"][number];
+type ChartAmounts = Omit<DailyMetrics, "day">;
+type ChartPoint = ChartAmounts & { label: string; fullLabel: string };
 
-function generateCommercialEvolution(
-  period: PeriodType,
-  orders: OrderRecordItem[],
-  repairs: RecentRepairItem[]
-): ChartPoint[] {
-  const now = new Date();
+const channels = [
+  { key: "pos_ars", label: "POS", color: "#1e293b" },
+  { key: "web_ars", label: "Web", color: "#005bd5" },
+  { key: "repairs_ars", label: "Reparaciones", color: "#087657" },
+] as const;
+const repairLine = { label: "Reparaciones abiertas", color: "#a15416" };
 
-  const getParsedDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return isNaN(d.getTime()) ? null : d;
-  };
+function generateCommercialEvolution(period: PeriodType, series: DashboardMetrics["series"]): ChartPoint[] {
+  const byMonth = period === "year" || period === "6m";
+  const buckets = new Map<string, ChartAmounts & { first: string; last: string }>();
 
-  if (period === "year") {
-    const currentYear = now.getFullYear();
-    const result: ChartPoint[] = [];
-
-    for (let m = 0; m < 12; m++) {
-      let revenue = 0;
-      let orderCount = 0;
-
-      for (const o of orders) {
-        if (o.status === "cancelled") continue;
-        const d = getParsedDate(o.created_at);
-        if (d && d.getFullYear() === currentYear && d.getMonth() === m) {
-          revenue += Number(o.total || 0);
-          orderCount += 1;
-        }
-      }
-
-      for (const r of repairs) {
-        if (!r.is_terminal) continue;
-        const d = getParsedDate(r.created_at);
-        if (d && d.getFullYear() === currentYear && d.getMonth() === m) {
-          orderCount += 1;
-        }
-      }
-
-      result.push({
-        label: MONTHS_SHORT[m],
-        fullLabel: `${MONTHS_FULL[m]} ${currentYear}`,
-        revenue: Math.round(revenue),
-        orders: orderCount,
-      });
+  for (const row of series) {
+    const key = byMonth
+      ? row.day.slice(0, 7)
+      : addDaysIsoAR(row.day, -((asCalendarDate(row.day).getUTCDay() + 6) % 7));
+    const bucket = buckets.get(key);
+    if (bucket) {
+      for (const { key: channel } of channels) bucket[channel] += row[channel];
+      bucket.repairs_opened += row.repairs_opened;
+      bucket.last = row.day;
+    } else {
+      const { day, ...amounts } = row;
+      buckets.set(key, { ...amounts, first: day, last: day });
     }
-    return result;
   }
 
-  if (period === "6m") {
-    const result: ChartPoint[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const dTarget = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const y = dTarget.getFullYear();
-      const m = dTarget.getMonth();
-
-      let revenue = 0;
-      let orderCount = 0;
-
-      for (const o of orders) {
-        if (o.status === "cancelled") continue;
-        const d = getParsedDate(o.created_at);
-        if (d && d.getFullYear() === y && d.getMonth() === m) {
-          revenue += Number(o.total || 0);
-          orderCount += 1;
-        }
-      }
-
-      for (const r of repairs) {
-        if (!r.is_terminal) continue;
-        const d = getParsedDate(r.created_at);
-        if (d && d.getFullYear() === y && d.getMonth() === m) {
-          orderCount += 1;
-        }
-      }
-
-      result.push({
-        label: MONTHS_SHORT[m],
-        fullLabel: `${MONTHS_FULL[m]} ${y}`,
-        revenue: Math.round(revenue),
-        orders: orderCount,
-      });
-    }
-    return result;
-  }
-
-  if (period === "month") {
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const result: ChartPoint[] = [];
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      let revenue = 0;
-      let orderCount = 0;
-
-      for (const o of orders) {
-        if (o.status === "cancelled") continue;
-        const d = getParsedDate(o.created_at);
-        if (d && d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day) {
-          revenue += Number(o.total || 0);
-          orderCount += 1;
-        }
-      }
-
-      for (const r of repairs) {
-        if (!r.is_terminal) continue;
-        const d = getParsedDate(r.created_at);
-        if (d && d.getFullYear() === currentYear && d.getMonth() === currentMonth && d.getDate() === day) {
-          orderCount += 1;
-        }
-      }
-
-      result.push({
-        label: `${day}`,
-        fullLabel: `${day} de ${MONTHS_FULL[currentMonth]} ${currentYear}`,
-        revenue: Math.round(revenue),
-        orders: orderCount,
-      });
-    }
-    return result;
-  }
-
-  // period === "30d"
-  const result: ChartPoint[] = [];
-  for (let i = 29; i >= 0; i--) {
-    const targetDate = new Date(now.getTime() - i * 86400000);
-    const y = targetDate.getFullYear();
-    const m = targetDate.getMonth();
-    const day = targetDate.getDate();
-
-    let revenue = 0;
-    let orderCount = 0;
-
-    for (const o of orders) {
-      if (o.status === "cancelled") continue;
-      const d = getParsedDate(o.created_at);
-      if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
-        revenue += Number(o.total || 0);
-        orderCount += 1;
-      }
-    }
-
-      for (const r of repairs) {
-        if (!r.is_terminal) continue;
-        const d = getParsedDate(r.created_at);
-        if (d && d.getFullYear() === y && d.getMonth() === m && d.getDate() === day) {
-        orderCount += 1;
-      }
-    }
-
-    result.push({
-      label: `${day} ${MONTHS_SHORT[m]}`,
-      fullLabel: `${day} de ${MONTHS_FULL[m]} ${y}`,
-      revenue: Math.round(revenue),
-      orders: orderCount,
-    });
-  }
-  return result;
+  return Array.from(buckets.values(), ({ first, last, ...amounts }) => {
+    const firstDate = asCalendarDate(first);
+    return {
+      ...amounts,
+      label: byMonth ? shortMonth.format(firstDate) : shortDay.format(firstDate),
+      fullLabel: byMonth
+        ? fullMonth.format(firstDate)
+        : first === last
+          ? fullDay.format(firstDate)
+          : `${shortDay.format(firstDate)} al ${fullDay.format(asCalendarDate(last))}`,
+    };
+  });
 }
 
-const CustomChartTooltip = ({
+function CustomChartTooltip({
   active,
   payload,
-  label,
+  visibleChannels,
 }: {
   active?: boolean;
-  payload?: Array<{ payload: ChartPoint; value: number }>;
-  label?: string;
-}) => {
-  if (!active || !payload || !payload.length) return null;
-  const point = payload[0]?.payload;
-  if (!point) return null;
+  payload?: Array<{ payload: ChartPoint }>;
+  visibleChannels: ReadonlyArray<(typeof channels)[number]>;
+}) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
 
   return (
-    <div
-      style={{
-        background: "#FFFFFF",
-        border: "1px solid var(--border-line, #E2E8F0)",
-        borderRadius: "10px",
-        padding: "10px 14px",
-        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05)",
-        fontSize: "12px",
-        minWidth: "170px",
-      }}
-    >
-      <div style={{ fontWeight: 700, color: "#0F172A", marginBottom: "6px" }}>{point.fullLabel || label}</div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "4px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748B" }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#9ec5fe", display: "inline-block" }} />
-          <span>Facturación:</span>
-        </div>
-        <strong style={{ color: "#005BD5" }}>{formatCurrency(point.revenue, "ARS")}</strong>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#64748B" }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#005BD5", display: "inline-block" }} />
-          <span>Órdenes / Trabajos:</span>
-        </div>
-        <strong style={{ color: "#0F172A" }}>{point.orders}</strong>
-      </div>
+    <div style={{ background: "#fff", border: "1px solid var(--border-line)", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}>
+      <strong>{point.fullLabel}</strong>
+      {visibleChannels.map(({ key, label }) => (
+        <div key={key}>{label}: {formatCurrency(point[key])}</div>
+      ))}
+      <div>{repairLine.label}: {point.repairs_opened}</div>
     </div>
   );
-};
+}
 
-const formatAxisCurrency = (val: number): string => {
-  if (val === 0) return "$0";
-  if (val >= 1_000_000) {
-    const m = val / 1_000_000;
-    return `$${Number.isInteger(m) ? m : m.toFixed(1)}M`;
-  }
-  if (val >= 1_000) {
-    const k = val / 1_000;
-    return `$${Number.isInteger(k) ? k : k.toFixed(0)}k`;
-  }
-  return `$${val}`;
-};
+const quoteSummary = z.object({
+  total_amount: z.number().finite(),
+  currency_code: z.string().regex(/^[A-Z]{3}$/),
+});
 
-const formatAxisOrders = (val: number): string => {
-  if (val === 0) return "0";
-  return String(Math.round(val));
-};
+async function fetchRecentRepairs() {
+  const { data, error } = await supabase
+    .from("repair_orders_overview")
+    .select("id, order_code, customer_name, brand_snapshot, model_snapshot, status_code, status_name, status_is_terminal, delivery_id, latest_quote")
+    .order("opened_at", { ascending: false })
+    .limit(5);
+  if (error) throw error;
+
+  return (data ?? []).flatMap((repair) => {
+    if (!repair.id || !repair.order_code) return [];
+    const quote = quoteSummary.safeParse(repair.latest_quote);
+    return [{
+      id: repair.id,
+      code: repair.order_code,
+      customer: repair.customer_name,
+      device: [repair.brand_snapshot, repair.model_snapshot].filter(Boolean).join(" "),
+      terminal: Boolean(repair.status_is_terminal || repair.delivery_id),
+      status: labelOf(
+        REPAIR_STATUS_LABELS,
+        repair.delivery_id ? "delivered" : repair.status_code,
+        labelOf(REPAIR_STATUS_LABELS, repair.status_name, repair.status_name || "Sin estado"),
+      ),
+      budget: quote.success
+        ? formatCurrency(quote.data.total_amount, quote.data.currency_code)
+        : repair.latest_quote === null ? "Sin presupuesto" : "No disponible",
+    }];
+  });
+}
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectModule }) => {
   const { session, branchIds, permissions } = useErpAuth();
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>("year");
-  const [loading, setLoading] = useState<boolean>(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [rawOrders, setRawOrders] = useState<OrderRecordItem[]>([]);
-  const [rawRepairs, setRawRepairs] = useState<RecentRepairItem[]>([]);
-  const [stats, setStats] = useState({
-    productsCount: 0,
-    inventoryValueArs: 0,
-    repairsCount: 0,
-    ordersCount: 0,
-    totalRevenueArs: 0,
-  });
-  const [recentRepairs, setRecentRepairs] = useState<RecentRepairItem[]>([]);
-  const [lowStockProducts, setLowStockProducts] = useState<LowStockProductItem[]>([]);
+  const [dashboard, setDashboard] = useState<LoadState<DashboardMetrics>>({ status: "loading" });
+  const [refresh, setRefresh] = useState(0);
+  const [recent, setRecent] = useState<LoadState<Awaited<ReturnType<typeof fetchRecentRepairs>>>>({ status: "loading" });
 
   const operatorName = session?.user.user_metadata?.full_name || "Operador NicTech";
   const initials = getInitials(operatorName, "NT");
@@ -320,198 +191,106 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
       ? "1 asignada"
       : `${branchIds.length} asignadas`;
 
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setLoadError(null);
-
-      // 1. Productos y existencias desde el esquema ERP.
-      const { data: prodData, error: productsError } = await supabase
-        .from("products")
-        .select("id, internal_name, base_sale_price")
-        .eq("is_active", true);
-
-      const { data: balancesData, error: balancesError } = await supabase
-        .from("stock_balances")
-        .select("product_id, quantity_on_hand");
-
-      if (productsError) throw productsError;
-      if (balancesError) throw balancesError;
-
-      const stockByProduct = new Map<string, number>();
-      for (const balance of balancesData ?? []) {
-        stockByProduct.set(
-          balance.product_id,
-          (stockByProduct.get(balance.product_id) ?? 0) + balance.quantity_on_hand,
-        );
-      }
-
-      const products = prodData || [];
-      const prodCount = products.length;
-      const invValue = products.reduce(
-        (acc, product) =>
-          acc + product.base_sale_price * (stockByProduct.get(product.id) ?? 0),
-        0,
-      );
-      const lowStock: LowStockProductItem[] = products
-        .map((product) => ({
-          id: product.id,
-          name: product.internal_name,
-          stock: stockByProduct.get(product.id) ?? 0,
-        }))
-        .filter((product) => (product.stock ?? 0) <= 3)
-        .slice(0, 3);
-
-      // 2. Reparaciones desde la vista operativa del ERP.
-      const { data: repData, error: repairsError } = await supabase
-        .from("repair_orders_overview")
-        .select("id, order_code, customer_name, brand_snapshot, model_snapshot, status_name, status_is_terminal, delivery_id, opened_at")
-        .order("opened_at", { ascending: false });
-
-      if (repairsError) throw repairsError;
-
-      const repairs = (repData ?? []).reduce<RecentRepairItem[]>((items, repair) => {
-        if (!repair.id || !repair.order_code || !repair.opened_at) return items;
-        items.push({
-          id: repair.id,
-          tracking_code: repair.order_code,
-          client_name: repair.customer_name,
-          device_brand: repair.brand_snapshot,
-          device_model: repair.model_snapshot,
-          status: getRepairStatusLabel(repair),
-          is_terminal: Boolean(repair.status_is_terminal || repair.delivery_id),
-          created_at: repair.opened_at,
-        });
-        return items;
-      }, []);
-      const activeRepairs = repairs.filter((repair) => !repair.is_terminal);
-
-      // 3. Orders (fuente real: erp.web_orders + fulfillments + events; erp.orders no existe)
-      const { data: webOrdersData, error: webOrdersError } = await supabase
-        .from("web_orders")
-        .select("id, total_amount, created_at")
-        .order("created_at", { ascending: false });
-
-      const { data: fulfillData, error: fulfillmentsError } = await supabase
-        .from("web_order_fulfillments")
-        .select("web_order_id, fulfilled_at");
-
-      const { data: eventsData, error: eventsError } = await supabase
-        .from("web_order_events")
-        .select("web_order_id, order_state, payment_state, event_sequence")
-        .order("event_sequence", { ascending: false });
-
-      if (webOrdersError) throw webOrdersError;
-      if (fulfillmentsError) throw fulfillmentsError;
-      if (eventsError) throw eventsError;
-
-      const webOrders = webOrdersData ?? [];
-      const fulfillments = fulfillData ?? [];
-      const events = eventsData ?? [];
-
-      const fulfilledIds = new Set(
-        fulfillments.filter((f) => f.fulfilled_at != null).map((f) => f.web_order_id)
-      );
-      const latestEventByOrder = new Map<string, { order_state: string | null; payment_state: string | null }>();
-      for (const ev of events) {
-        if (!latestEventByOrder.has(ev.web_order_id)) {
-          latestEventByOrder.set(ev.web_order_id, {
-            order_state: ev.order_state,
-            payment_state: ev.payment_state,
-          });
+  useEffect(() => {
+    let ignore = false;
+    async function fetchDashboardData() {
+      try {
+        const range = getDashboardRange(selectedPeriod);
+        let data: DashboardMetrics;
+        try {
+          data = await fetchDashboardMetrics(range);
+        } catch (error) {
+          const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+          if (code !== "42501" || branchIds.length !== 1) throw error;
+          data = await fetchDashboardMetrics(range, branchIds[0]);
+        }
+        if (!ignore) setDashboard({ status: "success", data });
+      } catch (error) {
+        if (!ignore) {
+          const message = toUserMessage(error, "No se pudieron consultar los datos del Centro operativo.");
+          setDashboard({ status: "error", message });
         }
       }
-
-      const orders: OrderRecordItem[] = webOrders.map((w) => {
-        const fulfilled = fulfilledIds.has(w.id);
-        const latest = latestEventByOrder.get(w.id);
-        return {
-          id: w.id,
-          total: Number(w.total_amount ?? 0),
-          status: fulfilled ? "fulfilled" : (latest?.order_state ?? "placed"),
-          created_at: w.created_at,
-          payment_state: latest?.payment_state ?? null,
-        };
-      });
-
-      // Fórmula de ingresos (cada peso contado una sola vez):
-      //   ingresos = ventas web efectivas (web_orders con fulfillment o
-      //              último evento con payment_state === "paid", campo total_amount)
-      //            + reparaciones cobradas.
-      // La vista repair_orders_overview no expone montos cobrados (ver tipos
-      // generados y migraciones) → repairRevenue = 0, "Sin datos fuente" en UI.
-      const orderRevenue = orders
-        .filter((o) => o.status === "fulfilled" || o.payment_state === "paid")
-        .reduce((a, b) => a + Number(b.total || 0), 0);
-      const repairRevenue = 0;
-
-      const totalRevenue = orderRevenue + repairRevenue;
-
-      setStats({
-        productsCount: prodCount,
-        inventoryValueArs: invValue,
-        repairsCount: activeRepairs.length,
-        ordersCount: orders.length,
-        totalRevenueArs: totalRevenue,
-      });
-
-      setRawOrders(orders);
-      setRawRepairs(repairs);
-      setRecentRepairs(repairs.slice(0, 5));
-      setLowStockProducts(lowStock);
-    } catch (e) {
-      console.error("Error al cargar dashboard:", e);
-      setLoadError(e instanceof Error ? e.message : "No se pudieron consultar los datos del ERP.");
-    } finally {
-      setLoading(false);
     }
-  }, []);
+    void fetchDashboardData();
+    return () => { ignore = true; };
+  }, [selectedPeriod, refresh, branchIds]);
 
   useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    let ignore = false;
+    async function loadRecentRepairs() {
+      try {
+        const data = await fetchRecentRepairs();
+        if (!ignore) setRecent({ status: "success", data });
+      } catch (error) {
+        if (!ignore) {
+          const message = toUserMessage(error, "No se pudieron consultar las reparaciones recientes.");
+          setRecent({ status: "error", message });
+        }
+      }
+    }
+    void loadRecentRepairs();
+    return () => { ignore = true; };
+  }, []);
 
-  const chartData = useMemo(() => {
-    return generateCommercialEvolution(selectedPeriod, rawOrders, rawRepairs);
-  }, [selectedPeriod, rawOrders, rawRepairs]);
+  const metrics = dashboard.status === "success" ? dashboard.data : null;
+  const loading = dashboard.status === "loading";
+  const loadError = dashboard.status === "error" ? dashboard.message : null;
+  const pendingValue = loading ? "…" : "No disponible";
+  const visibleChannels = metrics && !metrics.can_view_sales ? [] : channels;
+  const chartData = useMemo(
+    () => metrics ? generateCommercialEvolution(selectedPeriod, metrics.series) : [],
+    [selectedPeriod, metrics],
+  );
+  const hasChartActivity = chartData.some((point) =>
+    point.repairs_opened > 0 || visibleChannels.some(({ key }) => point[key] !== 0),
+  );
 
   return (
     <div className="flow-dashboard">
-      {/* 4 KPI Metrics Row */}
-      <section className="kpi-grid" aria-label="Métricas Principales">
+      <section className="kpi-grid" aria-label="Métricas principales" aria-busy={loading}>
         <KpiCard
           icon={DollarSign}
           iconVariant="green"
-          label="Ventas web cobradas"
-          value={loading ? "…" : loadError ? "No disponible" : formatCurrencyCompact(stats.totalRevenueArs, "ARS")}
-          trend={loadError ? undefined : { text: "ARS", positive: true, icon: TrendingUp }}
-          sublabel={loadError ? "No se pudo consultar" : `${stats.ordersCount} pedidos web registrados`}
+          label="Ventas del período"
+          value={
+            !metrics
+              ? pendingValue
+              : !metrics.can_view_sales
+                ? "Sin permiso"
+                : currencyValue(metrics.sales.total_ars)
+          }
+          sublabel={
+            !metrics
+              ? undefined
+              : !metrics.can_view_sales
+                ? "Requiere permiso para ver ventas"
+                : channels.map(({ key, label }) => `${label} ${localCurrency.format(metrics.sales[key])}`).join(" · ")
+          }
         />
 
         <KpiCard
           icon={ShoppingCart}
           iconVariant="navy"
-          label="Productos ERP"
-          value={loading ? "…" : loadError ? "No disponible" : stats.productsCount}
-          sublabel={loadError ? "No se pudo consultar" : "Registros del catálogo interno"}
+          label="Productos activos"
+          value={metrics?.products_active_count ?? pendingValue}
+          sublabel="Catálogo interno"
         />
 
         <KpiCard
           icon={Layers}
           iconVariant="steel"
-          label="Stock a precio de venta"
-          value={loading ? "…" : loadError ? "No disponible" : formatCurrencyCompact(stats.inventoryValueArs, "ARS")}
-          trend={loadError ? undefined : { text: "ARS", positive: true, icon: TrendingUp }}
-          sublabel={loadError ? "No se pudo consultar" : "Estimación con precio base y stock físico"}
+          label="Stock vendible a precio de venta"
+          value={metrics ? currencyValue(metrics.inventory.value_at_sale_price_ars) : pendingValue}
+          sublabel="Ubicaciones habilitadas para venta"
         />
 
         <KpiCard
           icon={Wrench}
           iconVariant="dark"
-          label="Equipos en Taller"
-          value={loading ? "…" : loadError ? "No disponible" : stats.repairsCount}
-          trend={loadError ? undefined : { text: "En proceso", positive: true, icon: TrendingUp }}
-          sublabel={loadError ? "No se pudo consultar" : "Órdenes no finalizadas"}
+          label="Equipos en taller"
+          value={metrics?.active_repairs_count ?? pendingValue}
+          sublabel="Órdenes no finalizadas"
         />
       </section>
 
@@ -519,9 +298,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
         <StatePanel
           type="error"
           title="No se pudo actualizar el resumen"
-          message={`Los valores del tablero no están disponibles. ${loadError}`}
+          message={loadError}
           action={(
-            <button type="button" className="btn-secondary" onClick={() => void fetchDashboardData()}>
+            <button type="button" className="btn-secondary" onClick={() => {
+              setDashboard({ status: "loading" });
+              setRefresh((value) => value + 1);
+            }}>
               Reintentar consulta
             </button>
           )}
@@ -532,45 +314,50 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
       <div className="flow-dashboard-grid">
         {/* Left Column */}
         <div className="flow-dashboard-main">
-          {/* Business Performance Dual-Axis Chart */}
-          <section className="flow-card flow-performance-card" aria-label="Rendimiento del Negocio">
+          <section className="flow-card flow-performance-card" aria-labelledby="dashboard-chart-title">
             <div className="flow-card__header">
               <div>
-                <h3 className="flow-card__title">Evolución Comercial NicTech</h3>
-                <p className="flow-card__subtitle">Ventas web cobradas y operaciones registradas (ARS)</p>
+                <h3 className="flow-card__title" id="dashboard-chart-title">Ventas por canal</h3>
+                <p className="flow-card__subtitle">Importes en pesos e ingresos al taller</p>
               </div>
               <div className="flow-period-selector-wrapper">
                 <select
                   id="dashboard-period-select"
                   aria-label="Seleccionar período"
                   value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value as PeriodType)}
+                  onChange={(event) => {
+                    const period = event.target.value;
+                    if (period !== "year" && period !== "6m" && period !== "month" && period !== "30d") return;
+                    if (period === selectedPeriod) return;
+                    setDashboard({ status: "loading" });
+                    setSelectedPeriod(period);
+                  }}
                   className="flow-period-select"
                 >
-                  <option value="year">Este Año ({new Date().getFullYear()})</option>
-                  <option value="6m">Últimos 6 Meses</option>
-                  <option value="month">Este Mes</option>
-                  <option value="30d">Últimos 30 Días</option>
+                  <option value="year">Este año ({todayIsoAR().slice(0, 4)})</option>
+                  <option value="6m">Últimos 6 meses</option>
+                  <option value="month">Este mes</option>
+                  <option value="30d">Últimos 30 días</option>
                 </select>
               </div>
             </div>
 
             <div className="flow-chart-container">
               {loading ? (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", gap: "8px" }}>
+                <div role="status" style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", gap: "8px" }}>
                   <Loader2 size={20} className="animate-spin" style={{ color: "var(--brand-primary)" }} />
                   <span style={{ fontSize: "13px" }}>Cargando métricas comerciales…</span>
                 </div>
               ) : loadError ? (
-                <StatePanel
-                  type="error"
-                  message="No hay datos comerciales disponibles para graficar. Reintentá desde el aviso superior."
-                />
+                <p>El gráfico no está disponible.</p>
+              ) : !hasChartActivity ? (
+                <StatePanel type="empty" message="No hubo ventas ni ingresos al taller en este período." />
               ) : (
                 <ResponsiveContainer width="100%" height={250}>
                   <ComposedChart
                     data={chartData}
                     margin={{ top: 12, right: 12, left: -4, bottom: 4 }}
+                    accessibilityLayer
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                     <XAxis
@@ -581,19 +368,20 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                       tickLine={false}
                       axisLine={{ stroke: "#E2E8F0" }}
                       dy={6}
-                      interval={selectedPeriod === "30d" ? 3 : selectedPeriod === "month" ? 2 : 0}
+                      minTickGap={12}
                     />
-                    <YAxis
-                      yAxisId="left"
-                      orientation="left"
-                      stroke="#94a3b8"
-                      fontSize={10}
-                      fontWeight={600}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={formatAxisCurrency}
-                      domain={[0, (dataMax: number) => (dataMax > 0 ? Math.ceil(dataMax * 1.15) : 500000)]}
-                    />
+                    {visibleChannels.length > 0 && (
+                      <YAxis
+                        yAxisId="left"
+                        orientation="left"
+                        stroke="#94a3b8"
+                        fontSize={10}
+                        fontWeight={600}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={axisCurrency.format}
+                      />
+                    )}
                     <YAxis
                       yAxisId="right"
                       orientation="right"
@@ -603,76 +391,67 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                       tickLine={false}
                       axisLine={false}
                       allowDecimals={false}
-                      tickFormatter={formatAxisOrders}
-                      domain={[0, (dataMax: number) => (dataMax > 0 ? Math.max(5, Math.ceil(dataMax * 1.25)) : 10)]}
                     />
-                    <Tooltip content={<CustomChartTooltip />} />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="revenue"
-                      name="Volumen Facturado"
-                      fill="#DCE8F2"
-                      radius={[5, 5, 0, 0]}
-                      maxBarSize={32}
-                    />
+                    <Tooltip content={<CustomChartTooltip visibleChannels={visibleChannels} />} />
+                    {visibleChannels.map(({ key, label, color }) => (
+                      <Bar key={key} yAxisId="left" dataKey={key} name={label} fill={color} maxBarSize={24} isAnimationActive={false} />
+                    ))}
                     <Line
                       yAxisId="right"
-                      type="monotone"
-                      dataKey="orders"
-                      name="Órdenes Concretadas"
-                      stroke="#005BD5"
+                      dataKey="repairs_opened"
+                      name={repairLine.label}
+                      stroke={repairLine.color}
+                      strokeDasharray="5 3"
                       strokeWidth={2.5}
-                      dot={{ r: 4, fill: "#005BD5", stroke: "#FFFFFF", strokeWidth: 2 }}
-                      activeDot={{ r: 6, fill: "#005BD5", stroke: "#FFFFFF", strokeWidth: 2 }}
+                      dot={{ r: 3 }}
+                      isAnimationActive={false}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
             </div>
 
-            {/* Chart Legend */}
-            <div className="flow-chart-legend">
-              <div className="legend-item">
-                <span className="legend-dot blue" />
-                <span>Ventas web cobradas</span>
+            {hasChartActivity && (
+              <div className="flow-chart-legend" style={{ flexWrap: "wrap", gap: "8px 16px" }}>
+                {visibleChannels.map(({ key, label, color }) => (
+                  <div className="legend-item" key={key}>
+                    <span aria-hidden="true" className="legend-dot" style={{ background: color }} />
+                    <span>{label}</span>
+                  </div>
+                ))}
+                <div className="legend-item">
+                  <span aria-hidden="true" style={{ width: 14, borderTop: `2px dashed ${repairLine.color}` }} />
+                  <span>{repairLine.label}</span>
+                </div>
               </div>
-              <div className="legend-item">
-                <span className="legend-dot green" />
-                <span>Operaciones registradas</span>
-              </div>
-            </div>
+            )}
           </section>
 
-          {/* Recent Repairs Table */}
-          <section className="flow-card" aria-label="Órdenes Recientes">
+          <section className="flow-card" aria-labelledby="dashboard-repairs-title">
             <div className="flow-card__header">
               <div>
-                <h3 className="flow-card__title">Últimas Reparaciones en Taller</h3>
-                <p className="flow-card__subtitle">Órdenes de servicio técnico registradas en el laboratorio</p>
+                <h3 className="flow-card__title" id="dashboard-repairs-title">Reparaciones recientes</h3>
               </div>
               <button type="button" className="flow-link-btn" onClick={() => onSelectModule("repairs")}>
                 Ver Taller →
               </button>
             </div>
 
-            {loading ? (
-              <div style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
+            {recent.status === "loading" ? (
+              <div role="status" style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
                 <Loader2 size={24} className="animate-spin" style={{ margin: "0 auto 8px", color: "var(--brand-primary)" }} />
                 <p style={{ margin: 0, fontSize: "13px" }}>Cargando actividad reciente…</p>
               </div>
-            ) : loadError ? (
-              <StatePanel
-                type="error"
-                message="No se pudo consultar la actividad reciente del taller."
-              />
-            ) : recentRepairs.length === 0 ? (
+            ) : recent.status === "error" ? (
+              <StatePanel type="error" message={recent.message} />
+            ) : recent.data.length === 0 ? (
               <p style={{ padding: "16px", color: "var(--text-muted)", fontSize: "13px" }}>No hay reparaciones recientes.</p>
             ) : (
               <div className="flow-table-wrapper">
                 <table className="flow-table">
                   <thead>
                     <tr>
-                      <th>Código Tracking</th>
+                      <th>Código de orden</th>
                       <th>Cliente</th>
                       <th>Dispositivo</th>
                       <th>Estado</th>
@@ -680,13 +459,13 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                     </tr>
                   </thead>
                   <tbody>
-                    {recentRepairs.map((r) => (
+                    {recent.data.map((r) => (
                       <tr
                         key={r.id}
                         className="interactive-row"
                         role="button"
                         tabIndex={0}
-                        aria-label={`Abrir reparación ${r.tracking_code}`}
+                        aria-label={`Abrir reparación ${r.code}`}
                         onClick={() => onSelectModule("repairs")}
                         onKeyDown={(event) => {
                           if (event.target !== event.currentTarget) return;
@@ -699,20 +478,18 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                         <td>
                           <div className="order-id-cell">
                             <span className="type-badge green" style={{ fontFamily: "monospace" }}>
-                              {r.tracking_code}
+                              {r.code}
                             </span>
                           </div>
                         </td>
-                        <td>{r.client_name || "Sin cliente informado"}</td>
-                        <td>{[r.device_brand, r.device_model].filter(Boolean).join(" ") || "Sin equipo informado"}</td>
+                        <td>{r.customer || "Sin cliente informado"}</td>
+                        <td>{r.device || "Sin equipo informado"}</td>
                         <td>
-                          <span className={`flow-status-pill ${r.is_terminal ? "completed" : "processing"}`}>
+                          <span className={`flow-status-pill ${r.terminal ? "completed" : "processing"}`}>
                             {r.status}
                           </span>
                         </td>
-                        <td className="text-right amount-val">
-                          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Sin datos fuente</span>
-                        </td>
+                        <td className="text-right amount-val">{r.budget}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -835,10 +612,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
             </div>
           </section>
 
-          {/* Low Stock Alerts */}
-          <section className="flow-card" aria-label="Alertas de Stock Bajo">
+          <section className="flow-card" aria-labelledby="dashboard-stock-title">
             <div className="flow-card__header">
-              <h3 className="flow-card__title">Stock Crítico en Base de Datos</h3>
+              <h3 className="flow-card__title" id="dashboard-stock-title">Stock bajo</h3>
               <button type="button" className="flow-link-btn" onClick={() => onSelectModule("stock")}>
                 Ver Stock →
               </button>
@@ -850,17 +626,17 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                   Consultando existencias…
                 </p>
               ) : loadError ? (
-                <p role="alert" style={{ fontSize: "12px", color: "var(--rose-accent)", margin: "8px 0" }}>
-                  No se pudo consultar el stock crítico.
-                </p>
-              ) : lowStockProducts.length === 0 ? (
                 <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "8px 0" }}>
-                  No hay artículos con stock crítico en este momento.
+                  No se pudo consultar el stock bajo.
+                </p>
+              ) : !metrics?.low_stock.length ? (
+                <p style={{ fontSize: "12px", color: "var(--text-muted)", margin: "8px 0" }}>
+                  No hay artículos con stock bajo.
                 </p>
               ) : (
-                lowStockProducts.map((p) => (
+                metrics.low_stock.map((p) => (
                   <button
-                    key={p.id}
+                    key={p.product_id}
                     type="button"
                     className="low-stock-item low-stock-item--button"
                     onClick={() => onSelectModule("stock")}
@@ -871,10 +647,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
                     </div>
                     <div className="item-details">
                       <strong>{p.name}</strong>
-                      <span>Total en todas las ubicaciones</span>
+                      <span>Disponible para venta</span>
                     </div>
                     <div className="item-qty-badge">
-                      <strong className="qty-val">{p.stock ?? 0}</strong>
+                      <strong className="qty-val">{p.available}</strong>
                       <span className="qty-unit">Unidades</span>
                     </div>
                   </button>

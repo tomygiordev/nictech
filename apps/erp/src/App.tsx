@@ -602,9 +602,10 @@ const ModuleContent: React.FC<{
       case "pricing":
         return <PricingWorkspace onSelectModule={onSelectModule} />;
       case "stock":
-      case "stock-counts":
       case "labels":
         return <StockWorkspace activeModuleId={moduleId} onSelectModule={onSelectModule} />;
+      case "stock-counts":
+        return <StockWorkspace activeModuleId="stock" onSelectModule={onSelectModule} />;
       case "purchases":
       case "suppliers":
         return <PurchasesWorkspace activeModuleId={moduleId} onSelectModule={onSelectModule} />;

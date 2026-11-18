@@ -1,46 +1,32 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { roleAssignmentSchema, type RoleAssignmentValues } from "./roleAssignmentSchema";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   assignProfileRole,
+  isActiveAssignment,
+  isAdministrationRole,
+  listRoleAssignmentAccess,
   listRolesAndAssignments,
-  type SystemRole,
-  type SystemRoleAssignment,
+  roleAssignmentsQueryKey,
+  roleDisplayName,
   type SystemUser,
 } from "./api";
 
-const isActiveAssignment = (
-  assignment: SystemRoleAssignment,
-  referenceTime: number,
-): boolean => {
-  const validFrom = new Date(assignment.valid_from).getTime();
-  if (validFrom > referenceTime) return false;
-  if (!assignment.valid_until) return true;
-  return new Date(assignment.valid_until).getTime() > referenceTime;
-};
-
-const isGlobalAdminAssignment = (
-  assignment: SystemRoleAssignment,
-  roles: SystemRole[],
-  userId?: string,
-): boolean => {
-  if (!userId || assignment.profile_id !== userId) return false;
-  if (assignment.branch_id !== null) return false;
-  return roles.some(
-    (role) =>
-      role.id === assignment.role_id &&
-      (role.code === "owner" || role.code === "admin"),
-  );
-};
-
 export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
-  const { session } = useErpAuth();
-  const [roles, setRoles] = useState<SystemRole[]>([]);
-  const [assignments, setAssignments] = useState<SystemRoleAssignment[]>([]);
+  const { session, organizationId, hasPermission } = useErpAuth();
+  const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const profileId = session?.user.id;
+  const assignmentsKey = roleAssignmentsQueryKey(organizationId, profileId);
+  const roleQuery = useQuery({
+    queryKey: assignmentsKey,
+    queryFn: listRolesAndAssignments,
+    enabled: Boolean(profileId),
+  });
+  const { roles = [], assignments = [] } = roleQuery.data ?? {};
 
   const form = useForm<RoleAssignmentValues>({
     resolver: zodResolver(roleAssignmentSchema),
@@ -50,29 +36,43 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
     },
   });
 
-  const refresh = async () => {
-    const result = await listRolesAndAssignments();
-    setRoles(result.roles);
-    setAssignments(result.assignments);
-  };
-
-  useEffect(() => {
-    void refresh()
-      .catch(() => setMessage("No se pudieron leer los roles."))
-      .finally(() => setLoading(false));
-  }, []);
-
   const now = Date.now();
   const activeAssignments = assignments.filter((assignment) =>
     isActiveAssignment(assignment, now),
   );
+  const adminRoleIds = new Set(roles.filter(isAdministrationRole).map((role) => role.id));
+  const actorAdminAssignments = activeAssignments.filter(
+    (assignment) => assignment.profile_id === profileId && assignment.branch_id === null &&
+      adminRoleIds.has(assignment.role_id),
+  );
+  const actorIsOwner = actorAdminAssignments.some((assignment) =>
+    roles.some((role) => role.id === assignment.role_id && role.code === "owner"),
+  );
+  const canCheckAccess = hasPermission("users.manage") && actorAdminAssignments.length > 0 && !roleQuery.isError;
+  const accessQuery = useQuery({
+    queryKey: [...assignmentsKey, "access", actorIsOwner, roles.map((role) => role.id)],
+    queryFn: () => listRoleAssignmentAccess(roles, actorIsOwner),
+    enabled: canCheckAccess,
+  });
+  const access = accessQuery.data;
+  const disabledReason = !hasPermission("users.manage")
+    ? "No tenés permiso para administrar usuarios."
+    : actorAdminAssignments.length === 0
+      ? "Para asignar roles necesitás un rol global de responsable o administrador."
+      : accessQuery.isError
+        ? "No se pudieron verificar tus permisos."
+        : accessQuery.isPending
+          ? "Estamos verificando tus permisos."
+          : !access?.canManage
+            ? "Necesitás permiso para administrar usuarios en todas las sucursales."
+            : undefined;
 
   const rolesOf = (profileId: string): string[] =>
     activeAssignments
       .filter((assignment) => assignment.profile_id === profileId)
       .map((assignment) => {
         const role = roles.find((item) => item.id === assignment.role_id);
-        return role?.name ?? "Rol no disponible";
+        return role ? roleDisplayName(role) : "Rol no disponible";
       });
 
   const isUnassignedActive = (user: SystemUser): boolean =>
@@ -85,18 +85,33 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
     return leftPending ? -1 : 1;
   });
 
-  const actorIsAdmin = activeAssignments.some((assignment) =>
-    isGlobalAdminAssignment(assignment, roles, session?.user.id),
-  );
-
   const assignableUsers = sortedUsers.filter(
-    (user) => user.id !== session?.user.id && user.is_active,
+    (user) => user.id !== profileId && user.is_active,
   );
+  const userRestriction = (id: string): string | undefined => {
+    const scheduled = assignments.some((assignment) => assignment.profile_id === id &&
+      Date.parse(assignment.valid_from) > now &&
+      (assignment.valid_until === null || Date.parse(assignment.valid_until) > now));
+    if (scheduled) return "El operador tiene un cambio de rol programado.";
+    if (!actorIsOwner && activeAssignments.some((assignment) =>
+      assignment.profile_id === id && adminRoleIds.has(assignment.role_id))) {
+      return "Solo el responsable del sistema puede cambiar este rol.";
+    }
+  };
+  const roleRestriction = (id: string): string | undefined =>
+    access?.allowedRoleIds.includes(id) ? undefined : "No tenés permiso para asignar este rol.";
+  const selectedProfileId = form.watch("profileId");
+  const selectedRoleId = form.watch("roleId");
+  const submitDisabledReason = disabledReason ??
+    (selectedProfileId ? userRestriction(selectedProfileId) : undefined) ??
+    (selectedRoleId ? roleRestriction(selectedRoleId) : undefined);
 
   const submit = form.handleSubmit(async (values) => {
+    if (disabledReason || roleRestriction(values.roleId) || userRestriction(values.profileId) ||
+      !assignableUsers.some((user) => user.id === values.profileId)) return;
     try {
       await assignProfileRole(values.profileId, values.roleId);
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: assignmentsKey });
       setMessage(
         "Rol actualizado. El operador debe volver a iniciar sesión para renovar sus permisos.",
       );
@@ -109,8 +124,11 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
     }
   });
 
-  if (loading) {
+  if (profileId && roleQuery.isPending) {
     return <p>Cargando roles…</p>;
+  }
+  if (roleQuery.isError) {
+    return <p role="alert">No se pudieron leer los roles.</p>;
   }
 
   return (
@@ -165,11 +183,11 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
         })}
       </ul>
 
-      {actorIsAdmin && (
         <form onSubmit={(event) => void submit(event)}>
           <p>
             El cambio reemplaza las asignaciones vigentes por un rol global. No podés cambiar tu propio rol.
           </p>
+          {disabledReason && <p id="role-assignment-restriction">{disabledReason}</p>}
 
           <div className="erp-form-row">
             <div className="erp-form-group">
@@ -182,6 +200,9 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
               <select
                 id="role-profile"
                 className="erp-form-select"
+                disabled={Boolean(disabledReason)}
+                title={disabledReason}
+                aria-describedby={disabledReason ? "role-assignment-restriction" : undefined}
                 {...form.register("profileId")}
               >
                 <option value="">Seleccioná un operador</option>
@@ -189,6 +210,8 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
                   <option
                     key={user.id}
                     value={user.id}
+                    disabled={Boolean(userRestriction(user.id))}
+                    title={userRestriction(user.id)}
                   >
                     {user.display_name}
                   </option>
@@ -206,6 +229,9 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
               <select
                 id="role-choice"
                 className="erp-form-select"
+                disabled={Boolean(disabledReason)}
+                title={disabledReason}
+                aria-describedby={disabledReason ? "role-assignment-restriction" : undefined}
                 {...form.register("roleId")}
               >
                 <option value="">Seleccioná un rol</option>
@@ -213,8 +239,10 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
                   <option
                     key={role.id}
                     value={role.id}
+                    disabled={Boolean(roleRestriction(role.id))}
+                    title={roleRestriction(role.id)}
                   >
-                    {role.code ? `${role.name} (${role.code})` : role.name}
+                    {roleDisplayName(role)}
                   </option>
                 ))}
               </select>
@@ -228,12 +256,13 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
           <button
             className="btn-primary"
             type="submit"
-            disabled={form.formState.isSubmitting}
+            disabled={Boolean(submitDisabledReason) || form.formState.isSubmitting}
+            title={submitDisabledReason}
+            aria-describedby={disabledReason ? "role-assignment-restriction" : undefined}
           >
             Asignar rol
           </button>
         </form>
-      )}
 
       {message && <p role="status">{message}</p>}
     </section>

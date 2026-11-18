@@ -67,12 +67,12 @@ describe("Authoritative POS 4-decimal arithmetic", () => {
 
     it("enforces conservative 1e9 ARS limit for POS operations", () => {
       expect(round4(POS_MAX_AMOUNT_ARS)).toBe(1_000_000_000);
-      expect(() => toScaledBigInt(1_000_000_001)).toThrow("exceeds maximum allowed POS amount");
-      expect(() => toScaledBigInt("1000000000.0001")).toThrow("exceeds maximum allowed POS amount");
+      expect(() => toScaledBigInt(1_000_000_001)).toThrow("supera el límite máximo permitido del POS");
+      expect(() => toScaledBigInt("1000000000.0001")).toThrow("supera el límite máximo permitido del POS");
     });
 
     it("throws on division by zero", () => {
-      expect(() => div4(100, 0)).toThrow("Division by zero");
+      expect(() => div4(100, 0)).toThrow("División por cero.");
     });
   });
 
@@ -133,16 +133,16 @@ describe("Authoritative POS 4-decimal arithmetic", () => {
 
     it("rejects negative unit price", () => {
       expect(() => calculateGrossTaxBreakdown(-50, 1, 21)).toThrow(
-        "Unit gross price cannot be negative",
+        "El precio unitario bruto no puede ser negativo.",
       );
     });
 
     it("rejects non-positive quantity", () => {
       expect(() => calculateGrossTaxBreakdown(100, 0, 21)).toThrow(
-        "Quantity must be positive",
+        "La cantidad debe ser mayor a cero.",
       );
       expect(() => calculateGrossTaxBreakdown(100, -1, 21)).toThrow(
-        "Quantity must be positive",
+        "La cantidad debe ser mayor a cero.",
       );
     });
 
@@ -163,7 +163,7 @@ describe("Authoritative POS 4-decimal arithmetic", () => {
 
     it("rejects discount exceeding line subtotal", () => {
       expect(() => calculateGrossTaxBreakdown(100, 1, 21, 150)).toThrow(
-        "Gross discount cannot exceed gross subtotal",
+        "El descuento bruto no puede superar el subtotal bruto.",
       );
     });
 

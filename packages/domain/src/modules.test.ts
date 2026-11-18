@@ -10,8 +10,8 @@ import {
 } from "./modules";
 
 describe("ERP Modules & Workspaces Taxonomy", () => {
-  it("has exactly 29 canonical modules", () => {
-    expect(ERP_MODULES).toHaveLength(29);
+  it("has exactly 28 canonical modules", () => {
+    expect(ERP_MODULES).toHaveLength(28);
   });
 
   it("has no duplicate module ids", () => {
@@ -36,12 +36,12 @@ describe("ERP Modules & Workspaces Taxonomy", () => {
     }
   });
 
-  it("covers all 29 modules exactly once across all 19 workspaces", () => {
+  it("covers all 28 modules exactly once across all 19 workspaces", () => {
     const allAssignedModules = ERP_WORKSPACES.flatMap((w) => w.moduleIds);
-    expect(allAssignedModules).toHaveLength(29);
+    expect(allAssignedModules).toHaveLength(28);
 
     const uniqueAssigned = new Set(allAssignedModules);
-    expect(uniqueAssigned.size).toBe(29);
+    expect(uniqueAssigned.size).toBe(28);
 
     const canonicalIds = ERP_MODULES.map((m) => m.id).sort();
     const assignedIds = [...allAssignedModules].sort();
@@ -50,18 +50,32 @@ describe("ERP Modules & Workspaces Taxonomy", () => {
 
   it("correctly retrieves modules and workspaces via helpers", () => {
     expect(getErpModuleById("pricing")?.permission).toBe("pricing.view");
+    expect(getErpModuleById("stock-counts")).toBeUndefined();
     expect(getErpModuleById("non-existent")).toBeUndefined();
 
     expect(getErpWorkspaceById("catalog")?.label).toBe("Catálogo y precios");
     expect(getErpWorkspaceById("non-existent")).toBeUndefined();
 
     expect(getErpWorkspaceByModuleId("pricing")?.id).toBe("catalog");
-    expect(getErpWorkspaceByModuleId("stock-counts")?.id).toBe("stock");
+    expect(getErpWorkspaceByModuleId("labels")?.id).toBe("stock");
+    expect(getErpWorkspaceByModuleId("stock-counts")).toBeUndefined();
     expect(getErpWorkspaceByModuleId("suppliers")?.id).toBe("purchases");
     expect(getErpWorkspaceByModuleId("warranties")?.id).toBe("repairs");
     expect(getErpWorkspaceByModuleId("profitability")?.id).toBe("accounting");
     expect(getErpWorkspaceByModuleId("settings")?.id).toBe("system");
     expect(getErpWorkspaceByModuleId("unknown")).toBeUndefined();
+  });
+
+  it("uses proper Spanish accents in module labels", () => {
+    const labels = ERP_MODULES.map((m) => m.label);
+    expect(labels).toContain("Códigos y etiquetas");
+    expect(labels).toContain("Pruebas técnicas");
+    expect(labels).toContain("Garantías");
+    expect(labels).toContain("Configuración");
+    expect(labels).toContain("Auditoría");
+    for (const untilded of ["Codigos", "tecnicas", "Garantias", "Configuracion", "Auditoria"]) {
+      expect(labels.some((label) => label.includes(untilded))).toBe(false);
+    }
   });
 });
 
@@ -74,12 +88,14 @@ describe("ERP module visibility", () => {
     expect(getVisibleErpModules()).not.toContain("purchases");
   });
 
-  it("shows all modules for completo", () => {
-    expect(getVisibleErpModules({ profile: "completo" })).toEqual(ERP_MODULES.map((m) => m.id));
+  it("shows all modules for completo without stock-counts", () => {
+    const visible = getVisibleErpModules({ profile: "completo" });
+    expect(visible).toEqual(ERP_MODULES.map((m) => m.id));
+    expect(visible).not.toContain("stock-counts");
   });
 
-  it("uses the optional custom selection in canonical order", () => {
-    expect(getVisibleErpModules({ profile: "salida", visible: ["settings", "pos", "pos"] })).toEqual(["pos", "settings"]);
+  it("uses the optional custom selection in canonical order and excludes stock-counts", () => {
+    expect(getVisibleErpModules({ profile: "salida", visible: ["settings", "pos", "pos", "stock-counts"] })).toEqual(["pos", "settings"]);
     expect(getVisibleErpModules({ profile: "completo", visible: [] })).toEqual([]);
   });
 });

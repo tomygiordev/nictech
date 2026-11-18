@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { repairNoteSchema, type RepairNoteInput } from "./schemas";
+import { RepairIntakeModal } from "./RepairIntakeModal";
+import { RepairLaborModal } from "./RepairLaborModal";
+import { RepairPaymentModal } from "./RepairPaymentModal";
+import { RepairPartModal } from "./RepairPartModal";
+import { RepairDeliveryModal } from "./RepairDeliveryModal";
+import { RepairWarrantyClaimModal } from "./RepairWarrantyClaimModal";
 import {
   Wrench,
   Search,
@@ -17,14 +22,12 @@ import {
   Loader2,
   RefreshCw,
   Edit2,
-  Check,
   ClipboardCheck,
   ShieldCheck,
   Eye,
   FileCheck,
   ShieldAlert,
   Award,
-  Package,
   RotateCcw,
   User,
   CheckCircle,
@@ -41,13 +44,14 @@ import {
   KpiCard,
   ConfirmDialog,
 } from "../../components/erp/WorkspaceUi";
+import { Field, FormError } from "../../components/erp/FormFeedback";
 import { type ErpModuleId } from "@nictech/domain";
 import { formatCurrency, formatDate, formatDateTime } from "../../lib/formatters";
+import { REPAIR_STATUS_LABELS, labelOf } from "../../lib/labels";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import { supabase } from "../../lib/supabase";
-import { listOpenCashSessions } from "../cash/api";
+import { toUserMessage } from "../../lib/errors";
 import {
-  getRepairStatusLabel,
   listRepairOrders,
   listRepairStateEvents,
   listRepairNotes,
@@ -55,24 +59,16 @@ import {
   addRepairNote,
   type RepairNote,
   listAvailableTransitions,
-  intakeRepairOrder,
   transitionRepairOrder,
   getActiveTestTemplate,
   recordRepairTestRun,
   listRepairTestRuns,
-  consumeRepairPart,
   reverseRepairPart,
   listRepairParts,
-  deliverRepairOrder,
   listWarranties,
   listWarrantyClaims,
-  openWarrantyClaim,
   listRepairLabor,
-  recordRepairLabor,
   listRepairPayments,
-  listRepairPaymentMethods,
-  listRepairExchangeSnapshots,
-  recordRepairPayment,
   reverseRepairPayment,
   type RepairOrderOverview,
   type RepairStateEvent,
@@ -84,70 +80,30 @@ import {
   type TestTemplateVersion,
   type RepairLaborRecord,
   type RepairPaymentRecord,
-  type RepairPaymentMethod,
-  type RepairExchangeSnapshot,
 } from "./api";
-
-const intakeSchema = z.object({
-  branchId: z.string().uuid("Seleccioná una sucursal válida."),
-  customerId: z.string().uuid("Seleccioná un cliente válido."),
-  model: z.string().trim().min(2, "Indicá el modelo del equipo.").max(160),
-  reportedFault: z.string().trim().min(5, "Describí la falla con al menos 5 caracteres.").max(1000),
-  serialNumber: z.string().trim().max(120).optional(),
-  imei: z.string().trim().max(30).optional(),
-}).superRefine((value, context) => {
-  if (value.serialNumber || value.imei) return;
-  context.addIssue({
-    code: "custom",
-    path: ["serialNumber"],
-    message: "Ingresá el número de serie o el IMEI del equipo.",
-  });
-});
-
-const laborSchema = z.object({
-  description: z.string().trim().min(5, "Describí el trabajo realizado.").max(1000),
-  hours: z.coerce.number().positive("Las horas deben ser mayores a cero.").max(1000),
-  unitCost: z.coerce.number().min(0, "El costo no puede ser negativo.").max(1_000_000_000),
-});
-
-const paymentSchema = z.object({
-  paymentMethodId: z.string().uuid("Seleccioná un medio de pago."),
-  amount: z.coerce.number().positive("El importe debe ser mayor a cero."),
-  currency: z.string().trim().min(3).max(3),
-  exchangeSnapshotId: z.string().uuid("Seleccioná una cotización registrada."),
-  reason: z.string().trim().min(5, "Indicá el motivo del cobro.").max(300),
-});
 
 const operationKey = (prefix: string): string => `${prefix}-${crypto.randomUUID()}`;
 
-const createRepairCustomer = async (input: {
-  displayName: string;
-  phone: string | null;
-  identityDocument: string | null;
-}): Promise<string> => {
-  const { data, error } = await supabase.rpc("create_customer_with_private_details", {
-    new_kind: "person",
-    new_display_name: input.displayName,
-    new_legal_name: undefined,
-    new_email: undefined,
-    new_phone: input.phone ?? undefined,
-    new_tax_id: undefined,
-    new_identity_document: input.identityDocument ?? undefined,
-    new_address: {},
-    new_internal_notes: undefined,
-  });
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("La base no devolvió el identificador del cliente creado.");
-  return data;
+const STATUS_PILL_CLASSES: Record<string, string> = {
+  received: "flow-status-pill pending",
+  diagnosis: "flow-status-pill processing",
+  waiting_parts: "flow-status-pill processing",
+  repair: "flow-status-pill processing",
+  ready: "flow-status-pill completed",
+  delivered: "flow-status-pill completed",
 };
 
-const STATUS_MAP: Record<string, { label: string; pillClass: string }> = {
-  received: { label: "Recibido", pillClass: "flow-status-pill pending" },
-  diagnosis: { label: "Diagnóstico", pillClass: "flow-status-pill processing" },
-  waiting_parts: { label: "Esperando repuestos", pillClass: "flow-status-pill processing" },
-  repair: { label: "En Reparación", pillClass: "flow-status-pill processing" },
-  ready: { label: "Listo para Retirar", pillClass: "flow-status-pill completed" },
-  delivered: { label: "Entregado", pillClass: "flow-status-pill completed" },
+const formatRepairStatus = (
+  statusName?: string | null,
+  statusCode?: string | null,
+  isDelivered?: boolean,
+): string => {
+  if (isDelivered) return REPAIR_STATUS_LABELS.delivered;
+  const byName = statusName ? labelOf(REPAIR_STATUS_LABELS, statusName, "") : "";
+  if (byName) return byName;
+  const byCode = statusCode ? labelOf(REPAIR_STATUS_LABELS, statusCode, "") : "";
+  if (byCode) return byCode;
+  return statusName || "Sin estado";
 };
 
 export interface RepairsWorkspaceProps {
@@ -159,10 +115,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   activeModuleId = "repairs",
   onSelectModule,
 }) => {
-  const { organizationId, hasPermission } = useErpAuth();
+  const { organizationId, branchIds, hasPermission } = useErpAuth();
   const [branches, setBranches] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [locations, setLocations] = useState<Array<{ id: string; branch_id: string; name: string; code: string }>>([]);
-  const [currentBranchId, setCurrentBranchId] = useState<string>("");
 
   // Repairs list state
   const [repairs, setRepairs] = useState<RepairOrderOverview[]>([]);
@@ -208,25 +163,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     resetNoteForm({ content: "", isPublic: false });
   }, [selectedTicket?.id, resetNoteForm]);
 
-  // New Repair Intake Modal & Form
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
-  const [customers, setCustomers] = useState<Array<{ id: string; display_name: string; phone: string | null }>>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
-  const [isNewCustomer, setIsNewCustomer] = useState<boolean>(false);
-  const [newCustomerName, setNewCustomerName] = useState<string>("");
-  const [newCustomerDni, setNewCustomerDni] = useState<string>("");
-  const [newCustomerPhone, setNewCustomerPhone] = useState<string>("");
-  const [deviceType, setDeviceType] = useState<string>("Smartphone");
-  const [deviceBrand, setDeviceBrand] = useState<string>("Apple");
-  const [deviceModel, setDeviceModel] = useState<string>("");
-  const [deviceSerial, setDeviceSerial] = useState<string>("");
-  const [deviceImei, setDeviceImei] = useState<string>("");
-  const [reportedFault, setReportedFault] = useState<string>("");
-  const [intakeCondition, setIntakeCondition] = useState<string>("Buen estado general");
-  const [intakeDamage, setIntakeDamage] = useState<string>("");
-  const [intakeAccessories, setIntakeAccessories] = useState<string>("funda");
-  const [intakeNotes, setIntakeNotes] = useState<string>("");
-  const [submittingIntake, setSubmittingIntake] = useState<boolean>(false);
 
   // QC Test Modal
   const [isQcModalOpen, setIsQcModalOpen] = useState<boolean>(false);
@@ -235,46 +172,27 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const [qcChecks, setQcChecks] = useState<Record<string, "pass" | "fail">>({});
   const [qcNotes, setQcNotes] = useState<string>("");
   const [submittingQc, setSubmittingQc] = useState<boolean>(false);
+  const [qcError, setQcError] = useState<string | null>(null);
 
-  // Part Consumption Modal
-  const [isPartModalOpen, setIsPartModalOpen] = useState<boolean>(false);
-  const [availableProducts, setAvailableProducts] = useState<Array<{ id: string; internal_name: string; internal_code: string }>>([]);
-  const [selectedProductId, setSelectedProductId] = useState<string>("");
-  const [partQuantity, setPartQuantity] = useState<number>(1);
-  const [partReason, setPartReason] = useState<string>("Reemplazo de módulo por reparación");
-  const [partLocationId, setPartLocationId] = useState<string>("");
-  const [submittingPart, setSubmittingPart] = useState<boolean>(false);
+  // Transition confirmation dialog
+  const [pendingTransition, setPendingTransition] = useState<RepairTransitionOption | null>(null);
+  const [transitionNote, setTransitionNote] = useState<string>("");
+  const [submittingTransition, setSubmittingTransition] = useState<boolean>(false);
+  const [transitionError, setTransitionError] = useState<string | null>(null);
 
-  // Labor and repair payments
-  const [isLaborModalOpen, setIsLaborModalOpen] = useState<boolean>(false);
-  const [laborDescription, setLaborDescription] = useState<string>("");
-  const [laborHours, setLaborHours] = useState<string>("1");
-  const [laborUnitCost, setLaborUnitCost] = useState<string>("");
-  const [laborOperationKey, setLaborOperationKey] = useState<string>(() => operationKey("repair-labor"));
-  const [submittingLabor, setSubmittingLabor] = useState<boolean>(false);
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
-  const [paymentMethods, setPaymentMethods] = useState<RepairPaymentMethod[]>([]);
-  const [exchangeSnapshots, setExchangeSnapshots] = useState<RepairExchangeSnapshot[]>([]);
-  const [cashSessions, setCashSessions] = useState<Array<{ id: string; branch_id: string }>>([]);
-  const [paymentMethodId, setPaymentMethodId] = useState<string>("");
-  const [paymentAmount, setPaymentAmount] = useState<string>("");
-  const [paymentCurrency, setPaymentCurrency] = useState<string>("ARS");
-  const [paymentSnapshotId, setPaymentSnapshotId] = useState<string>("");
-  const [paymentCashSessionId, setPaymentCashSessionId] = useState<string>("");
-  const [paymentReason, setPaymentReason] = useState<string>("Cobro de reparación");
-  const [paymentOperationKey, setPaymentOperationKey] = useState<string>(() => operationKey("repair-payment"));
-  const [submittingPayment, setSubmittingPayment] = useState<boolean>(false);
+  const [isPartModalOpen, setIsPartModalOpen] = useState(false);
+  const [isLaborModalOpen, setIsLaborModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const canRecordPayment = hasPermission("repairs.manage");
+  const canRecordLabor = canRecordPayment && hasPermission("costs.manage");
+  const canConsumePart = canRecordPayment && hasPermission("stock.move");
+
   const [paymentToReverse, setPaymentToReverse] = useState<RepairPaymentRecord | null>(null);
   const [reversingPayment, setReversingPayment] = useState(false);
   const [reversalOperationKey, setReversalOperationKey] = useState(() => operationKey("repair-payment-reversal"));
 
   // Delivery Modal
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState<boolean>(false);
-  const [deliveryRecipientName, setDeliveryRecipientName] = useState<string>("");
-  const [deliveryDocumentSuffix, setDeliveryDocumentSuffix] = useState<string>("");
-  const [deliveryWarrantyDays, setDeliveryWarrantyDays] = useState<number>(90);
-  const [deliveryWarrantyTerms, setDeliveryWarrantyTerms] = useState<string>("Garantía de 90 días sobre mano de obra y repuestos instalados.");
-  const [submittingDelivery, setSubmittingDelivery] = useState<boolean>(false);
 
   // Sub-sections states
   const [testRuns, setTestRuns] = useState<TestRunRecord[]>([]);
@@ -283,9 +201,6 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const [loadingWarranties, setLoadingWarranties] = useState<boolean>(false);
   const [claims, setClaims] = useState<WarrantyClaimRecord[]>([]);
   const [isClaimModalOpen, setIsClaimModalOpen] = useState<boolean>(false);
-  const [selectedWarrantyId, setSelectedWarrantyId] = useState<string>("");
-  const [claimIssue, setClaimIssue] = useState<string>("");
-  const [submittingClaim, setSubmittingClaim] = useState<boolean>(false);
 
   // Fetch all repairs
   const fetchRepairsData = useCallback(async () => {
@@ -322,7 +237,6 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         const nextLocations = (locationResult.data || []) as Array<{ id: string; branch_id: string; name: string; code: string }>;
         setBranches(nextBranches);
         setLocations(nextLocations);
-        setCurrentBranchId((current) => current || nextBranches[0]?.id || "");
       } catch (contextError) {
         if (!cancelled) {
           setError(contextError instanceof Error ? contextError.message : "No se pudo cargar sucursales y ubicaciones.");
@@ -334,54 +248,6 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       cancelled = true;
     };
   }, [organizationId]);
-
-  // Load customers for intake
-  const loadCustomers = useCallback(async () => {
-    try {
-      const { data, error: customerError } = await supabase
-        .from("customers")
-        .select("id, display_name, phone")
-        .eq("is_active", true)
-        .order("display_name", { ascending: true });
-      if (customerError) throw customerError;
-      setCustomers(data || []);
-      if (data && data.length > 0 && !selectedCustomerId) {
-        setSelectedCustomerId(data[0].id);
-      }
-    } catch (e) {
-      setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudieron cargar los clientes. Cerrá y volvé a abrir el ingreso para reintentar." });
-    }
-  }, [selectedCustomerId]);
-
-  // Load products for parts consumption
-  const loadProducts = useCallback(async () => {
-    try {
-      const { data, error: productError } = await supabase
-        .from("products")
-        .select("id, internal_name, internal_code")
-        .eq("is_active", true)
-        .order("internal_name", { ascending: true });
-      if (productError) throw productError;
-      setAvailableProducts(data || []);
-      if (data && data.length > 0 && !selectedProductId) {
-        setSelectedProductId(data[0].id);
-      }
-      if (selectedTicket) {
-        const branchLocations = locations.filter((location) => location.branch_id === selectedTicket.branch_id);
-        setPartLocationId((current) => branchLocations.some((location) => location.id === current) ? current : branchLocations[0]?.id || "");
-      }
-    } catch (e) {
-      setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudieron cargar los repuestos." });
-    }
-  }, [locations, selectedProductId, selectedTicket]);
-
-  useEffect(() => {
-    if (isNewModalOpen) void loadCustomers();
-  }, [isNewModalOpen, loadCustomers]);
-
-  useEffect(() => {
-    if (isPartModalOpen) void loadProducts();
-  }, [isPartModalOpen, loadProducts]);
 
   // Fetch ticket details when selecting a ticket
   const loadTicketDetails = useCallback(async (ticket: RepairOrderOverview) => {
@@ -432,100 +298,8 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     void loadTicketDetails(ticket);
   };
 
-  // Handle Intake
-  const handleIntakeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!organizationId) {
-      setFeedback({ type: "error", message: "La sesión no tiene una organización activa. Volvé a iniciar sesión." });
-      return;
-    }
-    const selectedIntakeCustomer = isNewCustomer ? crypto.randomUUID() : selectedCustomerId;
-    const intakeValidation = intakeSchema.safeParse({
-      branchId: currentBranchId,
-      customerId: selectedIntakeCustomer,
-      model: deviceModel,
-      reportedFault,
-      serialNumber: deviceSerial,
-      imei: deviceImei,
-    });
-    if (!intakeValidation.success) {
-      setFeedback({ type: "error", message: intakeValidation.error.issues[0]?.message ?? "Revisá los datos de ingreso." });
-      return;
-    }
-
-    try {
-      setSubmittingIntake(true);
-      let custId = selectedCustomerId;
-
-      // Inline customer creation if needed
-      if (isNewCustomer) {
-        if (!newCustomerName.trim()) {
-          setFeedback({ type: "error", message: "Ingrese el nombre del nuevo cliente." });
-          return;
-        }
-        const normalizedIdentityDocument = newCustomerDni.replace(/\D/g, "");
-        if (normalizedIdentityDocument && (normalizedIdentityDocument.length < 7 || normalizedIdentityDocument.length > 8)) {
-          setFeedback({ type: "error", message: "El DNI debe tener 7 u 8 dígitos." });
-          return;
-        }
-        if (normalizedIdentityDocument && !hasPermission("customers.view_sensitive")) {
-          setFeedback({ type: "error", message: "Tu rol no permite registrar documentos privados." });
-          return;
-        }
-        custId = await createRepairCustomer({
-          displayName: newCustomerName.trim(),
-          phone: newCustomerPhone.trim() || null,
-          identityDocument: normalizedIdentityDocument || null,
-        });
-      }
-
-      const accessoriesArray = intakeAccessories
-        .split(",")
-        .map((a) => a.trim())
-        .filter(Boolean);
-
-      const result = await intakeRepairOrder({
-        branchId: intakeValidation.data.branchId,
-        customerId: custId,
-        equipmentType: deviceType,
-        brandName: deviceBrand,
-        modelName: intakeValidation.data.model,
-        serialNumber: deviceSerial.trim() || undefined,
-        imei: deviceImei.trim() || undefined,
-        accessories: accessoriesArray,
-        intakeCondition: intakeCondition.trim() || "Recibido en taller",
-        intakeDamage: intakeDamage.trim() || undefined,
-        intakeNotes: intakeNotes.trim() || undefined,
-        reportedFault: intakeValidation.data.reportedFault,
-      });
-
-      setFeedback({
-        type: "success",
-        message: `Orden ${result.order_code} ingresada. Código de seguimiento: ${result.public_tracking_code}`,
-      });
-      setIsNewModalOpen(false);
-      // Reset form
-      setDeviceModel("");
-      setDeviceSerial("");
-      setDeviceImei("");
-      setReportedFault("");
-      setIntakeDamage("");
-      setIntakeNotes("");
-      setIsNewCustomer(false);
-      setNewCustomerName("");
-      setNewCustomerDni("");
-      setNewCustomerPhone("");
-
-      await fetchRepairsData();
-    } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al ingresar la orden." });
-    } finally {
-      setSubmittingIntake(false);
-    }
-  };
-
   // Handle Transition
-  const handleTransition = async (transition: RepairTransitionOption) => {
+  const requestTransition = (transition: RepairTransitionOption) => {
     if (!selectedTicket) return;
 
     // Gate: if transition requires final tests and QC has not passed, block and prompt QC
@@ -534,20 +308,33 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         type: "error",
         message: "Para avanzar a este estado es obligatorio completar y aprobar el control de calidad final.",
       });
-      openQcModal(selectedTicket);
+      void openQcModal(selectedTicket);
       return;
     }
 
+    setTransitionNote("");
+    setTransitionError(null);
+    setPendingTransition(transition);
+  };
+
+  const confirmTransition = async () => {
+    if (!selectedTicket || !pendingTransition || submittingTransition) return;
+    const targetLabel = formatRepairStatus(pendingTransition.to_status_name, pendingTransition.to_status_code);
+    const trimmedNote = transitionNote.trim();
+
     try {
+      setSubmittingTransition(true);
+      setTransitionError(null);
       await transitionRepairOrder(
         selectedTicket.id,
-        transition.to_status_id,
-        `Avance de estado: ${transition.to_status_name}`,
-        `Transición a ${transition.to_status_name}`
+        pendingTransition.to_status_id,
+        trimmedNote || undefined,
+        trimmedNote || `Transición a ${targetLabel}`,
       );
-      setFeedback({ type: "success", message: `Orden ${selectedTicket.order_code} avanzada a "${transition.to_status_name}".` });
+      setPendingTransition(null);
+      setTransitionNote("");
+      setFeedback({ type: "success", message: `Orden ${selectedTicket.order_code} avanzada a "${targetLabel}".` });
       await fetchRepairsData();
-      // Re-fetch current ticket
       const updatedList = await listRepairOrders();
       const updated = updatedList.find((r) => r.id === selectedTicket.id);
       if (updated) {
@@ -555,13 +342,16 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         void loadTicketDetails(updated);
       }
     } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al actualizar estado." });
+      setTransitionError(toUserMessage(err, "No se pudo actualizar el estado de la reparación. Reintentá."));
+    } finally {
+      setSubmittingTransition(false);
     }
   };
 
   // Open QC Modal
   const openQcModal = async (ticket: RepairOrderOverview) => {
     setQcTargetTicket(ticket);
+    setQcError(null);
     try {
       const template = await getActiveTestTemplate("final");
       setActiveTemplate(template);
@@ -569,7 +359,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       setQcNotes("");
       setIsQcModalOpen(true);
     } catch (err) {
-      setFeedback({ type: "error", message: "Error al cargar plantilla de pruebas." });
+      setFeedback({ type: "error", message: toUserMessage(err, "Error al cargar plantilla de pruebas.") });
     }
   };
 
@@ -577,26 +367,21 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const handleQcSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!qcTargetTicket || !activeTemplate) return;
+    setQcError(null);
 
     const requiredItems = activeTemplate.definition.filter((item) => item.required !== false);
     const resultsArray: Array<{ item_key: string; result: "pass" | "fail" }> = [];
     for (const item of requiredItems) {
       const result = qcChecks[item.key];
       if (!result) {
-        setFeedback({
-          type: "error",
-          message: "Registrá un resultado para cada control obligatorio antes de confirmar el control de calidad.",
-        });
+        setQcError("Registrá un resultado para cada control obligatorio antes de confirmar el control de calidad.");
         return;
       }
       resultsArray.push({ item_key: item.key, result });
     }
 
     if (resultsArray.length === 0) {
-      setFeedback({
-        type: "error",
-          message: "La plantilla de control de calidad no tiene controles obligatorios para registrar.",
-      });
+      setQcError("La plantilla de control de calidad no tiene controles obligatorios para registrar.");
       return;
     }
 
@@ -622,163 +407,29 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         }
       }
     } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al registrar el control de calidad." });
+      setQcError(toUserMessage(err, "No se pudo registrar el control de calidad. Reintentá."));
     } finally {
       setSubmittingQc(false);
     }
   };
 
-  // Handle Part Consumption
-  const handleConsumePartSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTicket || !selectedProductId || !partLocationId) {
-      setFeedback({ type: "error", message: "Seleccioná un repuesto y una ubicación de stock." });
-      return;
-    }
-
-    try {
-      setSubmittingPart(true);
-      await consumeRepairPart(
-        selectedTicket.id,
-        partLocationId,
-        selectedProductId,
-        undefined,
-        partQuantity,
-        partReason.trim() || "Instalación de repuesto en taller"
-      );
-
-      setFeedback({
-        type: "success",
-        message: `Repuesto consumido e incorporado a la orden ${selectedTicket.order_code}. Nota: el control de calidad anterior queda invalidado y debe repetirse.`,
-      });
-      setIsPartModalOpen(false);
-      await fetchRepairsData();
-      const updatedList = await listRepairOrders();
-      const updated = updatedList.find((r) => r.id === selectedTicket.id);
-      if (updated) {
-        setSelectedTicket(updated);
-        void loadTicketDetails(updated);
-      }
-    } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al consumir repuesto." });
-    } finally {
-      setSubmittingPart(false);
-    }
-  };
-
-  const openLaborModal = () => {
-    setLaborOperationKey(operationKey("repair-labor"));
-    setIsLaborModalOpen(true);
-  };
-
-  const handleLaborSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!selectedTicket) return;
-    const parsed = laborSchema.safeParse({
-      description: laborDescription,
-      hours: laborHours,
-      unitCost: laborUnitCost,
+  const handlePartConsumed = async (ticket: RepairOrderOverview) => {
+    setFeedback({
+      type: "success",
+      message: `Repuesto consumido e incorporado a la orden ${ticket.order_code}. Nota: el control de calidad anterior queda invalidado y debe repetirse.`,
     });
-    if (!parsed.success) {
-      setFeedback({ type: "error", message: parsed.error.issues[0]?.message ?? "Revisá la mano de obra." });
-      return;
-    }
+    const requestId = detailRequest.current;
+    let updated = ticket;
     try {
-      setSubmittingLabor(true);
-      await recordRepairLabor(
-        selectedTicket.id,
-        parsed.data.description,
-        parsed.data.hours,
-        parsed.data.unitCost,
-        laborOperationKey,
-      );
-      setFeedback({ type: "success", message: "Mano de obra registrada con trazabilidad de costos." });
-      setIsLaborModalOpen(false);
-      setLaborDescription("");
-      setLaborHours("1");
-      setLaborUnitCost("");
-      setLaborOperationKey(operationKey("repair-labor"));
-      await loadTicketDetails(selectedTicket);
-    } catch (laborError) {
-      setFeedback({ type: "error", message: laborError instanceof Error ? laborError.message : "No se pudo registrar la mano de obra." });
-    } finally {
-      setSubmittingLabor(false);
+      const orders = await listRepairOrders();
+      setRepairs(orders);
+      updated = orders.find((order) => order.id === ticket.id) ?? ticket;
+    } catch (error) {
+      setError(toUserMessage(error, "El repuesto se descontó, pero no se pudo actualizar el listado de reparaciones."));
     }
-  };
-
-  const openPaymentModal = async () => {
-    if (!selectedTicket) return;
-    try {
-      const [methods, snapshots, sessions] = await Promise.all([
-        listRepairPaymentMethods(),
-        listRepairExchangeSnapshots(),
-        listOpenCashSessions(),
-      ]);
-      setPaymentMethods(methods);
-      setExchangeSnapshots(snapshots);
-      setCashSessions(
-        sessions
-          .filter((session) => session.branch_id === selectedTicket.branch_id)
-          .map((session) => ({ id: session.id, branch_id: session.branch_id })),
-      );
-      const firstMethod = methods[0];
-      const preferredCurrency = snapshots.some((snapshot) => snapshot.quote_currency === "ARS") ? "ARS" : snapshots[0]?.quote_currency || "ARS";
-      setPaymentMethodId(firstMethod?.id || "");
-      setPaymentCurrency(preferredCurrency);
-      setPaymentSnapshotId(snapshots.find((snapshot) => snapshot.quote_currency === preferredCurrency)?.id || "");
-      setPaymentCashSessionId("");
-      setPaymentOperationKey(operationKey("repair-payment"));
-      setIsPaymentModalOpen(true);
-    } catch (paymentConfigError) {
-      setFeedback({ type: "error", message: paymentConfigError instanceof Error ? paymentConfigError.message : "No se pudo preparar el cobro." });
-    }
-  };
-
-  const handlePaymentCurrencyChange = (currency: string) => {
-    setPaymentCurrency(currency);
-    setPaymentSnapshotId(exchangeSnapshots.find((snapshot) => snapshot.quote_currency === currency)?.id || "");
-  };
-
-  const handlePaymentSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!selectedTicket) return;
-    const method = paymentMethods.find((candidate) => candidate.id === paymentMethodId);
-    const parsed = paymentSchema.safeParse({
-      paymentMethodId,
-      amount: paymentAmount,
-      currency: paymentCurrency,
-      exchangeSnapshotId: paymentSnapshotId,
-      reason: paymentReason,
-    });
-    if (!parsed.success) {
-      setFeedback({ type: "error", message: parsed.error.issues[0]?.message ?? "Revisá los datos del cobro." });
-      return;
-    }
-    if (method?.requires_cash_session && !paymentCashSessionId) {
-      setFeedback({ type: "error", message: "Este medio de pago requiere una caja abierta de la misma sucursal." });
-      return;
-    }
-    try {
-      setSubmittingPayment(true);
-      await recordRepairPayment({
-        repairOrderId: selectedTicket.id,
-        paymentMethodId: parsed.data.paymentMethodId,
-        cashSessionId: method?.requires_cash_session ? paymentCashSessionId : null,
-        amount: parsed.data.amount,
-        currency: parsed.data.currency,
-        exchangeSnapshotId: parsed.data.exchangeSnapshotId,
-        operationKey: paymentOperationKey,
-        reason: parsed.data.reason,
-      });
-      setFeedback({ type: "success", message: "Cobro registrado y conciliado con la reparación." });
-      setIsPaymentModalOpen(false);
-      setPaymentAmount("");
-      setPaymentOperationKey(operationKey("repair-payment"));
-      await loadTicketDetails(selectedTicket);
-    } catch (paymentError) {
-      setFeedback({ type: "error", message: paymentError instanceof Error ? paymentError.message : "No se pudo registrar el cobro." });
-    } finally {
-      setSubmittingPayment(false);
+    if (requestId === detailRequest.current) {
+      setSelectedTicket(updated);
+      void loadTicketDetails(updated);
     }
   };
 
@@ -821,45 +472,21 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   };
 
   // Handle Formal Delivery
-  const openDeliveryModal = () => {
+  const handleDelivered = async (recipientName: string, warrantyDays: number) => {
     if (!selectedTicket) return;
-    setDeliveryRecipientName(selectedTicket.customer_name);
-    setDeliveryDocumentSuffix("");
-    setDeliveryWarrantyDays(90);
-    setDeliveryWarrantyTerms("Garantía de 90 días sobre mano de obra y repuestos instalados en NicTech.");
-    setIsDeliveryModalOpen(true);
-  };
-
-  const handleDeliverySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTicket || !deliveryRecipientName.trim()) return;
-
-    try {
-      setSubmittingDelivery(true);
-      await deliverRepairOrder(
-        selectedTicket.id,
-        deliveryRecipientName.trim(),
-        deliveryDocumentSuffix.trim() || "0000",
-        deliveryWarrantyDays,
-        deliveryWarrantyTerms.trim()
-      );
-
-      setFeedback({
-        type: "success",
-        message: `¡Equipo entregado formalmente a ${deliveryRecipientName.trim()}! Se emitió póliza de garantía por ${deliveryWarrantyDays} días.`,
-      });
-      setIsDeliveryModalOpen(false);
-      await fetchRepairsData();
-      const updatedList = await listRepairOrders();
-      const updated = updatedList.find((r) => r.id === selectedTicket.id);
-      if (updated) {
-        setSelectedTicket(updated);
-        void loadTicketDetails(updated);
-      }
-    } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al procesar la entrega." });
-    } finally {
-      setSubmittingDelivery(false);
+    const ticketId = selectedTicket.id;
+    setFeedback({
+      type: "success",
+      message: warrantyDays > 0
+        ? `¡Equipo entregado formalmente a ${recipientName}! Se emitió póliza de garantía por ${warrantyDays} días.`
+        : `¡Equipo entregado formalmente a ${recipientName}!`,
+    });
+    await fetchRepairsData();
+    const updatedList = await listRepairOrders();
+    const updated = updatedList.find((r) => r.id === ticketId);
+    if (updated) {
+      setSelectedTicket(updated);
+      void loadTicketDetails(updated);
     }
   };
 
@@ -883,39 +510,17 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       const [wList, cList] = await Promise.all([listWarranties(), listWarrantyClaims()]);
       setWarranties(wList);
       setClaims(cList);
-      if (wList.length > 0 && !selectedWarrantyId) {
-        setSelectedWarrantyId(wList[0].id);
-      }
     } catch (e) {
       setFeedback({ type: "error", message: e instanceof Error ? e.message : "No se pudieron cargar las garantías. Volvé a ingresar a la sección para reintentar." });
     } finally {
       setLoadingWarranties(false);
     }
-  }, [selectedWarrantyId]);
+  }, []);
 
   useEffect(() => {
     if (activeModuleId === "repair-tests") void loadTestRunsSection();
     if (activeModuleId === "warranties") void loadWarrantiesSection();
   }, [activeModuleId, loadTestRunsSection, loadWarrantiesSection]);
-
-  // Handle New Warranty Claim
-  const handleOpenClaimSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedWarrantyId || !claimIssue.trim()) return;
-
-    try {
-      setSubmittingClaim(true);
-      const claimId = await openWarrantyClaim(selectedWarrantyId, claimIssue.trim());
-      setFeedback({ type: "success", message: `Reclamo de garantía registrado con ID: ${claimId}` });
-      setIsClaimModalOpen(false);
-      setClaimIssue("");
-      void loadWarrantiesSection();
-    } catch (err) {
-      setFeedback({ type: "error", message: err instanceof Error ? err.message : "Error al abrir reclamo." });
-    } finally {
-      setSubmittingClaim(false);
-    }
-  };
 
   // Filtered repairs
   const filteredRepairs = useMemo(() => {
@@ -948,7 +553,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const activeTallerCount = repairs.filter((r) => !r.delivery_id && r.status_code !== "ready" && r.status_code !== "delivered").length;
   const readyCount = repairs.filter((r) => r.status_code === "ready" && !r.delivery_id).length;
   const qcPassedCount = repairs.filter((r) => r.qc_passed).length;
-  const deliveredCount = repairs.filter((r) => Boolean(r.delivery_id)).length;
+  const deliveredWithWarrantyCount = repairs.filter((r) => Boolean(r.delivery_id && r.warranty_id)).length;
   const requiredQcItems = activeTemplate?.definition.filter((item) => item.required !== false) ?? [];
   const completedQcItems = requiredQcItems.filter((item) => Boolean(qcChecks[item.key])).length;
   const isQcComplete =
@@ -1016,9 +621,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               icon={ShieldCheck}
               iconVariant="steel"
               label="Entregados con Garantía"
-              value={deliveredCount}
+              value={deliveredWithWarrantyCount}
               trend={{ text: "Pólizas emitidas", positive: true }}
-              sublabel="Retiros formalmente concretados"
+              sublabel="Entregas con póliza de garantía emitida"
             />
           </div>
 
@@ -1059,12 +664,12 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             <div className="flow-filter-bar" role="group" aria-label="Filtrar reparaciones por estado">
               {[
                 { id: "active", label: "Activas" },
-                { id: "received", label: "Recibidos" },
-                { id: "diagnosis", label: "En Diagnóstico" },
-                { id: "waiting_parts", label: "Esperando repuestos" },
-                { id: "repair", label: "En Reparación" },
-                { id: "ready", label: "Listos para Retirar" },
-                { id: "delivered", label: "Entregados" },
+                { id: "received", label: REPAIR_STATUS_LABELS.received },
+                { id: "diagnosis", label: REPAIR_STATUS_LABELS.diagnosis },
+                { id: "waiting_parts", label: REPAIR_STATUS_LABELS.waiting_parts },
+                { id: "repair", label: REPAIR_STATUS_LABELS.repair },
+                { id: "ready", label: REPAIR_STATUS_LABELS.ready },
+                { id: "delivered", label: REPAIR_STATUS_LABELS.delivered },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -1109,8 +714,8 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                     {filteredRepairs.map((r) => {
                       const isDelivered = Boolean(r.delivery_id);
                       const statusPillClass = isDelivered
-                        ? STATUS_MAP.delivered.pillClass
-                        : STATUS_MAP[r.status_code]?.pillClass || "flow-status-pill pending";
+                        ? STATUS_PILL_CLASSES.delivered
+                        : STATUS_PILL_CLASSES[r.status_code] || "flow-status-pill pending";
 
                       return (
                         <tr
@@ -1153,7 +758,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                             {r.reported_fault}
                           </td>
                           <td>
-                            <span className={statusPillClass}>{getRepairStatusLabel(r)}</span>
+                            <span className={statusPillClass}>
+                              {formatRepairStatus(r.status_name, r.status_code, isDelivered)}
+                            </span>
                           </td>
                           <td>
                             {r.qc_passed ? (
@@ -1413,8 +1020,8 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase" }}>Estado Actual</div>
                 <div style={{ marginTop: "4px" }}>
-                  <span className={selectedTicket.delivery_id ? STATUS_MAP.delivered.pillClass : STATUS_MAP[selectedTicket.status_code]?.pillClass || "flow-status-pill pending"}>
-                    {getRepairStatusLabel(selectedTicket)}
+                  <span className={selectedTicket.delivery_id ? STATUS_PILL_CLASSES.delivered : STATUS_PILL_CLASSES[selectedTicket.status_code] || "flow-status-pill pending"}>
+                    {formatRepairStatus(selectedTicket.status_name, selectedTicket.status_code, Boolean(selectedTicket.delivery_id))}
                   </span>
                 </div>
               </div>
@@ -1431,7 +1038,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
                   El cliente verá en <code style={{ fontSize: "11px" }}>/seguimiento</code>:{" "}
                   <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "999px", background: "rgba(0, 168, 232, 0.14)", color: "#38bdf8", fontWeight: 600 }}>
-                    {selectedTicket.status_public_stage ?? "Sin etapa pública"}
+                    {selectedTicket.status_public_stage
+                      ? labelOf(REPAIR_STATUS_LABELS, selectedTicket.status_public_stage, selectedTicket.status_public_stage)
+                      : "Sin etapa pública"}
                   </span>
                 </div>
               </div>
@@ -1446,7 +1055,12 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 <p><strong>Equipo:</strong> {selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</p>
                 <p><strong>Falla declarada:</strong> {selectedTicket.reported_fault}</p>
                 <p><strong>Código de seguimiento:</strong> <strong>{selectedTicket.public_tracking_code}</strong></p>
-                <p><strong>Estado web actual:</strong> {selectedTicket.status_public_stage ?? "Recibido"}</p>
+                <p>
+                  <strong>Estado web actual:</strong>{" "}
+                  {selectedTicket.status_public_stage
+                    ? labelOf(REPAIR_STATUS_LABELS, selectedTicket.status_public_stage, selectedTicket.status_public_stage)
+                    : REPAIR_STATUS_LABELS.received}
+                </p>
                 <p>Consultá el estado en /seguimiento con este código o tu DNI.</p>
               </div>
               <style>{` .repair-print-receipt { display: none; } @media print { body * { visibility: hidden !important; } .repair-print-receipt, .repair-print-receipt * { visibility: visible !important; } .repair-print-receipt { display: block; position: fixed; inset: 0; padding: 24px; color: black; background: white; z-index: 99999; } } `}</style>
@@ -1517,9 +1131,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                         type="button"
                         className="btn-primary"
                         style={{ padding: "6px 14px", fontSize: "12px" }}
-                        onClick={() => handleTransition(tr)}
+                        onClick={() => requestTransition(tr)}
                       >
-                        Avanzar a {tr.to_status_name}
+                        Avanzar a {formatRepairStatus(tr.to_status_name, tr.to_status_code)}
                       </button>
                     ))}
                     {selectedTicket.status_code === "ready" && !selectedTicket.delivery_id && (
@@ -1527,7 +1141,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                         type="button"
                         className="btn-primary"
                         style={{ background: "#10b981", borderColor: "#10b981", color: "#fff", padding: "6px 14px", fontSize: "12px" }}
-                        onClick={openDeliveryModal}
+                        onClick={() => setIsDeliveryModalOpen(true)}
                       >
                         <CheckCircle size={14} /> Entregar al Cliente
                       </button>
@@ -1634,14 +1248,14 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>
                     Repuestos imputados a esta orden y descontados del inventario:
                   </div>
-                  {!selectedTicket.delivery_id && (
+                  {canConsumePart && !selectedTicket.delivery_id && (
                     <button
                       type="button"
                       className="btn-primary"
                       style={{ padding: "4px 10px", fontSize: "12px" }}
                       onClick={() => setIsPartModalOpen(true)}
                     >
-                      <Plus size={14} /> Consumir Repuesto
+                      <Plus size={14} /> Consumir repuesto
                     </button>
                   )}
                 </div>
@@ -1699,8 +1313,8 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             <section aria-label="Mano de obra y cobros">
               <h3>Mano de obra y cobros</h3>
               <div className="flow-tabs-nav">
-                {hasPermission("repairs.manage") && hasPermission("costs.manage") && <button type="button" className="btn-primary" onClick={openLaborModal}><BriefcaseBusiness size={16} /> Registrar trabajo</button>}
-                {hasPermission("repairs.manage") && <button type="button" className="btn-primary" onClick={() => void openPaymentModal()}><Banknote size={16} /> Registrar cobro o seña</button>}
+                {canRecordLabor && <button type="button" className="btn-primary" onClick={() => setIsLaborModalOpen(true)}><BriefcaseBusiness size={16} /> Registrar trabajo</button>}
+                {canRecordPayment && <button type="button" className="btn-primary" onClick={() => setIsPaymentModalOpen(true)}><Banknote size={16} /> Registrar cobro o seña</button>}
               </div>
               {loadingWork ? <p role="status">Cargando movimientos…</p> : <>
                 {ticketLabor.map((labor) => <p key={labor.id}>{labor.description} · {labor.quantity_hours} h · costo {formatCurrency(labor.total_cost_base)}</p>)}
@@ -1737,7 +1351,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                         <Clock size={16} style={{ color: "var(--accent-mint)", marginTop: "2px", flexShrink: 0 }} />
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <strong style={{ fontSize: "13px" }}>{ev.status_name}</strong>
+                            <strong style={{ fontSize: "13px" }}>{formatRepairStatus(ev.status_name, ev.status_code)}</strong>
                             <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{formatDateTime(ev.occurred_at)}</span>
                           </div>
                           <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>{ev.public_message}</div>
@@ -1752,235 +1366,47 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         </Modal>
       )}
 
-      <Modal isOpen={isLaborModalOpen} onClose={() => setIsLaborModalOpen(false)} title="Registrar mano de obra">
-        <form onSubmit={handleLaborSubmit}>
-          <label className="erp-form-group">Trabajo realizado<input className="erp-form-input" required value={laborDescription} onChange={(event) => setLaborDescription(event.target.value)} /></label>
-          <label className="erp-form-group">Horas<input className="erp-form-input" type="number" min="0.01" step="0.01" required value={laborHours} onChange={(event) => setLaborHours(event.target.value)} /></label>
-          <label className="erp-form-group">Costo por hora en moneda base<input className="erp-form-input" type="number" min="0" step="0.01" required value={laborUnitCost} onChange={(event) => setLaborUnitCost(event.target.value)} /></label>
-          <button className="btn-primary" type="submit" disabled={submittingLabor}>Registrar trabajo</button>
-        </form>
-      </Modal>
-      <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Cobro o seña de reparación">
-        <form onSubmit={handlePaymentSubmit}>
-          <label className="erp-form-group">Medio de pago<select className="erp-form-input" required value={paymentMethodId} onChange={(event) => setPaymentMethodId(event.target.value)}><option value="">Seleccionar</option>{paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}</select></label>
-          <label className="erp-form-group">Moneda<select className="erp-form-input" value={paymentCurrency} onChange={(event) => handlePaymentCurrencyChange(event.target.value)}>{Array.from(new Set(exchangeSnapshots.map((snapshot) => snapshot.quote_currency))).map((currency) => <option key={currency}>{currency}</option>)}</select></label>
-          <label className="erp-form-group">Cotización<select className="erp-form-input" required value={paymentSnapshotId} onChange={(event) => setPaymentSnapshotId(event.target.value)}><option value="">Seleccionar</option>{exchangeSnapshots.filter((snapshot) => snapshot.quote_currency === paymentCurrency).map((snapshot) => <option key={snapshot.id} value={snapshot.id}>{snapshot.rate_to_base} · {snapshot.source} · {formatDateTime(snapshot.quoted_at)}</option>)}</select></label>
-          <label className="erp-form-group">Importe<input className="erp-form-input" type="number" min="0.01" step="0.01" required value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} /></label>
-          {paymentMethods.find((method) => method.id === paymentMethodId)?.requires_cash_session && <label className="erp-form-group">Caja abierta<select className="erp-form-input" required value={paymentCashSessionId} onChange={(event) => setPaymentCashSessionId(event.target.value)}><option value="">Seleccionar</option>{cashSessions.map((session) => <option key={session.id} value={session.id}>{session.id}</option>)}</select></label>}
-          <label className="erp-form-group">Motivo<input className="erp-form-input" required value={paymentReason} onChange={(event) => setPaymentReason(event.target.value)} /></label>
-          <button className="btn-primary" type="submit" disabled={submittingPayment}>Registrar cobro</button>
-        </form>
-      </Modal>
+      <RepairLaborModal
+        isOpen={canRecordLabor && isLaborModalOpen}
+        orderId={selectedTicket?.id}
+        onClose={() => setIsLaborModalOpen(false)}
+        onRecorded={() => {
+          setFeedback({ type: "success", message: "Mano de obra registrada con trazabilidad de costos." });
+          if (selectedTicket) void loadTicketDetails(selectedTicket);
+        }}
+      />
+      <RepairPaymentModal
+        isOpen={canRecordPayment && isPaymentModalOpen}
+        orderId={selectedTicket?.id}
+        branchId={selectedTicket?.branch_id}
+        onClose={() => setIsPaymentModalOpen(false)}
+        onRecorded={() => {
+          setFeedback({ type: "success", message: "Cobro registrado y conciliado con la reparación." });
+          if (selectedTicket) void loadTicketDetails(selectedTicket);
+        }}
+      />
 
-      {/* MODAL: NEW REPAIR INTAKE */}
-      <Modal
+      <RepairIntakeModal
         isOpen={isNewModalOpen}
         onClose={() => setIsNewModalOpen(false)}
-        title="Ingreso de Reparación a Taller"
-        maxWidth="720px"
-      >
-        <form onSubmit={handleIntakeSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <label className="erp-form-group">Sucursal<select className="erp-form-input" required value={currentBranchId} onChange={(event) => setCurrentBranchId(event.target.value)}><option value="">Seleccionar</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
-          {/* Customer Selection */}
-          <div style={{ padding: "12px", background: "rgba(255,255,255,0.02)", borderRadius: "8px", border: "1px solid var(--border-line)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-              <label style={{ fontWeight: 600, fontSize: "13px" }}>Cliente Titular</label>
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ fontSize: "12px", padding: "2px 6px" }}
-                onClick={() => setIsNewCustomer(!isNewCustomer)}
-              >
-                {isNewCustomer ? "← Seleccionar cliente existente" : "+ Crear nuevo cliente"}
-              </button>
-            </div>
-
-            {!isNewCustomer ? (
-              <select
-                className="form-input"
-                value={selectedCustomerId}
-                onChange={(e) => setSelectedCustomerId(e.target.value)}
-                required
-              >
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.display_name}{c.phone ? ` — ${c.phone}` : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: hasPermission("customers.view_sensitive") ? "1fr 1fr 1fr" : "1fr 1fr", gap: "10px" }}>
-                <div>
-                  <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Nombre Completo *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={newCustomerName}
-                    onChange={(e) => setNewCustomerName(e.target.value)}
-                    placeholder="Ej. Martín Gómez"
-                    required
-                  />
-                </div>
-                {hasPermission("customers.view_sensitive") && <div>
-                  <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>DNI</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={newCustomerDni}
-                    onChange={(e) => setNewCustomerDni(e.target.value)}
-                    placeholder="Ej. 38123456"
-                  />
-                </div>}
-                <div>
-                  <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Teléfono / WhatsApp</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={newCustomerPhone}
-                    onChange={(e) => setNewCustomerPhone(e.target.value)}
-                    placeholder="Ej. 11 4444-5555"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Device & Identifiers */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-            <div>
-              <label style={{ fontSize: "12px", fontWeight: 600 }}>Tipo de Equipo</label>
-              <select
-                className="form-input"
-                value={deviceType}
-                onChange={(e) => setDeviceType(e.target.value)}
-              >
-                <option value="Smartphone">Smartphone</option>
-                <option value="Notebook">Notebook</option>
-                <option value="Tablet">Tablet</option>
-                <option value="Consola">Consola</option>
-                <option value="PC">PC Armado</option>
-                <option value="Otro">Otro Dispositivo</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: "12px", fontWeight: 600 }}>Marca</label>
-              <select
-                className="form-input"
-                value={deviceBrand}
-                onChange={(e) => setDeviceBrand(e.target.value)}
-              >
-                <option value="Apple">Apple</option>
-                <option value="Samsung">Samsung</option>
-                <option value="Xiaomi">Xiaomi</option>
-                <option value="Motorola">Motorola</option>
-                <option value="Lenovo">Lenovo</option>
-                <option value="ASUS">ASUS</option>
-                <option value="HP">HP</option>
-                <option value="Dell">Dell</option>
-                <option value="Otra">Otra</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: "12px", fontWeight: 600 }}>Modelo Exacto *</label>
-              <input
-                type="text"
-                className="form-input"
-                value={deviceModel}
-                onChange={(e) => setDeviceModel(e.target.value)}
-                placeholder="Ej. iPhone 13 Pro 128GB"
-                required
-              />
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-                <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Número de Serie (opcional si ingresás IMEI)</label>
-              <input
-                type="text"
-                className="form-input"
-                value={deviceSerial}
-                onChange={(e) => setDeviceSerial(e.target.value)}
-                placeholder="Ej. F2LXXXXX"
-              />
-            </div>
-            <div>
-                <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>IMEI (opcional si ingresás serie)</label>
-              <input
-                type="text"
-                className="form-input"
-                value={deviceImei}
-                onChange={(e) => setDeviceImei(e.target.value)}
-                placeholder="15 dígitos numéricos"
-              />
-            </div>
-          </div>
-
-          {/* Fault & Condition */}
-          <div>
-            <label style={{ fontSize: "12px", fontWeight: 600 }}>Falla Declarada por el Cliente *</label>
-            <textarea
-              className="form-input"
-              rows={2}
-              value={reportedFault}
-              onChange={(e) => setReportedFault(e.target.value)}
-              placeholder="Ej. No enciende tras caída. Pantalla con líneas verticales."
-              required
-            />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-            <div>
-              <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Estado Estético de Ingreso</label>
-              <input
-                type="text"
-                className="form-input"
-                value={intakeCondition}
-                onChange={(e) => setIntakeCondition(e.target.value)}
-                placeholder="Ej. Rayones en tapa trasera"
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Accesorios Dejados</label>
-              <input
-                type="text"
-                className="form-input"
-                value={intakeAccessories}
-                onChange={(e) => setIntakeAccessories(e.target.value)}
-                placeholder="Ej. funda, cargador original (separados por coma)"
-              />
-            </div>
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => setIsNewModalOpen(false)}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={submittingIntake}
-            >
-              {submittingIntake ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
-              Ingresar al Taller
-            </button>
-          </div>
-        </form>
-      </Modal>
+        onCreated={(orderCode) => {
+          setFeedback({ type: "success", message: `Orden ${orderCode} ingresada.` });
+          void fetchRepairsData();
+        }}
+        branches={branches.filter((branch) => branchIds.includes(branch.id))}
+        organizationId={organizationId}
+        hasPermission={hasPermission}
+      />
 
       {/* MODAL: QC TEST RUN */}
       {isQcModalOpen && activeTemplate && qcTargetTicket && (
         <Modal
           isOpen={isQcModalOpen}
-          onClose={() => setIsQcModalOpen(false)}
+          onClose={() => { if (!submittingQc) { setQcError(null); setIsQcModalOpen(false); } }}
           title={`Control de calidad: ${qcTargetTicket.order_code}`}
           maxWidth="580px"
         >
-          <form onSubmit={handleQcSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <form onSubmit={handleQcSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={{ fontSize: "13px", color: "var(--text-muted)", padding: "8px 12px", background: "rgba(255,255,255,0.02)", borderRadius: "6px" }}>
               Equipo: <strong>{qcTargetTicket.brand_snapshot} {qcTargetTicket.model_snapshot}</strong> | Plantilla: <strong>{activeTemplate.template_name}</strong>
             </div>
@@ -2059,11 +1485,14 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               />
             </div>
 
+            <FormError message={qcError} />
+
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
               <button
                 type="button"
                 className="btn-ghost"
-                onClick={() => setIsQcModalOpen(false)}
+                onClick={() => { if (!submittingQc) { setQcError(null); setIsQcModalOpen(false); } }}
+                disabled={submittingQc}
               >
                 Cancelar
               </button>
@@ -2082,226 +1511,77 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
         </Modal>
       )}
 
-      {/* MODAL: CONSUME REPLACEMENT PART */}
-      {isPartModalOpen && selectedTicket && (
+      <RepairPartModal
+        isOpen={canConsumePart && isPartModalOpen && !selectedTicket?.delivery_id}
+        order={selectedTicket ?? undefined}
+        locations={locations.filter((location) => location.branch_id === selectedTicket?.branch_id)}
+        onClose={() => setIsPartModalOpen(false)}
+        onConsumed={() => { if (selectedTicket) void handlePartConsumed(selectedTicket); }}
+      />
+
+      <RepairDeliveryModal
+        isOpen={isDeliveryModalOpen}
+        order={selectedTicket ?? undefined}
+        onClose={() => setIsDeliveryModalOpen(false)}
+        onDelivered={(recipientName, warrantyDays) => { void handleDelivered(recipientName, warrantyDays); }}
+      />
+
+      <RepairWarrantyClaimModal
+        isOpen={isClaimModalOpen}
+        warranties={warranties}
+        onClose={() => setIsClaimModalOpen(false)}
+        onCreated={(claimId) => {
+          setFeedback({ type: "success", message: `Reclamo de garantía registrado con ID: ${claimId}` });
+          void loadWarrantiesSection();
+        }}
+      />
+
+      {pendingTransition && selectedTicket && (
         <Modal
-          isOpen={isPartModalOpen}
-          onClose={() => setIsPartModalOpen(false)}
-          title={`Consumir Repuesto: ${selectedTicket.order_code}`}
-          maxWidth="520px"
+          isOpen={Boolean(pendingTransition)}
+          onClose={() => { if (!submittingTransition) { setTransitionError(null); setPendingTransition(null); } }}
+          title={`Pasar a ${formatRepairStatus(pendingTransition.to_status_name, pendingTransition.to_status_code)}`}
+          maxWidth="440px"
         >
-          <form onSubmit={handleConsumePartSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <label className="erp-form-group">Ubicación de stock<select className="erp-form-input" required value={partLocationId} onChange={(event) => setPartLocationId(event.target.value)}><option value="">Seleccionar</option>{locations.filter((location) => location.branch_id === selectedTicket.branch_id).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
-            <div>
-              <label style={{ fontSize: "12px", fontWeight: 600 }}>Seleccionar Repuesto del Catálogo *</label>
-              <select
-                className="form-input"
-                value={selectedProductId}
-                onChange={(e) => setSelectedProductId(e.target.value)}
-                required
-              >
-                {availableProducts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.internal_name} ({p.internal_code})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 600 }}>Cantidad</label>
-                <input
-                  type="number"
-                  min="1"
-                  className="form-input"
-                  value={partQuantity}
-                  onChange={(e) => setPartQuantity(parseInt(e.target.value, 10) || 1)}
-                  required
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <p style={{ margin: 0, fontSize: "14px", color: "var(--text-muted)", lineHeight: 1.5 }}>
+              Confirmá el cambio de estado de la orden <strong>{selectedTicket.order_code}</strong> a{" "}
+              <strong>{formatRepairStatus(pendingTransition.to_status_name, pendingTransition.to_status_code)}</strong>.
+            </p>
+            <Field label="Nota (opcional)">
+              {(a11y) => (
+                <textarea
+                  {...a11y}
+                  className="erp-form-input"
+                  rows={2}
+                  value={transitionNote}
+                  onChange={(e) => setTransitionNote(e.target.value)}
+                  placeholder="Motivo o aclaración sobre el cambio de estado…"
+                  disabled={submittingTransition}
                 />
-              </div>
-              <div>
-                <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Motivo Técnico</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={partReason}
-                  onChange={(e) => setPartReason(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div style={{ padding: "10px 12px", background: "rgba(245, 158, 11, 0.1)", borderRadius: "6px", fontSize: "12px", color: "#f59e0b" }}>
-              <AlertCircle size={14} style={{ display: "inline", marginRight: "6px" }} />
-              El stock se descontará del almacén del taller. Si se agregan repuestos después del control final, habrá que volver a inspeccionar el equipo antes de entregarlo.
-            </div>
-
+              )}
+            </Field>
+            <FormError message={transitionError} />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
               <button
                 type="button"
-                className="btn-ghost"
-                onClick={() => setIsPartModalOpen(false)}
+                className="pag-btn"
+                data-autofocus
+                onClick={() => { setTransitionError(null); setPendingTransition(null); }}
+                disabled={submittingTransition}
               >
                 Cancelar
               </button>
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={submittingPart}
-              >
-                {submittingPart ? <Loader2 className="animate-spin" size={16} /> : <Package size={16} />}
-                Descontar Repuesto
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* MODAL: FORMAL DELIVERY */}
-      {isDeliveryModalOpen && selectedTicket && (
-        <Modal
-          isOpen={isDeliveryModalOpen}
-          onClose={() => setIsDeliveryModalOpen(false)}
-          title={`Entrega Formal de Equipo: ${selectedTicket.order_code}`}
-          maxWidth="560px"
-        >
-          <form onSubmit={handleDeliverySubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div style={{ padding: "12px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "8px", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
-              <div style={{ fontWeight: 600, color: "#10b981", fontSize: "13px" }}>Acreditación de Retiro</div>
-              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
-                Dispositivo: <strong>{selectedTicket.brand_snapshot} {selectedTicket.model_snapshot}</strong> con control de calidad aprobado.
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px" }}>
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 600 }}>Nombre del Receptor *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={deliveryRecipientName}
-                  onChange={(e) => setDeliveryRecipientName(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 600 }}>Terminación DNI *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  maxLength={8}
-                  value={deliveryDocumentSuffix}
-                  onChange={(e) => setDeliveryDocumentSuffix(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: 600 }}>Días de Garantía</label>
-                <select
-                  className="form-input"
-                  value={deliveryWarrantyDays}
-                  onChange={(e) => setDeliveryWarrantyDays(parseInt(e.target.value, 10) || 90)}
-                >
-                  <option value={30}>30 días</option>
-                  <option value={60}>60 días</option>
-                  <option value={90}>90 días (Estándar)</option>
-                  <option value={180}>180 días (Semestral)</option>
-                  <option value={365}>365 días (Anual)</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: "12px", color: "var(--text-muted)" }}>Términos de la Póliza</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={deliveryWarrantyTerms}
-                  onChange={(e) => setDeliveryWarrantyTerms(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
               <button
                 type="button"
-                className="btn-ghost"
-                onClick={() => setIsDeliveryModalOpen(false)}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
                 className="btn-primary"
-                style={{ background: "#10b981", borderColor: "#10b981" }}
-                disabled={submittingDelivery}
+                onClick={() => void confirmTransition()}
+                disabled={submittingTransition}
               >
-                {submittingDelivery ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle size={16} />}
-                Confirmar Entrega y Póliza
+                {submittingTransition ? "Actualizando…" : "Confirmar"}
               </button>
             </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* MODAL: OPEN RMA CLAIM */}
-      {isClaimModalOpen && (
-        <Modal
-          isOpen={isClaimModalOpen}
-          onClose={() => setIsClaimModalOpen(false)}
-          title="Apertura de reclamo de garantía"
-          maxWidth="560px"
-        >
-          <form onSubmit={handleOpenClaimSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div>
-              <label style={{ fontSize: "12px", fontWeight: 600 }}>Seleccionar Póliza Activa *</label>
-              <select
-                className="form-input"
-                value={selectedWarrantyId}
-                onChange={(e) => setSelectedWarrantyId(e.target.value)}
-                required
-              >
-                {warranties
-                  .filter((w) => w.is_active)
-                  .map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.order_code} — {w.customer_name} ({w.equipment_model}) | Hasta {formatDate(w.ends_at)}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={{ fontSize: "12px", fontWeight: 600 }}>Defecto o Falla Reportada por el Cliente *</label>
-              <textarea
-                className="form-input"
-                rows={3}
-                value={claimIssue}
-                onChange={(e) => setClaimIssue(e.target.value)}
-                placeholder="Describa el motivo del reingreso por garantía..."
-                required
-              />
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => setIsClaimModalOpen(false)}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={submittingClaim}
-              >
-                {submittingClaim ? <Loader2 className="animate-spin" size={16} /> : <ShieldAlert size={16} />}
-                Registrar reclamo
-              </button>
-            </div>
-          </form>
+          </div>
         </Modal>
       )}
     </div>

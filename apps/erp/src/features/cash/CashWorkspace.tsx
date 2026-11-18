@@ -3,9 +3,6 @@ import {
   Wallet,
   Clock,
   Plus,
-  DollarSign,
-  TrendingUp,
-  AlertCircle,
   CheckCircle2,
   AlertTriangle,
   History,
@@ -17,16 +14,25 @@ import {
   RotateCcw,
 } from "lucide-react";
 import {
+  ConfirmDialog,
   StatePanel,
   WorkspaceHeader,
   Modal,
   FeedbackAlert,
-  KpiCard,
 } from "../../components/erp/WorkspaceUi";
-import { formatCurrency, formatDateTime, generateIdempotencyKey } from "../../lib/formatters";
+import { Field, FormError } from "../../components/erp/FormFeedback";
+import { toUserMessage } from "../../lib/errors";
+import { formatCurrency, formatDateTime, formatPosCurrency, generateIdempotencyKey } from "../../lib/formatters";
+import { CASH_MOVEMENT_KIND_LABELS, labelOf } from "../../lib/labels";
 import { supabase } from "../../lib/supabase";
 import { useErpAuth } from "../../auth/ErpAuthContext";
-import { manualCashMovementSchema, reverseManualCashMovementSchema } from "./schemas";
+import {
+  cashCloseReasonSchema,
+  cashCountSchema,
+  manualCashMovementSchema,
+  openCashSchema,
+  reverseManualCashMovementSchema,
+} from "./schemas";
 import { postManualCashMovement, reverseManualCashMovement } from "./api";
 
 export interface CashMovementItem {
@@ -57,7 +63,6 @@ export interface CashSessionItem {
   registerName: string;
   branchId: string;
   initialAmountArs: number;
-  currentAmountArs: number;
   expectedAmountArs: number;
   openedAt: string;
   status: "open" | "closed";
@@ -104,11 +109,14 @@ interface RawCashSessionRow {
 }
 
 export const CashWorkspace: React.FC = () => {
-  const { hasPermission } = useErpAuth();
+  const { session: authSession, hasPermission } = useErpAuth();
+  const user = authSession?.user;
+  const fullName: unknown = user?.user_metadata.full_name;
+  const cashier = (typeof fullName === "string" ? fullName.trim() : "") || user?.email || "Sin nombre registrado";
   const [sessions, setSessions] = useState<CashSessionItem[]>([]);
   const [registers, setRegisters] = useState<CashRegister[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Active tab: "active" | "history"
@@ -117,16 +125,17 @@ export const CashWorkspace: React.FC = () => {
   // Modal: Open Session
   const [isOpenModalOpen, setIsOpenModalOpen] = useState(false);
   const [selectedRegisterId, setSelectedRegisterId] = useState("");
-  const [cashier, setCashier] = useState("Operador NicTech");
-  const [initialAmount, setInitialAmount] = useState("0");
-  const [notes, setNotes] = useState("Apertura de turno");
+  const [initialAmount, setInitialAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [openError, setOpenError] = useState<string | null>(null);
   const [submittingOpen, setSubmittingOpen] = useState(false);
 
-  // Modal: Close / Arqueo Session (Finding 16)
-  const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [sessionToClose, setSessionToClose] = useState<CashSessionItem | null>(null);
-  const [countedAmountInput, setCountedAmountInput] = useState<string>("");
-  const [closeReasonInput, setCloseReasonInput] = useState<string>("Arqueo y cierre de turno");
+  const [countedAmountInput, setCountedAmountInput] = useState("");
+  const [closeReview, setCloseReview] = useState<{ counted: number; difference: number; operationKey: string } | null>(null);
+  const [closeReasonInput, setCloseReasonInput] = useState("");
+  const [reasonToConfirm, setReasonToConfirm] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
   const [submittingClose, setSubmittingClose] = useState(false);
 
   // Modal: Movements Ledger Detail
@@ -138,17 +147,19 @@ export const CashWorkspace: React.FC = () => {
   const [manualMovementCurrency, setManualMovementCurrency] = useState("ARS");
   const [manualMovementAmount, setManualMovementAmount] = useState("");
   const [manualMovementReason, setManualMovementReason] = useState("");
+  const [movementError, setMovementError] = useState<string | null>(null);
   const [submittingMovement, setSubmittingMovement] = useState(false);
 
   // Modal: append-only reversal of a manual movement
   const [movementToReverse, setMovementToReverse] = useState<CashMovementItem | null>(null);
   const [reversalReason, setReversalReason] = useState("");
+  const [reversalError, setReversalError] = useState<string | null>(null);
   const [submittingReversal, setSubmittingReversal] = useState(false);
 
   const fetchRegistersAndSessions = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
+      setLoadError(null);
 
       // 1. Fetch cash registers
       const { data: regData, error: regErr } = await supabase
@@ -158,9 +169,7 @@ export const CashWorkspace: React.FC = () => {
       if (regErr) throw regErr;
       const regs = (regData || []) as CashRegister[];
       setRegisters(regs);
-      if (regs.length > 0 && !selectedRegisterId) {
-        setSelectedRegisterId(regs[0].id);
-      }
+      setSelectedRegisterId((current) => regs.some((register) => register.id === current) ? current : regs[0]?.id ?? "");
 
       // 2. Fetch sessions with opening counts, movements, and closures
       const { data: sessData, error: sessErr } = await supabase
@@ -204,7 +213,6 @@ export const CashWorkspace: React.FC = () => {
         }
 
         const isClosed = Boolean(closureRaw);
-        const currentAmt = isClosed && closureItem ? closureItem.countedAmount : expectedAmt;
 
         const reversedMovementIds = new Set(
           allMovements.map((movement) => movement.reversal_of_movement_id).filter(Boolean),
@@ -228,7 +236,6 @@ export const CashWorkspace: React.FC = () => {
           registerName: regMap.get(s.cash_register_id) || "Caja Mostrador",
           branchId: s.branch_id,
           initialAmountArs: initialAmt,
-          currentAmountArs: currentAmt,
           expectedAmountArs: expectedAmt,
           openedAt: formatDateTime(s.opened_at),
           status: isClosed ? "closed" : "open",
@@ -241,12 +248,12 @@ export const CashWorkspace: React.FC = () => {
 
       setSessions(mapped);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error al consultar sesiones de caja");
+      setLoadError(toUserMessage(err, "No se pudieron cargar los turnos de caja. Reintentá."));
       setSessions([]);
     } finally {
       setLoading(false);
     }
-  }, [selectedRegisterId]);
+  }, []);
 
   useEffect(() => {
     fetchRegistersAndSessions();
@@ -255,46 +262,59 @@ export const CashWorkspace: React.FC = () => {
   const openSessions = useMemo(() => sessions.filter((s) => s.status === "open"), [sessions]);
   const closedSessions = useMemo(() => sessions.filter((s) => s.status === "closed"), [sessions]);
 
-  const totalCashInOpenDrawers = useMemo(
-    () => openSessions.reduce((acc, s) => acc + s.currentAmountArs, 0),
-    [openSessions],
-  );
-  const totalInitialFunds = useMemo(
-    () => openSessions.reduce((acc, s) => acc + s.initialAmountArs, 0),
-    [openSessions],
-  );
+  const openOpeningModal = () => {
+    setInitialAmount("");
+    setNotes("");
+    setOpenError(null);
+    setIsOpenModalOpen(true);
+  };
+
+  const dismissOpeningModal = () => {
+    if (!submittingOpen) setIsOpenModalOpen(false);
+  };
 
   const handleOpenSession = async (e: React.FormEvent) => {
     e.preventDefault();
-    const regId = selectedRegisterId || registers[0]?.id;
-    if (!regId) {
-      setError("No se encontró una caja registradora activa en la base de datos.");
+    if (submittingOpen) return;
+    if (!user) {
+      setOpenError("Volvé a iniciar sesión antes de abrir un turno.");
+      return;
+    }
+    if (!selectedRegisterId) {
+      setOpenError("No hay una caja disponible para abrir el turno.");
+      return;
+    }
+    const parsed = openCashSchema.safeParse({
+      cashRegisterId: selectedRegisterId,
+      operationKey: generateIdempotencyKey("open-cash"),
+      reason: notes.trim() || "Apertura de turno",
+      currency: "ARS",
+      amount: initialAmount,
+    });
+    if (!parsed.success) {
+      setOpenError(toUserMessage(parsed.error.issues[0], "Revisá los datos de apertura del turno."));
       return;
     }
 
     try {
       setSubmittingOpen(true);
-      setError(null);
-      const initAmt = parseFloat(initialAmount) || 0;
-      const opKey = `open-cash-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-      const reason = notes.trim() || `Apertura por ${cashier.trim()}`;
+      setOpenError(null);
+      const { cashRegisterId, operationKey, reason, currency, amount } = parsed.data;
 
       const { error: rpcErr } = await supabase.rpc("open_cash_session", {
-        target_cash_register_id: regId,
-        operation_key: opKey,
+        target_cash_register_id: cashRegisterId,
+        operation_key: operationKey,
         operation_reason: reason,
-        opening_counts: [{ currency_code: "ARS", amount: initAmt }],
+        opening_counts: [{ currency_code: currency, amount }],
       });
 
       if (rpcErr) throw rpcErr;
 
-      setFeedback("¡Sesión de caja abierta exitosamente en la base de datos central!");
+      setFeedback("Turno de caja abierto.");
       setIsOpenModalOpen(false);
-      setInitialAmount("0");
-      setNotes("Apertura de turno");
       await fetchRegistersAndSessions();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error al abrir sesión de caja");
+      setOpenError(toUserMessage(err, "No se pudo abrir el turno de caja. Reintentá."));
     } finally {
       setSubmittingOpen(false);
     }
@@ -302,53 +322,67 @@ export const CashWorkspace: React.FC = () => {
 
   const openArqueoModal = (session: CashSessionItem) => {
     setSessionToClose(session);
-    setCountedAmountInput(session.expectedAmountArs.toString());
-    setCloseReasonInput("Arqueo y cierre de turno");
-    setIsCloseModalOpen(true);
+    setCountedAmountInput("");
+    setCloseReview(null);
+    setCloseReasonInput("");
+    setReasonToConfirm(null);
+    setCloseError(null);
   };
 
-  const calculatedDifference = useMemo(() => {
-    if (!sessionToClose) return 0;
-    const counted = parseFloat(countedAmountInput) || 0;
-    return counted - sessionToClose.expectedAmountArs;
-  }, [sessionToClose, countedAmountInput]);
+  const dismissArqueoModal = () => {
+    if (submittingClose) return;
+    setReasonToConfirm(null);
+    setSessionToClose(null);
+  };
 
-  const handleConfirmClose = async (e: React.FormEvent) => {
+  const handleReviewCount = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sessionToClose) return;
+    if (!sessionToClose || closeReview) return;
+    const parsed = cashCountSchema.safeParse({ amount: countedAmountInput });
+    if (!parsed.success) {
+      setCloseError(toUserMessage(parsed.error.issues[0], "Revisá el efectivo contado."));
+      return;
+    }
+    // Compare at the same four-decimal precision as the closing RPC.
+    const counted = parsed.data.amount;
+    const difference = (Math.round(counted * 10_000) - Math.round(sessionToClose.expectedAmountArs * 10_000)) / 10_000;
+    setCloseError(null);
+    setCloseReview({ counted, difference, operationKey: generateIdempotencyKey("close-cash") });
+  };
 
+  const requestCloseConfirmation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!closeReview || submittingClose) return;
+    const parsed = cashCloseReasonSchema(closeReview.difference).safeParse({ reason: closeReasonInput });
+    if (!parsed.success) {
+      setCloseError(toUserMessage(parsed.error.issues[0], "Revisá el motivo del cierre."));
+      return;
+    }
+    setCloseError(null);
+    setReasonToConfirm(parsed.data.reason);
+  };
+
+  const handleConfirmClose = async () => {
+    if (!sessionToClose || !closeReview || reasonToConfirm === null || submittingClose) return;
     try {
       setSubmittingClose(true);
-      setError(null);
-      const counted = parseFloat(countedAmountInput);
-      if (isNaN(counted) || counted < 0) {
-        throw new Error("Debe ingresar un monto válido no negativo.");
-      }
-
-      const opKey = `close-cash-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-      const reason = closeReasonInput.trim() || "Arqueo y cierre de turno";
-
       const { error: rpcErr } = await supabase.rpc("close_cash_session", {
         target_cash_session_id: sessionToClose.fullId,
-        operation_key: opKey,
-        operation_reason: reason,
-        counted_amounts: [{ currency_code: "ARS", amount: counted }],
+        operation_key: closeReview.operationKey,
+        // Even a balanced close needs a non-empty audit reason on the server.
+        operation_reason: reasonToConfirm || "Cierre sin diferencias",
+        counted_amounts: [{ currency_code: "ARS", amount: closeReview.counted }],
       });
 
       if (rpcErr) throw rpcErr;
 
-      setFeedback(
-        `¡Arqueo y cierre completado! Sesión #${sessionToClose.id} cerrada. Diferencia conciliada: ${formatCurrency(
-          calculatedDifference,
-          "ARS",
-        )}.`,
-      );
-      setIsCloseModalOpen(false);
+      setFeedback(`Turno #${sessionToClose.id} cerrado.`);
       setSessionToClose(null);
       await fetchRegistersAndSessions();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error al realizar el arqueo y cierre");
+      setCloseError(toUserMessage(err, "No se pudo cerrar el turno. Reintentá."));
     } finally {
+      setReasonToConfirm(null);
       setSubmittingClose(false);
     }
   };
@@ -359,11 +393,12 @@ export const CashWorkspace: React.FC = () => {
     setManualMovementCurrency(session.currencies[0] ?? "ARS");
     setManualMovementAmount("");
     setManualMovementReason("");
+    setMovementError(null);
   };
 
   const handleManualMovement = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!manualMovementSession) return;
+    if (!manualMovementSession || submittingMovement) return;
     const parsed = manualCashMovementSchema.safeParse({
       cashSessionId: manualMovementSession.fullId,
       kind: manualMovementKind,
@@ -373,70 +408,79 @@ export const CashWorkspace: React.FC = () => {
       reason: manualMovementReason,
     });
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Revisá los datos del movimiento de caja.");
+      setMovementError(toUserMessage(parsed.error.issues[0], "Revisá los datos del movimiento de caja."));
       return;
     }
 
     try {
       setSubmittingMovement(true);
-      setError(null);
+      setMovementError(null);
       await postManualCashMovement(parsed.data);
       setFeedback("Movimiento manual registrado en el libro de caja.");
       setManualMovementSession(null);
       await fetchRegistersAndSessions();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "No se pudo registrar el movimiento de caja.");
+      setMovementError(toUserMessage(err, "No se pudo registrar el movimiento de caja. Reintentá."));
     } finally {
       setSubmittingMovement(false);
     }
+  };
+
+  const dismissMovementModal = () => {
+    if (!submittingMovement) setManualMovementSession(null);
   };
 
   const openReversalModal = (movement: CashMovementItem) => {
     setMovementModalSession(null);
     setMovementToReverse(movement);
     setReversalReason("");
+    setReversalError(null);
   };
 
   const handleReverseMovement = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!movementToReverse) return;
+    if (!movementToReverse || submittingReversal) return;
     const parsed = reverseManualCashMovementSchema.safeParse({
       cashMovementId: movementToReverse.fullId,
       operationKey: generateIdempotencyKey("cash-reversal"),
       reason: reversalReason,
     });
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Indicá el motivo de la reversa.");
+      setReversalError(toUserMessage(parsed.error.issues[0], "Indicá el motivo de la reversa."));
       return;
     }
 
     try {
       setSubmittingReversal(true);
-      setError(null);
+      setReversalError(null);
       await reverseManualCashMovement(parsed.data);
       setFeedback("Movimiento revertido mediante un asiento compensatorio de caja.");
       setMovementToReverse(null);
       await fetchRegistersAndSessions();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "No se pudo revertir el movimiento de caja.");
+      setReversalError(toUserMessage(err, "No se pudo revertir el movimiento de caja. Reintentá."));
     } finally {
       setSubmittingReversal(false);
     }
   };
 
+  const dismissReversalModal = () => {
+    if (!submittingReversal) setMovementToReverse(null);
+  };
+
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
-        title="Gestión de Caja & Arqueos de Turno"
-        description="Apertura, arqueos con conciliación física de diferencias, registro de ventas en efectivo y trazabilidad central en erp.cash_sessions."
-        badge={`${openSessions.length} Cajas Abiertas`}
+        title="Caja y arqueos de turno"
+        description="Abrí turnos, registrá ingresos o retiros y revisá el historial de cierres."
+        badge={openSessions.length === 1 ? "1 caja abierta" : `${openSessions.length} cajas abiertas`}
       />
 
-      {error && (
+      {loadError && (
         <FeedbackAlert
           type="error"
-          message={error}
-          onClose={() => setError(null)}
+          message={loadError}
+          onClose={() => setLoadError(null)}
         />
       )}
 
@@ -448,55 +492,7 @@ export const CashWorkspace: React.FC = () => {
         />
       )}
 
-      {/* KPI Cards Row */}
-      <div className="kpi-grid">
-        <KpiCard
-          icon={DollarSign}
-          iconVariant="green"
-          label="Total Efectivo en Cajas"
-          value={formatCurrency(totalCashInOpenDrawers, "ARS")}
-          trend={{ text: "En Mano", positive: true }}
-          sublabel="Saldo real disponible en sucursal"
-        />
 
-        <KpiCard
-          icon={Wallet}
-          iconVariant="navy"
-          label="Fondo Inicial Consolidado"
-          value={formatCurrency(totalInitialFunds, "ARS")}
-          trend={{ text: "Apertura", positive: true }}
-          sublabel="Apertura de turnos activos"
-        />
-
-        <KpiCard
-          icon={TrendingUp}
-          iconVariant="steel"
-          label="Cajas Activas"
-          value={`${openSessions.length} de ${registers.length}`}
-          trend={{ text: "Operativas", positive: true }}
-          sublabel="Mostrador y cobro omnicanal"
-        />
-      </div>
-
-      <div
-        style={{
-          padding: "12px 16px",
-          background: "var(--bg-app)",
-          border: "1px solid var(--border-line)",
-          borderRadius: "8px",
-          marginBottom: "16px",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          fontSize: "12px",
-          color: "var(--text-muted)",
-        }}
-      >
-        <AlertCircle size={15} style={{ color: "var(--brand-primary)", flexShrink: 0 }} />
-        <span>
-          Persistencia transaccional de caja central vinculada a erp.cash_sessions y erp.cash_movements. Sin fondos ficticios ni simulación local.
-        </span>
-      </div>
 
       {/* View Tabs: Open Sessions vs Closure History */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
@@ -506,14 +502,14 @@ export const CashWorkspace: React.FC = () => {
             className={`flow-select-pill ${viewTab === "active" ? "active" : ""}`}
             onClick={() => setViewTab("active")}
           >
-            Turnos Activos ({openSessions.length})
+            Turnos activos ({openSessions.length})
           </button>
           <button
             type="button"
             className={`flow-select-pill ${viewTab === "history" ? "active" : ""}`}
             onClick={() => setViewTab("history")}
           >
-            Historial de Arqueos ({closedSessions.length})
+            Historial de arqueos ({closedSessions.length})
           </button>
         </div>
 
@@ -521,137 +517,65 @@ export const CashWorkspace: React.FC = () => {
           <button
             type="button"
             className="btn-primary"
-            onClick={() => setIsOpenModalOpen(true)}
+            onClick={openOpeningModal}
           >
-            <Plus size={16} /> Abrir Nueva Caja
+            <Plus size={16} /> Abrir nueva caja
           </button>
         )}
       </div>
 
       {loading ? (
         <div style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
-          Cargando estado de cajas desde la base de datos central...
+          Cargando turnos de caja…
         </div>
       ) : viewTab === "active" ? (
         openSessions.length === 0 ? (
           <StatePanel
             type="empty"
-            title="No hay sesiones de caja abiertas actualmente"
-            message="Hacé click en 'Abrir Nueva Caja' para iniciar un turno de caja registrando el fondo inicial físico."
+            title="No hay turnos abiertos"
+            message="Para empezar un turno, abrí una caja y registrá el fondo inicial."
           />
         ) : (
-          <div
-            className="records-grid"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
-              gap: "16px",
-            }}
-          >
-            {openSessions.map((session) => (
-              <article key={session.fullId} className="flow-card" style={{ margin: 0, padding: "18px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div className="flow-kpi-card__icon-box amber" style={{ width: "36px", height: "36px" }}>
-                      <Wallet size={18} />
-                    </div>
-                    <div>
-                      <strong style={{ fontSize: "14px" }}>Sesión #{session.id}</strong>
-                      <span style={{ fontSize: "11px", color: "var(--text-muted)", display: "block" }}>
-                        {session.registerName}
-                      </span>
-                    </div>
-                  </div>
-
-                  <span className="flow-status-pill completed">Turno Abierto</span>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "10px",
-                    padding: "12px",
-                    background: "var(--canvas-bg)",
-                    borderRadius: "10px",
-                    marginBottom: "12px",
-                  }}
-                >
-                  <div>
-                    <span className="stat-label">Fondo Inicial</span>
-                    <strong style={{ fontSize: "14px", display: "block" }}>
-                      {formatCurrency(session.initialAmountArs, "ARS")}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="stat-label">Total en Caja</span>
-                    <strong
-                      style={{
-                        fontSize: "14px",
-                        display: "block",
-                        color: "var(--emerald-success)",
-                      }}
-                    >
-                      {formatCurrency(session.currentAmountArs, "ARS")}
-                    </strong>
-                  </div>
-                </div>
-
-                <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "12px" }}>
-                  <strong>Movimientos:</strong> {session.movements.length} transacciones registradas
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    borderTop: "1px solid var(--border-light)",
-                    paddingTop: "12px",
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="flow-link-btn"
-                    style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}
-                    onClick={() => setMovementModalSession(session)}
-                  >
-                    <Receipt size={13} /> Ver Movimientos ({session.movements.length})
-                  </button>
-
-                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    {hasPermission("cash.adjust") && (
-                      <button
-                        type="button"
-                        className="pag-btn"
-                        style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}
-                        onClick={() => openManualMovementModal(session)}
-                      >
-                        <ArrowLeftRight size={12} /> Ingreso / Egreso
-                      </button>
-                    )}
-                    {hasPermission("cash.close") && (
-                      <button
-                        type="button"
-                        className="pag-btn"
-                        style={{
-                          color: "var(--rose-accent)",
-                          borderColor: "var(--rose-border)",
-                          fontSize: "11px",
-                          fontWeight: 700,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "4px",
-                        }}
-                        onClick={() => openArqueoModal(session)}
-                      >
-                        <Lock size={12} /> Arqueo & Cierre
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </article>
-            ))}
+          <div className="flow-card" style={{ padding: 0, overflowX: "auto" }}>
+            <table className="flow-table">
+              <thead>
+                <tr>
+                  <th scope="col">Sesión / Caja</th>
+                  <th scope="col">Apertura</th>
+                  <th scope="col">Esperado</th>
+                  <th scope="col">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {openSessions.map((session) => (
+                  <tr key={session.fullId}>
+                    <td>
+                      <strong>#{session.id}</strong>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{session.registerName}</div>
+                    </td>
+                    <td>{session.openedAt}</td>
+                    <td>Se revela al cerrar</td>
+                    <td>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        <button type="button" className="pag-btn" onClick={() => setMovementModalSession(session)}>
+                          <Receipt size={14} /> Ver movimientos ({session.movements.length})
+                        </button>
+                        {hasPermission("cash.adjust") && (
+                          <button type="button" className="pag-btn" onClick={() => openManualMovementModal(session)}>
+                            <ArrowLeftRight size={14} /> Ingreso o egreso
+                          </button>
+                        )}
+                        {hasPermission("cash.close") && (
+                          <button type="button" className="pag-btn" onClick={() => openArqueoModal(session)}>
+                            <Lock size={14} /> Arqueo y cierre
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )
       ) : (
@@ -680,8 +604,6 @@ export const CashWorkspace: React.FC = () => {
               <tbody>
                 {closedSessions.map((session) => {
                   const diff = session.closure?.differenceAmount ?? 0;
-                  const hasDiff = diff !== 0;
-
                   return (
                     <tr key={session.fullId}>
                       <td>
@@ -691,10 +613,10 @@ export const CashWorkspace: React.FC = () => {
                       <td style={{ fontSize: "12px" }}>{session.openedAt}</td>
                       <td style={{ fontSize: "12px" }}>{session.closure?.closedAt || "—"}</td>
                       <td style={{ fontWeight: 600 }}>
-                        {formatCurrency(session.closure?.expectedAmount ?? session.expectedAmountArs, "ARS")}
+                        {formatPosCurrency(session.closure?.expectedAmount)}
                       </td>
                       <td style={{ fontWeight: 700, color: "var(--brand-primary)" }}>
-                        {formatCurrency(session.closure?.countedAmount ?? session.currentAmountArs, "ARS")}
+                        {formatPosCurrency(session.closure?.countedAmount)}
                       </td>
                       <td>
                         <span
@@ -706,8 +628,8 @@ export const CashWorkspace: React.FC = () => {
                           {diff === 0
                             ? "Cuadrada ($0)"
                             : diff > 0
-                            ? `+${formatCurrency(diff, "ARS")}`
-                            : formatCurrency(diff, "ARS")}
+                            ? `+${formatPosCurrency(diff)}`
+                            : formatPosCurrency(diff)}
                         </span>
                       </td>
                       <td style={{ fontSize: "11px", color: "var(--text-muted)", maxWidth: "180px" }}>
@@ -732,310 +654,264 @@ export const CashWorkspace: React.FC = () => {
         )
       )}
 
-      {/* Modal: Open Session */}
       <Modal
         isOpen={isOpenModalOpen}
-        onClose={() => setIsOpenModalOpen(false)}
-        title="Apertura de Turno de Caja"
-        subtitle="Registra el fondo inicial para iniciar operaciones en punto de venta"
+        onClose={dismissOpeningModal}
+        title="Abrir turno de caja"
+        subtitle="Registrá el fondo inicial para empezar el turno."
         icon={Wallet}
         maxWidth="480px"
       >
-        <form onSubmit={handleOpenSession} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <form noValidate onSubmit={handleOpenSession} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <FormError message={openError} onDismiss={() => setOpenError(null)} />
           {registers.length > 1 && (
-            <div className="erp-form-group">
-              <label className="erp-form-label">Caja Registradora *</label>
-              <select
-                value={selectedRegisterId}
-                onChange={(e) => setSelectedRegisterId(e.target.value)}
-                className="erp-form-input"
-              >
-                {registers.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} ({r.code})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Field label="Caja registradora" required>
+              {(field) => (
+                <select
+                  {...field}
+                  required
+                  className="erp-form-select"
+                  value={selectedRegisterId}
+                  onChange={(e) => setSelectedRegisterId(e.target.value)}
+                >
+                  {registers.map((register) => (
+                    <option key={register.id} value={register.id}>{register.name} ({register.code})</option>
+                  ))}
+                </select>
+              )}
+            </Field>
           )}
 
-          <div className="erp-form-group">
-            <label className="erp-form-label">Responsable / Operador *</label>
-            <input
-              type="text"
-              required
-              value={cashier}
-              onChange={(e) => setCashier(e.target.value)}
-              className="erp-form-input"
-            />
-          </div>
+          <Field label="Operador">
+            {(field) => <input {...field} type="text" readOnly value={cashier} className="erp-form-input" />}
+          </Field>
 
-          <div className="erp-form-group">
-            <label className="erp-form-label">Fondo Inicial en Efectivo ($ ARS) *</label>
-            <input
-              type="number"
-              required
-              min="0"
-              step="any"
-              value={initialAmount}
-              onChange={(e) => setInitialAmount(e.target.value)}
-              className="erp-form-input"
-            />
-          </div>
+          <Field label="Fondo inicial en efectivo (ARS)" required hint="Si no hay fondo inicial, ingresá 0.">
+            {(field) => (
+              <input
+                {...field}
+                type="number"
+                required
+                min="0"
+                step="any"
+                data-autofocus
+                value={initialAmount}
+                onChange={(e) => setInitialAmount(e.target.value)}
+                className="erp-form-input"
+              />
+            )}
+          </Field>
 
-          <div className="erp-form-group">
-            <label className="erp-form-label">Notas de Turno / Observaciones</label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="erp-form-input"
-            />
-          </div>
+          <Field label="Observaciones del turno">
+            {(field) => (
+              <input
+                {...field}
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="erp-form-input"
+              />
+            )}
+          </Field>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "10px",
-              marginTop: "8px",
-              paddingTop: "12px",
-              borderTop: "1px solid var(--border-line)",
-            }}
-          >
-            <button
-              type="button"
-              className="pag-btn"
-              onClick={() => setIsOpenModalOpen(false)}
-              disabled={submittingOpen}
-            >
+          <div className="erp-modal-footer">
+            <button type="button" className="pag-btn" onClick={dismissOpeningModal} disabled={submittingOpen}>
               Cancelar
             </button>
             <button type="submit" className="btn-primary" disabled={submittingOpen}>
-              {submittingOpen ? "Abriendo..." : "Abrir Turno"}
+              {submittingOpen ? "Abriendo…" : "Abrir turno"}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* Modal: Arqueo y Cierre de Caja (Finding 16) */}
-      <Modal
-        isOpen={isCloseModalOpen}
-        onClose={() => {
-          setIsCloseModalOpen(false);
-          setSessionToClose(null);
-        }}
-        title="Arqueo y Cierre de Turno de Caja"
-        subtitle={`Conciliación física de efectivo para la Sesión #${sessionToClose?.id}`}
-        icon={Lock}
-        maxWidth="520px"
-      >
-        {sessionToClose && (
-          <form onSubmit={handleConfirmClose} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            {/* System Breakdown */}
-            <div
-              style={{
-                padding: "12px",
-                background: "var(--canvas-bg)",
-                borderRadius: "10px",
-                border: "1px solid var(--border-light)",
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "10px",
-              }}
-            >
-              <div>
-                <span className="stat-label">Fondo Inicial:</span>
-                <strong>{formatCurrency(sessionToClose.initialAmountArs, "ARS")}</strong>
-              </div>
-              <div>
-                <span className="stat-label">Movimientos netos de caja:</span>
-                <strong>
-                  {formatCurrency(sessionToClose.expectedAmountArs - sessionToClose.initialAmountArs, "ARS")}
-                </strong>
-              </div>
-              <div style={{ gridColumn: "1 / -1", borderTop: "1px solid var(--border-line)", paddingTop: "8px" }}>
-                <span className="stat-label">Total Teórico Esperado por Sistema:</span>
-                <strong style={{ fontSize: "16px", color: "var(--brand-primary)" }}>
-                  {formatCurrency(sessionToClose.expectedAmountArs, "ARS")}
-                </strong>
-              </div>
-            </div>
-
-            {/* Counted Physical Cash Input */}
-            <div className="erp-form-group">
-              <label className="erp-form-label">
-                Efectivo Físico Contado en Caja ($ ARS) *
-              </label>
-              <input
-                type="number"
-                required
-                min="0"
-                step="any"
-                value={countedAmountInput}
-                onChange={(e) => setCountedAmountInput(e.target.value)}
-                className="erp-form-input"
-                style={{ fontSize: "16px", fontWeight: 700 }}
-                placeholder="0"
-                autoFocus
-              />
-            </div>
-
-            {/* Live Difference Badge */}
-            <div
-              style={{
-                padding: "10px 14px",
-                borderRadius: "8px",
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                background:
-                  calculatedDifference === 0
-                    ? "var(--emerald-soft)"
-                    : calculatedDifference > 0
-                    ? "rgba(59, 130, 246, 0.1)"
-                    : "rgba(239, 68, 68, 0.1)",
-                border: `1px solid ${
-                  calculatedDifference === 0
-                    ? "var(--emerald-border)"
-                    : calculatedDifference > 0
-                    ? "rgba(59, 130, 246, 0.3)"
-                    : "rgba(239, 68, 68, 0.3)"
-                }`,
-              }}
-            >
-              {calculatedDifference === 0 ? (
-                <CheckCircle2 size={18} style={{ color: "var(--emerald-success)", flexShrink: 0 }} />
-              ) : (
-                <AlertTriangle
-                  size={18}
+      {sessionToClose && reasonToConfirm === null && (
+        <Modal
+          key={closeReview ? "review" : "count"}
+          isOpen
+          onClose={dismissArqueoModal}
+          title="Arqueo y cierre de caja"
+          subtitle={`Turno #${sessionToClose.id} · ${closeReview ? "2 de 2: revisá el resultado" : "1 de 2: contá el efectivo"}`}
+          icon={Lock}
+          maxWidth="520px"
+        >
+          <form noValidate onSubmit={closeReview ? requestCloseConfirmation : handleReviewCount} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <FormError message={closeError} onDismiss={() => setCloseError(null)} />
+            {closeReview ? (
+              <>
+                <dl
                   style={{
-                    color: calculatedDifference > 0 ? "#3b82f6" : "var(--rose-accent)",
-                    flexShrink: 0,
+                    margin: 0,
+                    padding: "12px",
+                    background: "var(--canvas-bg)",
+                    borderRadius: "10px",
+                    border: "1px solid var(--border-light)",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: "10px",
                   }}
-                />
-              )}
-              <div style={{ fontSize: "12px" }}>
-                {calculatedDifference === 0 ? (
-                  <strong style={{ color: "var(--emerald-success)" }}>
-                    Caja cuadrada. El efectivo contado coincide con el sistema.
-                  </strong>
-                ) : calculatedDifference > 0 ? (
-                  <span style={{ color: "#2563eb" }}>
-                    <strong>Sobrante de caja: +{formatCurrency(calculatedDifference, "ARS")}.</strong> El dinero en mano supera el registro teórico.
-                  </span>
-                ) : (
-                  <span style={{ color: "var(--rose-accent)" }}>
-                    <strong>Faltante de caja: {formatCurrency(calculatedDifference, "ARS")}.</strong> Hay menos dinero en mano que el registro teórico.
-                  </span>
+                >
+                  <div>
+                    <dt className="stat-label">Fondo inicial</dt>
+                    <dd style={{ margin: 0 }}>{formatPosCurrency(sessionToClose.initialAmountArs)}</dd>
+                  </div>
+                  <div>
+                    <dt className="stat-label">Movimientos netos</dt>
+                    <dd style={{ margin: 0 }}>{formatPosCurrency(sessionToClose.expectedAmountArs - sessionToClose.initialAmountArs)}</dd>
+                  </div>
+                  <div>
+                    <dt className="stat-label">Total teórico esperado</dt>
+                    <dd style={{ margin: 0 }}><strong>{formatPosCurrency(sessionToClose.expectedAmountArs)}</strong></dd>
+                  </div>
+                  <div>
+                    <dt className="stat-label">Efectivo contado</dt>
+                    <dd style={{ margin: 0 }}><strong>{formatPosCurrency(closeReview.counted)}</strong></dd>
+                  </div>
+                </dl>
+
+                <div
+                  data-autofocus
+                  tabIndex={-1}
+                  className={closeReview.difference === 0 ? "type-badge green" : "type-badge red"}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  {closeReview.difference === 0 ? (
+                    <><CheckCircle2 size={16} aria-hidden="true" /> Sin diferencia</>
+                  ) : (
+                    <><AlertTriangle size={16} aria-hidden="true" /> {`${closeReview.difference < 0 ? "Faltante" : "Sobrante"} de ${formatPosCurrency(Math.abs(closeReview.difference))}`}</>
+                  )}
+                </div>
+
+                <Field
+                  label="Motivo del cierre"
+                  required={closeReview.difference !== 0}
+                  hint={closeReview.difference !== 0 ? "Explicá la diferencia en al menos 5 caracteres." : "Podés agregar una observación."}
+                >
+                  {(field) => (
+                    <input
+                      {...field}
+                      type="text"
+                      required={closeReview.difference !== 0}
+                      value={closeReasonInput}
+                      onChange={(e) => setCloseReasonInput(e.target.value)}
+                      className="erp-form-input"
+                    />
+                  )}
+                </Field>
+              </>
+            ) : (
+              <Field label="Efectivo contado (ARS)" required hint="Ingresá lo que contaste en la caja. Si no hay efectivo, ingresá 0.">
+                {(field) => (
+                  <input
+                    {...field}
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    value={countedAmountInput}
+                    onChange={(e) => setCountedAmountInput(e.target.value)}
+                    className="erp-form-input"
+                  />
                 )}
-              </div>
-            </div>
+              </Field>
+            )}
 
-            <div className="erp-form-group">
-              <label className="erp-form-label">Motivo u Observaciones del Arqueo</label>
-              <input
-                type="text"
-                value={closeReasonInput}
-                onChange={(e) => setCloseReasonInput(e.target.value)}
-                className="erp-form-input"
-                placeholder="Observaciones de cierre..."
-              />
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "10px",
-                marginTop: "10px",
-                paddingTop: "12px",
-                borderTop: "1px solid var(--border-line)",
-              }}
-            >
-              <button
-                type="button"
-                className="pag-btn"
-                onClick={() => {
-                  setIsCloseModalOpen(false);
-                  setSessionToClose(null);
-                }}
-                disabled={submittingClose}
-              >
+            <div className="erp-modal-footer">
+              <button type="button" className="pag-btn" onClick={dismissArqueoModal} disabled={submittingClose}>
                 Cancelar
               </button>
-              <button
-                type="submit"
-                className="btn-primary"
-                style={{ background: "var(--rose-accent)", borderColor: "var(--rose-accent)" }}
-                disabled={submittingClose}
-              >
-                {submittingClose ? "Arqueando..." : "Confirmar Arqueo y Cerrar"}
+              <button type="submit" className="btn-primary" disabled={submittingClose}>
+                {closeReview ? "Cerrar turno" : "Ver resultado"}
               </button>
             </div>
           </form>
-        )}
-      </Modal>
+        </Modal>
+      )}
+
+      {sessionToClose && closeReview && reasonToConfirm !== null && (
+        <ConfirmDialog
+          isOpen
+          title={closeReview.difference === 0
+            ? "Cerrar turno"
+            : `Cerrar turno con ${closeReview.difference < 0 ? "faltante" : "sobrante"} de ${formatPosCurrency(Math.abs(closeReview.difference))}`}
+          message="Una vez cerrado, no podés reabrir el turno."
+          confirmLabel="Confirmar cierre"
+          onConfirm={handleConfirmClose}
+          onCancel={dismissArqueoModal}
+          isPending={submittingClose}
+        />
+      )}
 
       <Modal
         isOpen={Boolean(manualMovementSession)}
-        onClose={() => setManualMovementSession(null)}
+        onClose={dismissMovementModal}
         title="Registrar ingreso o egreso manual"
-        subtitle={`Sesión #${manualMovementSession?.id ?? ""} · sólo monedas abiertas en la caja`}
+        subtitle={`Turno #${manualMovementSession?.id ?? ""} · elegí una moneda habilitada en la caja.`}
         icon={ArrowLeftRight}
         maxWidth="500px"
       >
         {manualMovementSession && (
-          <form onSubmit={handleManualMovement} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Tipo de movimiento *</label>
-              <select
-                className="erp-form-select"
-                value={manualMovementKind}
-                onChange={(event) => setManualMovementKind(event.target.value as typeof manualMovementKind)}
-              >
-                <option value="contribution">Ingreso / aporte</option>
-                <option value="withdrawal">Retiro</option>
-                <option value="expense">Gasto</option>
-              </select>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-              <div className="erp-form-group">
-                <label className="erp-form-label">Moneda *</label>
+          <form noValidate onSubmit={handleManualMovement} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <FormError message={movementError} onDismiss={() => setMovementError(null)} />
+            <Field label="Tipo de movimiento" required>
+              {(field) => (
                 <select
+                  {...field}
+                  required
                   className="erp-form-select"
-                  value={manualMovementCurrency}
-                  onChange={(event) => setManualMovementCurrency(event.target.value)}
+                  value={manualMovementKind}
+                  onChange={(event) => setManualMovementKind(event.target.value as typeof manualMovementKind)}
                 >
-                  {manualMovementSession.currencies.map((currency) => (
-                    <option key={currency} value={currency}>{currency}</option>
-                  ))}
+                  <option value="contribution">{CASH_MOVEMENT_KIND_LABELS.contribution}</option>
+                  <option value="withdrawal">{CASH_MOVEMENT_KIND_LABELS.withdrawal}</option>
+                  <option value="expense">{CASH_MOVEMENT_KIND_LABELS.expense}</option>
                 </select>
-              </div>
-              <div className="erp-form-group">
-                <label className="erp-form-label">Importe *</label>
+              )}
+            </Field>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" }}>
+              <Field label="Moneda" required>
+                {(field) => (
+                  <select
+                    {...field}
+                    required
+                    className="erp-form-select"
+                    value={manualMovementCurrency}
+                    onChange={(event) => setManualMovementCurrency(event.target.value)}
+                  >
+                    {manualMovementSession.currencies.map((currency) => (
+                      <option key={currency} value={currency}>{currency}</option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+              <Field label="Importe" required>
+                {(field) => (
+                  <input
+                    {...field}
+                    className="erp-form-input"
+                    type="number"
+                    required
+                    min="0.01"
+                    step="0.01"
+                    value={manualMovementAmount}
+                    onChange={(event) => setManualMovementAmount(event.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <Field label="Motivo o comprobante" required hint="Detallá el origen o destino del efectivo.">
+              {(field) => (
                 <input
+                  {...field}
+                  required
                   className="erp-form-input"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={manualMovementAmount}
-                  onChange={(event) => setManualMovementAmount(event.target.value)}
-                  placeholder="0,00"
+                  value={manualMovementReason}
+                  onChange={(event) => setManualMovementReason(event.target.value)}
                 />
-              </div>
-            </div>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Motivo / comprobante *</label>
-              <input
-                className="erp-form-input"
-                value={manualMovementReason}
-                onChange={(event) => setManualMovementReason(event.target.value)}
-                placeholder="Detallá el origen o destino del efectivo"
-              />
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "10px", borderTop: "1px solid var(--border-line)" }}>
-              <button type="button" className="pag-btn" onClick={() => setManualMovementSession(null)} disabled={submittingMovement}>
+              )}
+            </Field>
+            <div className="erp-modal-footer">
+              <button type="button" className="pag-btn" onClick={dismissMovementModal} disabled={submittingMovement}>
                 Cancelar
               </button>
               <button type="submit" className="btn-primary" disabled={submittingMovement}>
@@ -1048,30 +924,33 @@ export const CashWorkspace: React.FC = () => {
 
       <Modal
         isOpen={Boolean(movementToReverse)}
-        onClose={() => setMovementToReverse(null)}
+        onClose={dismissReversalModal}
         title="Revertir movimiento manual"
         subtitle={movementToReverse
-          ? `${movementToReverse.kind} · ${formatCurrency(movementToReverse.amount, movementToReverse.currencyCode)}`
+          ? `${labelOf(CASH_MOVEMENT_KIND_LABELS, movementToReverse.kind)} · ${formatCurrency(movementToReverse.amount, movementToReverse.currencyCode)}`
           : ""}
         icon={RotateCcw}
         maxWidth="480px"
       >
         {movementToReverse && (
-          <form onSubmit={handleReverseMovement} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div className="form-error-alert" role="note" style={{ fontSize: "12px" }}>
-              La reversa no borra el movimiento original: agrega una compensación exacta y auditable.
-            </div>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Motivo de la reversa *</label>
-              <input
-                className="erp-form-input"
-                value={reversalReason}
-                onChange={(event) => setReversalReason(event.target.value)}
-                placeholder="Explicá por qué se revierte este movimiento"
-              />
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "10px", borderTop: "1px solid var(--border-line)" }}>
-              <button type="button" className="pag-btn" onClick={() => setMovementToReverse(null)} disabled={submittingReversal}>
+          <form noValidate onSubmit={handleReverseMovement} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <FormError message={reversalError} onDismiss={() => setReversalError(null)} />
+            <p className="erp-modal-subtitle">
+              El movimiento original queda registrado. La reversa agrega un movimiento por el mismo importe en sentido contrario.
+            </p>
+            <Field label="Motivo de la reversa" required>
+              {(field) => (
+                <input
+                  {...field}
+                  required
+                  className="erp-form-input"
+                  value={reversalReason}
+                  onChange={(event) => setReversalReason(event.target.value)}
+                />
+              )}
+            </Field>
+            <div className="erp-modal-footer">
+              <button type="button" className="pag-btn" onClick={dismissReversalModal} disabled={submittingReversal}>
                 Cancelar
               </button>
               <button type="submit" className="btn-primary" disabled={submittingReversal}>
@@ -1093,27 +972,28 @@ export const CashWorkspace: React.FC = () => {
       >
         {movementModalSession && (
           <div>
-            <div
-              style={{
-                padding: "10px 14px",
-                background: "var(--canvas-bg)",
-                borderRadius: "8px",
-                marginBottom: "12px",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
-              <div>
-                <span className="stat-label">Fondo Inicial:</span>
-                <strong>{formatCurrency(movementModalSession.initialAmountArs, "ARS")}</strong>
+            {movementModalSession.closure && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "var(--canvas-bg)",
+                  borderRadius: "8px",
+                  marginBottom: "12px",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "space-between",
+                }}
+              >
+                <div>
+                  <span className="stat-label">Fondo inicial</span>
+                  <strong>{formatPosCurrency(movementModalSession.initialAmountArs)}</strong>
+                </div>
+                <div>
+                  <span className="stat-label">Efectivo contado al cerrar</span>
+                  <strong>{formatPosCurrency(movementModalSession.closure.countedAmount)}</strong>
+                </div>
               </div>
-              <div>
-                <span className="stat-label">Saldo Actual en Caja:</span>
-                <strong style={{ color: "var(--emerald-success)" }}>
-                  {formatCurrency(movementModalSession.currentAmountArs, "ARS")}
-                </strong>
-              </div>
-            </div>
+            )}
 
             {movementModalSession.movements.length === 0 ? (
               <div style={{ textAlign: "center", padding: "24px", color: "var(--text-muted)" }}>
@@ -1140,7 +1020,7 @@ export const CashWorkspace: React.FC = () => {
                             style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}
                           >
                             {mov.amount >= 0 ? <ArrowDownRight size={12} /> : <ArrowUpRight size={12} />}
-                            {mov.kind}
+                            {labelOf(CASH_MOVEMENT_KIND_LABELS, mov.kind)}
                           </span>
                         </td>
                         <td style={{ fontSize: "11px" }}>{mov.occurredAt}</td>

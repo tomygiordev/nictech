@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { toDateTimeInputAR } from "../../lib/dates";
 
 export const PROMOTION_KINDS = ["porcentaje", "precio_fijo"] as const;
 export type PromotionKind = (typeof PROMOTION_KINDS)[number];
@@ -137,12 +138,10 @@ export const toLocalDateTimeInput = (isoDate?: string | null): string => {
   if (!isoDate) return "";
   const date = new Date(isoDate);
   if (Number.isNaN(date.getTime())) return "";
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+  return toDateTimeInputAR(date);
 };
 
-export const currentLocalDateTimeInput = (): string =>
-  toLocalDateTimeInput(new Date().toISOString());
+export const currentLocalDateTimeInput = (): string => toDateTimeInputAR();
 
 export const localDateTimeToIso = (localValue: string): string => {
   const date = new Date(localValue);

@@ -59,7 +59,7 @@ describe("WorkspaceModuleTabs", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("calls onSelectModule when clicking a tab", async () => {
+  it("calls onSelectModule when clicking a tab and ignores stock-counts", async () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();
 
@@ -72,10 +72,11 @@ describe("WorkspaceModuleTabs", () => {
       ["stock.view", "stock_counts.view", "labels.print"],
     );
 
-    const countsTab = screen.getByRole("tab", { name: /conteo f[ií]sico/i });
-    await user.click(countsTab);
+    expect(screen.queryByRole("tab", { name: /conteo f[ií]sico/i })).not.toBeInTheDocument();
+    const labelsTab = screen.getByRole("tab", { name: "Códigos y etiquetas" });
+    await user.click(labelsTab);
 
     expect(onSelect).toHaveBeenCalledTimes(1);
-    expect(onSelect).toHaveBeenCalledWith("stock-counts");
+    expect(onSelect).toHaveBeenCalledWith("labels");
   });
 });

@@ -668,7 +668,7 @@ export const ModuleTutorialModal: React.FC<ModuleTutorialModalProps> = ({
                   <li><strong>Capítulo 4:</strong> Servicio Técnico - Recepción con checklist y tracking web</li>
                   <li><strong>Capítulo 5:</strong> Stock y Almacén - Múltiples depósitos, reservas y ajustes</li>
                   <li><strong>Capítulo 6:</strong> Pedidos Tienda Web - Pagos MercadoPago y retiro seguro</li>
-                  <li><strong>Capítulo 7:</strong> Armados de PC & Equipos Usados (Trade-ins)</li>
+                  <li><strong>Capítulo 7:</strong> Armados de PC y equipos usados</li>
                   <li><strong>Capítulo 8:</strong> Cuentas Corrientes, Finanzas y Comprobantes</li>
                   <li><strong>Capítulo 9:</strong> Tabla de Aclaraciones Operativas y Faltantes en Desarrollo</li>
                 </ul>

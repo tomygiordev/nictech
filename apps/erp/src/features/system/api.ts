@@ -30,12 +30,6 @@ export interface SystemSetting {
   updated_at: string;
 }
 
-export const SYSTEM_SETTING_KEYS = {
-  twoFactor: "security.two_factor",
-  sessionTimeout: "security.session_timeout",
-  autoEmailReceipts: "billing.auto_email_receipts",
-} as const;
-
 const mensajeError = (accion: string, detalle: string): string => `${accion}: ${detalle}`;
 
 export const listBranches = async (): Promise<SystemBranch[]> => {
@@ -109,7 +103,10 @@ export const listSystemSettings = async (): Promise<SystemSetting[]> => {
   return (data ?? []).map((s) => ({
     key: s.key,
     branch_id: s.branch_id ?? null,
-    value: s.value,
+    value: s.key === "navigation.module_profile" && s.value && typeof s.value === "object"
+      && !Array.isArray(s.value) && Array.isArray(s.value.visible)
+      ? { ...s.value, visible: s.value.visible.filter((id) => id !== "stock-counts") }
+      : s.value,
     updated_at: s.updated_at,
   }));
 };
@@ -152,6 +149,22 @@ export const guardarAjuste = async (
 export interface SystemRole { id: string; code: string; name: string }
 export interface SystemRoleAssignment { profile_id: string; role_id: string; branch_id: string | null; valid_from: string; valid_until: string | null }
 
+export const roleAssignmentsQueryKey = (organizationId: string | null, profileId?: string) =>
+  ["role-assignments", organizationId, profileId] as const;
+
+export const isActiveAssignment = (assignment: SystemRoleAssignment, now: number): boolean =>
+  Date.parse(assignment.valid_from) <= now &&
+  (assignment.valid_until === null || Date.parse(assignment.valid_until) > now);
+
+export const roleDisplayName = ({ name, code }: SystemRole): string => {
+  const label = name.trim();
+  const suffix = ` (${code})`;
+  return label.endsWith(suffix) ? label.slice(0, -suffix.length) : label;
+};
+
+export const isAdministrationRole = (role: SystemRole): boolean =>
+  role.code === "owner" || role.code === "admin";
+
 export const listRolesAndAssignments = async (): Promise<{ roles: SystemRole[]; assignments: SystemRoleAssignment[] }> => {
   const [roles, assignments] = await Promise.all([
     client().from("roles").select("id, code, name").eq("is_active", true).order("name"),
@@ -161,8 +174,52 @@ export const listRolesAndAssignments = async (): Promise<{ roles: SystemRole[]; 
   return { roles: roles.data ?? [], assignments: assignments.data ?? [] };
 };
 
+const hasGlobalPermission = async (permission: string): Promise<boolean> => {
+  const { data, error } = await client().rpc("has_permission", { permission_code: permission });
+  if (error) throw new Error("No se pudieron verificar los permisos para asignar roles.");
+  return data === true;
+};
+
+interface RoleAssignmentAccess {
+  canManage: boolean;
+  allowedRoleIds: string[];
+}
+
+export const listRoleAssignmentAccess = async (
+  roles: SystemRole[],
+  isOwner: boolean,
+): Promise<RoleAssignmentAccess> => {
+  if (!await hasGlobalPermission("users.manage")) return { canManage: false, allowedRoleIds: [] };
+  if (isOwner) return { canManage: true, allowedRoleIds: roles.map((role) => role.id) };
+
+  // Las políticas de lectura de permisos requieren users.view global.
+  if (!await hasGlobalPermission("users.view")) return { canManage: false, allowedRoleIds: [] };
+  const candidates = roles.filter((role) => !isAdministrationRole(role));
+  if (candidates.length === 0) return { canManage: true, allowedRoleIds: [] };
+  const { data, error } = await client()
+    .from("role_permissions")
+    .select("role_id, permissions!inner(code, is_sensitive)")
+    .in("role_id", candidates.map((role) => role.id))
+    .eq("is_active", true)
+    .eq("permissions.is_active", true);
+  if (error) throw new Error("No se pudieron verificar los permisos de los roles.");
+
+  const permissions = data ?? [];
+  const sensitiveRoleIds = new Set(permissions.filter((item) => item.permissions.is_sensitive).map((item) => item.role_id));
+  const eligible = permissions.filter((item) => !sensitiveRoleIds.has(item.role_id));
+  const codes = [...new Set(eligible.map((item) => item.permissions.code))];
+  const deniedCodes = new Set(
+    (await Promise.all(codes.map(async (code) => await hasGlobalPermission(code) ? null : code)))
+      .filter((code) => code !== null),
+  );
+  const restrictedRoleIds = new Set([
+    ...sensitiveRoleIds,
+    ...eligible.filter((item) => deniedCodes.has(item.permissions.code)).map((item) => item.role_id),
+  ]);
+  return { canManage: true, allowedRoleIds: candidates.filter((role) => !restrictedRoleIds.has(role.id)).map((role) => role.id) };
+};
+
 export const assignProfileRole = async (profileId: string, roleId: string): Promise<void> => {
-  const rpc = client() as unknown as { rpc: (name: string, args: { p_profile_id: string; p_role_id: string }) => PromiseLike<{ error: { message: string } | null }> };
-  const { error } = await rpc.rpc("assign_profile_role", { p_profile_id: profileId, p_role_id: roleId });
+  const { error } = await client().rpc("assign_profile_role", { p_profile_id: profileId, p_role_id: roleId });
   if (error) throw new Error(mensajeError("No se pudo asignar el rol", error.message));
 };

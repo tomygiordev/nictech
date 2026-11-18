@@ -59,6 +59,7 @@ import {
 import { OfficialCsvExportButton } from "../../components/erp/OfficialCsvExportButton";
 import { type ErpModuleId } from "@nictech/domain";
 import { formatCurrency, formatPosCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
+import { todayIsoAR } from "../../lib/dates";
 
 // Los numeric de Postgres pueden llegar como string: normalizar con Number().
 // Devuelve null cuando no hay dato (la vista documenta NULL por falta de fuente).
@@ -68,7 +69,9 @@ const toNumber = (value: number | string | null | undefined): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const NO_SOURCE_LABEL = "Sin datos fuente";
+const NO_SOURCE_LABEL = "Sin datos";
+const NO_PURCHASE_VAT_LABEL = "Sin compras con IVA registrado";
+const PARTIAL_VAT_BALANCE_LABEL = "Parcial: las compras no tienen IVA cargado";
 
 const ProfitabilitySection = ({ canExport }: { canExport: boolean }) => {
   const profitability = useQuery({
@@ -321,7 +324,6 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
       (ivaCompras.data ?? []).map((row) => ({
         purchaseOrderId: row.purchase_order_id,
         purchaseDate: row.purchase_date,
-        // La vista documenta alicuota NULL: la línea de compra no registra alícuota.
         alicuota: toNumber(row.alicuota),
         base: toNumber(row.base_imponible),
         iva: toNumber(row.iva),
@@ -359,6 +361,7 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
   const totalIvaVentas = ventasRows.reduce((acc, row) => acc + (row.iva ?? 0), 0);
   const totalBaseCompras = comprasRows.reduce((acc, row) => acc + (row.base ?? 0), 0);
   const totalIvaCompras = comprasRows.reduce((acc, row) => acc + (row.iva ?? 0), 0);
+  const hasPurchaseVat = comprasRows.some((row) => (row.iva ?? 0) > 0);
   const saldoTecnico = totalIvaVentas - totalIvaCompras;
   const totalDebit = trialRows.reduce((acc, row) => acc + (row.debit ?? 0), 0);
   const totalCredit = trialRows.reduce((acc, row) => acc + (row.credit ?? 0), 0);
@@ -420,7 +423,7 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
           label="Ventas Netas (base)"
           value={formatCurrency(totalBaseVentas, "ARS")}
           trend={{ text: `${ventasRows.length} líneas`, positive: true }}
-          sublabel="Base imponible de v_iva_ventas"
+          sublabel="Base imponible de las ventas"
         />
         <KpiCard
           icon={PieChart}
@@ -434,17 +437,17 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
           icon={Layers}
           iconVariant="steel"
           label="Crédito Fiscal Compras"
-          value={formatCurrency(totalIvaCompras, "ARS")}
-          trend={{ text: "Deducción", positive: true }}
-          sublabel="Alícuota de compra: sin datos fuente"
+          value={hasPurchaseVat ? formatCurrency(totalIvaCompras, "ARS") : NO_PURCHASE_VAT_LABEL}
+          trend={hasPurchaseVat ? { text: "Deducción", positive: true } : undefined}
+          sublabel={hasPurchaseVat ? "IVA de compras del rango" : undefined}
         />
         <KpiCard
           icon={CheckCircle2}
           iconVariant="dark"
-          label="Saldo Técnico a Pagar"
+          label={hasPurchaseVat ? "Saldo Técnico a Pagar" : "Saldo técnico (sin crédito fiscal de compras)"}
           value={formatCurrency(saldoTecnico, "ARS")}
           trend={{ text: "Posición IVA", positive: saldoTecnico >= 0 }}
-          sublabel="Débito menos crédito del rango"
+          sublabel={hasPurchaseVat ? "Débito menos crédito del rango" : PARTIAL_VAT_BALANCE_LABEL}
         />
       </div>
 
@@ -521,7 +524,7 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
         <div className="flow-card__header">
           <div>
             <h2 className="flow-card__title">Libro IVA Compras</h2>
-            <p className="flow-card__subtitle">Base + IVA reales desde purchase_order_lines. La alícuota no se registra en la fuente.</p>
+            <p className="flow-card__subtitle">Base imponible, IVA y alícuota de las compras del rango</p>
           </div>
           {comprasRows.length > 0 && canExport && (
             <OfficialCsvExportButton
@@ -544,6 +547,9 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
           )}
         </div>
 
+        {!hasPurchaseVat && (
+          <FeedbackAlert type="warning" message={NO_PURCHASE_VAT_LABEL} submessage={PARTIAL_VAT_BALANCE_LABEL} />
+        )}
         {comprasRows.length === 0 ? (
           <StatePanel
             type="empty"
@@ -571,9 +577,7 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
                         {row.iva === null ? NO_SOURCE_LABEL : formatCurrency(row.iva, "ARS")}
                       </strong>
                     </td>
-                    <td>
-                      <span className="flow-status-pill pending">{NO_SOURCE_LABEL}</span>
-                    </td>
+                    <td>{row.base === 0 || row.iva === 0 || row.alicuota === null ? "—" : `${row.alicuota}%`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -658,8 +662,6 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
   );
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
-
 export interface AccountingWorkspaceProps {
   activeModuleId?: "accounting" | "profitability" | "reports";
   onSelectModule?: (id: ErpModuleId) => void;
@@ -713,7 +715,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     resolver: zodResolver(journalEntrySchema),
     defaultValues: {
       branchId: "",
-      entryDate: today(),
+      entryDate: todayIsoAR(),
       operationKey: generateIdempotencyKey("jnl"),
       reason: "Asiento de ajuste contable",
       lines: [
@@ -727,7 +729,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     resolver: zodResolver(reversalSchema),
     defaultValues: {
       entryId: "",
-      reversalDate: today(),
+      reversalDate: todayIsoAR(),
       operationKey: generateIdempotencyKey("rev"),
       reason: "Reversa de asiento contable",
     },
@@ -738,7 +740,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     defaultValues: {
       accountId: "",
       branchId: "",
-      asOfDate: today(),
+      asOfDate: todayIsoAR(),
       subledgerBalance: "0",
       generalLedgerBalance: "0",
       reason: "Conciliación periódica de saldos",
@@ -781,7 +783,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
       void queryClient.invalidateQueries({ queryKey: ["erp", "accounting", "entries"] });
       journalForm.reset({
         branchId: journalForm.getValues().branchId,
-        entryDate: today(),
+        entryDate: todayIsoAR(),
         operationKey: generateIdempotencyKey("jnl"),
         reason: "",
         lines: [
@@ -814,7 +816,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
     mutationFn: reverseJournalEntry,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["erp", "accounting", "entries"] });
-      reversalForm.reset({ reversalDate: today(), operationKey: generateIdempotencyKey("rev"), reason: "", entryId: "" });
+      reversalForm.reset({ reversalDate: todayIsoAR(), operationKey: generateIdempotencyKey("rev"), reason: "", entryId: "" });
       setIsReversalModalOpen(false);
       setFeedback("¡Asiento revertido correctamente!");
     },
@@ -1238,8 +1240,8 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label">Fecha del Asiento *</label>
-              <input className="erp-form-input" type="date" {...journalForm.register("entryDate")} />
+              <label className="erp-form-label" htmlFor="journal-entry-date">Fecha del Asiento *</label>
+              <input className="erp-form-input" id="journal-entry-date" type="date" {...journalForm.register("entryDate")} />
             </div>
             <div className="erp-form-group">
               <label className="erp-form-label">Motivo / Concepto Obligatorio *</label>
@@ -1251,7 +1253,9 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
               <span className="stat-label">Líneas de Partida Doble</span>
               <div style={{ fontSize: "12px", fontWeight: 700, color: isBalanced ? "var(--emerald-success)" : "var(--rose-accent)" }}>
-                {isBalanced ? `✓ Balanceado ($${totalDebit.toLocaleString("es-AR")})` : `Desbalance: Debe $${totalDebit.toLocaleString("es-AR")} ≠ Haber $${totalCredit.toLocaleString("es-AR")}`}
+                {isBalanced
+                  ? `✓ Balanceado (${formatCurrency(totalDebit, "ARS")})`
+                  : `Desbalance: Debe ${formatCurrency(totalDebit, "ARS")} ≠ Haber ${formatCurrency(totalCredit, "ARS")}`}
               </div>
             </div>
 
@@ -1314,7 +1318,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
               <option value="">Seleccioná un asiento</option>
               {journalEntries.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {formatDate(e.entry_date)} — {e.description || e.id.slice(0, 8)} (${Number(e.total_debit).toLocaleString("es-AR")})
+                  {formatDate(e.entry_date)} — {e.description || e.id.slice(0, 8)} ({formatCurrency(Number(e.total_debit), "ARS")})
                 </option>
               ))}
             </select>

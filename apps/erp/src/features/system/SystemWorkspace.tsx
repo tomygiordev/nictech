@@ -2,19 +2,21 @@ import { RoleAssignment } from "./RoleAssignment";
 import { NavigationSettings } from "./NavigationSettings";
 import { UpdatesCard } from "./UpdatesCard";
 import { useState, useEffect } from "react";
-import { Building2, Save } from "lucide-react";
+import { Building2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   WorkspaceHeader,
   WorkspaceModuleTabs,
   StatePanel,
-  FeedbackAlert,
 } from "../../components/erp/WorkspaceUi";
 import {
   listBranches,
   listSystemUsers,
-  listSystemSettings,
-  guardarAjuste,
-  SYSTEM_SETTING_KEYS,
+  isActiveAssignment,
+  listRolesAndAssignments,
+  roleAssignmentsQueryKey,
+  roleDisplayName,
   type SystemBranch,
   type SystemUser,
 } from "./api";
@@ -25,9 +27,6 @@ export interface SystemWorkspaceProps {
   onSelectModule?: (id: ErpModuleId) => void;
 }
 
-const esRegistro = (valor: unknown): valor is Record<string, unknown> =>
-  typeof valor === "object" && valor !== null;
-
 export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
   activeModuleId = "users",
   onSelectModule,
@@ -36,17 +35,6 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
   const [branches, setBranches] = useState<SystemBranch[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  // Ajustes persistidos en erp.system_settings (alcance global).
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
-  const [sessionTimeout, setSessionTimeout] = useState("30");
-  const [autoEmailReceipts, setAutoEmailReceipts] = useState(true);
-  const [settingsLoading, setSettingsLoading] = useState(true);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -64,76 +52,48 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
     void fetchData();
   }, []);
 
-  useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        setSettingsLoading(true);
-        setSettingsError(null);
-        const ajustes = await listSystemSettings();
-        const globales = ajustes.filter((a) => a.branch_id === null);
-        for (const a of globales) {
-          if (a.key === SYSTEM_SETTING_KEYS.twoFactor && esRegistro(a.value) && typeof a.value.habilitado === "boolean") {
-            setTwoFactorEnabled(a.value.habilitado);
-          }
-          if (a.key === SYSTEM_SETTING_KEYS.sessionTimeout && esRegistro(a.value) && typeof a.value.minutos === "number") {
-            setSessionTimeout(String(a.value.minutos));
-          }
-          if (a.key === SYSTEM_SETTING_KEYS.autoEmailReceipts && esRegistro(a.value) && typeof a.value.activado === "boolean") {
-            setAutoEmailReceipts(a.value.activado);
-          }
-        }
-      } catch (e) {
-        setSettingsError(e instanceof Error ? e.message : "No se pudieron leer los ajustes del sistema.");
-      } finally {
-        setSettingsLoading(false);
-      }
-    };
-    void fetchSettings();
-  }, []);
+  const { session, organizationId } = useErpAuth();
+  const profileId = session?.user.id;
+  const rolesQuery = useQuery({
+    queryKey: roleAssignmentsQueryKey(organizationId, profileId),
+    queryFn: listRolesAndAssignments,
+    enabled: Boolean(profileId),
+  });
 
-  const handleSaveSettings = async () => {
-    try {
-      setSaving(true);
-      setSaveError(null);
-      setFeedback(null);
-      await guardarAjuste(SYSTEM_SETTING_KEYS.twoFactor, { habilitado: twoFactorEnabled });
-      await guardarAjuste(SYSTEM_SETTING_KEYS.sessionTimeout, { minutos: Number(sessionTimeout) });
-      await guardarAjuste(SYSTEM_SETTING_KEYS.autoEmailReceipts, { activado: autoEmailReceipts });
-      setFeedback("Ajustes del sistema guardados en erp.system_settings.");
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "No se pudieron guardar los ajustes.");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const now = Date.now();
+  const assignedRoleIds = new Set(
+    rolesQuery.data?.assignments
+      .filter((assignment) => assignment.profile_id === profileId && isActiveAssignment(assignment, now))
+      .map((assignment) => assignment.role_id),
+  );
+  const roleNames = rolesQuery.data?.roles
+    .filter((role) => assignedRoleIds.has(role.id))
+    .map(roleDisplayName) ?? [];
+  const roleBadge = rolesQuery.isError
+    ? "Rol no disponible"
+    : profileId && rolesQuery.isPending
+      ? undefined
+      : [...new Set(roleNames)].join(", ") || (assignedRoleIds.size ? "Rol no disponible" : "Sin rol asignado");
 
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
         title={
           activeModuleId === "locations"
-            ? "Sucursales & Estructura Operativa"
+            ? "Sucursales y ubicaciones"
             : activeModuleId === "settings"
-            ? "Configuración General & Seguridad"
-            : "Usuarios, Roles & Permisos (RBAC)"
+            ? "Configuración general"
+            : "Usuarios y permisos"
         }
         description={
           activeModuleId === "locations"
             ? "Administración de locales comerciales, depósitos centrales y laboratorios técnicos."
             : activeModuleId === "settings"
-            ? "Políticas de seguridad, autenticación en dos pasos, caducidad de sesión y parámetros del sistema."
-            : "Operadores leídos de erp.profiles con su sucursal real por asignación."
+            ? "Elegí qué módulos aparecen en el menú y consultá las actualizaciones del ERP."
+            : "Consultá los operadores, sus sucursales y los roles que tienen asignados."
         }
-        badge="Super Admin"
+        badge={roleBadge}
       />
-
-      {feedback && (
-        <FeedbackAlert
-          type="success"
-          message={feedback}
-          onClose={() => setFeedback(null)}
-        />
-      )}
 
       {onSelectModule && (
         <WorkspaceModuleTabs
@@ -148,26 +108,26 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
         <div className="flow-card">
           <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
             <div>
-              <h2 className="flow-card__title">Operadores y Usuarios del ERP</h2>
-              <p className="flow-card__subtitle">Lectura real de erp.profiles con sucursal por asignación</p>
+              <h2 className="flow-card__title">Operadores del ERP</h2>
+              <p className="flow-card__subtitle">Datos de contacto, sucursal asignada y estado de cada operador.</p>
             </div>
           </div>
 
           <StatePanel
             type="info"
             title="Alta de usuarios no disponible en el ERP"
-            message="Sin backend de alta de usuarios Auth: el alta de operadores se realiza en Supabase Auth y no se simula desde el ERP."
+            message="Pedile a quien administra el sistema que dé de alta al operador antes de asignarle un rol."
           />
 
           {loading ? (
-            <StatePanel type="loading" message="Cargando operadores desde erp.profiles..." />
+            <StatePanel type="loading" message="Cargando operadores…" />
           ) : loadError ? (
             <StatePanel type="error" title="No se pudieron leer los operadores" message={loadError} />
           ) : users.length === 0 ? (
             <StatePanel
               type="empty"
               title="Sin operadores"
-              message="No hay operadores registrados en la base de datos central."
+              message="Todavía no hay operadores registrados."
             />
           ) : (
             <div className="flow-table-wrapper">
@@ -205,12 +165,12 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
       {activeModuleId === "locations" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "20px" }}>
           {loading ? (
-            <StatePanel type="loading" message="Cargando sucursales desde erp.branches..." />
+            <StatePanel type="loading" message="Cargando sucursales…" />
           ) : loadError ? (
             <StatePanel type="error" title="No se pudieron leer las sucursales" message={loadError} />
           ) : branches.length === 0 ? (
             <div className="flow-card" style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
-              No hay sucursales registradas en la base de datos central.
+              Todavía no hay sucursales registradas.
             </div>
           ) : (
             branches.map((b) => (
@@ -238,76 +198,6 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
 
       {activeModuleId === "settings" && <UpdatesCard />}
       {activeModuleId === "settings" && <NavigationSettings />}
-      {activeModuleId === "settings" && (
-        <div className="flow-card" style={{ maxWidth: "650px" }}>
-          <h2 className="flow-card__title">Políticas de Seguridad & Operación</h2>
-          <p className="flow-card__subtitle">Ajustes persistidos en erp.system_settings (alcance global)</p>
-
-          {settingsLoading ? (
-            <StatePanel type="loading" message="Cargando ajustes desde erp.system_settings..." />
-          ) : settingsError ? (
-            <StatePanel type="error" title="No se pudieron leer los ajustes" message={settingsError} />
-          ) : (
-            <div style={{ marginTop: "18px", display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", background: "var(--canvas-bg)", borderRadius: "10px" }}>
-                <div>
-                  <strong>Autenticación en Dos Pasos (2FA)</strong>
-                  <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>Obligatorio para roles de Administración y Finanzas</span>
-                </div>
-                <button
-                  type="button"
-                  className={`flow-select-pill ${twoFactorEnabled ? "active" : ""}`}
-                  onClick={() => setTwoFactorEnabled(!twoFactorEnabled)}
-                >
-                  {twoFactorEnabled ? "✓ Habilitado" : "Deshabilitado"}
-                </button>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", background: "var(--canvas-bg)", borderRadius: "10px" }}>
-                <div>
-                  <strong>Cierre Automático de Sesión por Inactividad</strong>
-                  <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>Tiempo máximo de inactividad antes de requerir reingreso</span>
-                </div>
-                <select
-                  value={sessionTimeout}
-                  onChange={(e) => setSessionTimeout(e.target.value)}
-                  className="erp-form-select"
-                  style={{ width: "160px", padding: "6px 12px" }}
-                >
-                  <option value="15">15 Minutos</option>
-                  <option value="30">30 Minutos</option>
-                  <option value="60">60 Minutos</option>
-                  <option value="120">2 Horas</option>
-                </select>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", background: "var(--canvas-bg)", borderRadius: "10px" }}>
-                <div>
-                  <strong>Envío Automático de Comprobantes por Email</strong>
-                  <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>Enviar copia PDF al email del cliente al emitir factura fiscal</span>
-                </div>
-                <button
-                  type="button"
-                  className={`flow-select-pill ${autoEmailReceipts ? "active" : ""}`}
-                  onClick={() => setAutoEmailReceipts(!autoEmailReceipts)}
-                >
-                  {autoEmailReceipts ? "✓ Activado" : "Desactivado"}
-                </button>
-              </div>
-
-              {saveError && (
-                <StatePanel type="error" title="No se pudieron guardar los ajustes" message={saveError} />
-              )}
-
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "10px" }}>
-                <button type="button" className="btn-primary" onClick={() => void handleSaveSettings()} disabled={saving}>
-                  <Save size={15} /> {saving ? "Guardando..." : "Guardar Preferencias"}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };

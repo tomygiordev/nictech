@@ -17,10 +17,13 @@ import {
   WorkspaceHeader,
   WorkspaceModuleTabs,
   StatePanel,
+  StatusPill,
   FeedbackAlert,
   KpiCard,
 } from "../../components/erp/WorkspaceUi";
 import { type ErpModuleId } from "@nictech/domain";
+import { useErpAuth } from "../../auth/ErpAuthContext";
+import { toUserMessage } from "../../lib/errors";
 import { formatCurrency, formatCurrencyCompact } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
 import {
@@ -31,8 +34,8 @@ import {
   type MasterLocation,
   calculateStockSummary,
   getActiveBarcode,
-  getErrorMessage,
 } from "./schemas";
+import { getCatalogKpis, type CatalogFilters, type CatalogKpis } from "./catalogKpisApi";
 import { CatalogSheetModal } from "./CatalogSheetModal";
 import { StockIntakeModal } from "./StockIntakeModal";
 
@@ -42,20 +45,66 @@ export interface CatalogWorkspaceProps {
 }
 
 const PAGE_SIZE = 25;
+const SCHEMA_UNAVAILABLE = "No se pudo cargar el catálogo. Avisá al administrador del sistema.";
+const CATALOG_LOAD_ERROR = "No se pudo cargar el catálogo. Reintentá.";
+const MASTER_LOAD_ERROR = "No se pudieron cargar las categorías, marcas, modelos o ubicaciones.";
+const WEB_STATUS = {
+  published: { label: "Publicado", className: "completed" },
+  paused: { label: "Pausado", className: "processing" },
+  draft: { label: "Borrador", className: "pending" },
+} as const;
+
+function isCatalogSchemaMissing(error: unknown) {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error && typeof error.code === "string" ? error.code : "";
+  const message = "message" in error && typeof error.message === "string" ? error.message : "";
+  return /^(PGRST202|PGRST204|42703|42883)$/.test(code)
+    || /schema cache|column .* does not exist/i.test(message);
+}
 
 export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
   activeModuleId = "catalog",
   onSelectModule,
 }) => {
+  const { hasPermission } = useErpAuth();
+  const canManage = hasPermission("catalog.manage");
+  const canLoadStock = hasPermission("stock.move") && hasPermission("stock.adjust");
+  const hasActions = canManage || canLoadStock;
   const [products, setProducts] = useState<DbCatalogProduct[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [page, setPage] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all");
   const [showInactive, setShowInactive] = useState(false);
   const [legacyDatabase, setLegacyDatabase] = useState(false);
+  const [kpis, setKpis] = useState<CatalogKpis | null>(null);
+  const [kpisError, setKpisError] = useState<string | null>(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const searchText = debouncedSearch.trim().replace(/[,()]/g, "").trim() || undefined;
+  const filters = useMemo<CatalogFilters>(() => ({
+    search_text: searchText,
+    target_category_id: selectedCategoryId === "all" ? undefined : selectedCategoryId,
+    include_inactive: showInactive,
+  }), [searchText, selectedCategoryId, showInactive]);
+  const hasFilters = Boolean(search || filters.target_category_id || filters.include_inactive);
+
+  const refreshCatalog = () => setRefreshVersion((version) => version + 1);
+  const clearFilters = () => {
+    setSearch("");
+    setDebouncedSearch("");
+    setSelectedCategoryId("all");
+    setShowInactive(false);
+    setPage(0);
+  };
 
   // Master reference data
   const [categories, setCategories] = useState<MasterCategory[]>([]);
@@ -88,7 +137,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
 
       const anyError = catRes.error || brandRes.error || modRes.error || locRes.error;
       if (anyError) {
-        setMasterError(getErrorMessage(anyError, "Error al cargar datos maestros del catálogo"));
+        setMasterError(toUserMessage(anyError, MASTER_LOAD_ERROR));
         return;
       }
 
@@ -97,7 +146,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
       if (modRes.data) setModels(modRes.data);
       if (locRes.data) setLocations(locRes.data);
     } catch (err: unknown) {
-      setMasterError(getErrorMessage(err, "Error al cargar maestros del catálogo ERP"));
+      setMasterError(toUserMessage(err, MASTER_LOAD_ERROR));
     } finally {
       setLoadingMasters(false);
     }
@@ -107,13 +156,14 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
     fetchMasterData();
   }, [fetchMasterData]);
 
-  // Fetch products query with server-side category filtering, search, and exact count
-  const fetchProducts = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    setLegacyDatabase(false);
 
-      const loadProducts = async (legacy: boolean) => {
+    const fetchProducts = async () => {
+      const loadProducts = (legacy: boolean) => {
         const sheetFields = legacy ? "" : "sheet_template, web_status, tags, condition, capacity, media_initialized, sheet_fields_initialized,";
         const variantFields = legacy ? "" : "color_id, final_price_ars,";
         let query = supabase.from("products").select<string, DbCatalogProduct>(
@@ -128,37 +178,55 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           stock_balances(quantity_on_hand, quantity_reserved, variant_id, location_id)`,
           { count: "exact" },
         );
-        if (!showInactive) query = query.eq("is_active", true);
-        if (selectedCategoryId !== "all") query = query.eq("category_id", selectedCategoryId);
-        if (search.trim()) {
-          const term = search.trim().replace(/[,()]/g, "");
-          if (term) query = query.or(`internal_name.ilike.%${term}%,internal_code.ilike.%${term}%`);
+        if (!filters.include_inactive) query = query.eq("is_active", true);
+        if (filters.target_category_id) query = query.eq("category_id", filters.target_category_id);
+        if (filters.search_text) {
+          const term = filters.search_text;
+          query = query.or(`internal_name.ilike.%${term}%,internal_code.ilike.%${term}%`);
         }
         return query.order("created_at", { ascending: false })
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
       };
 
-      let result = await loadProducts(false);
-      const code = result.error?.code ?? "";
-      const missingSchema = /^(PGRST202|42703|42883)$/.test(code)
-        || /schema cache|column .* does not exist/i.test(result.error?.message ?? "");
-      setLegacyDatabase(missingSchema);
-      if (missingSchema) result = await loadProducts(true);
-      const { data, error: dbErr, count } = result;
-      if (dbErr) throw dbErr;
-      setProducts(data ?? []);
-      setTotalCount(count ?? 0);
-    } catch (err: unknown) {
-      const msg = getErrorMessage(err, "Error al cargar catálogo ERP");
-      setError(/schema cache|does not exist|column .* does not exist/i.test(msg) ? "La base no tiene las migraciones de la ficha de catálogo. Aplicalas primero en un entorno autorizado." : msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, selectedCategoryId, showInactive]);
+      try {
+        let result = await loadProducts(false);
+        if (!active) return;
+        const missingSheet = isCatalogSchemaMissing(result.error);
+        if (missingSheet) result = await loadProducts(true);
+        if (!active) return;
+        if (result.error) throw result.error;
+        setLegacyDatabase(missingSheet);
+        setProducts(result.data ?? []);
+        setTotalCount(result.count ?? 0);
+      } catch (err: unknown) {
+        if (!active) return;
+        setProducts([]);
+        setTotalCount(0);
+        setError(isCatalogSchemaMissing(err) ? SCHEMA_UNAVAILABLE : toUserMessage(err, CATALOG_LOAD_ERROR));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    void fetchProducts();
+    return () => { active = false; };
+  }, [filters, page, refreshVersion]);
 
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    let active = true;
+    setKpis(null);
+    setKpisError(null);
+    void getCatalogKpis(filters).then(
+      (result) => { if (active) setKpis(result); },
+      (err: unknown) => {
+        if (!active) return;
+        const fallback = isCatalogSchemaMissing(err) ? SCHEMA_UNAVAILABLE
+          : "No se pudieron cargar los indicadores del catálogo. Reintentá.";
+        setKpisError(toUserMessage(err, fallback));
+      },
+    );
+    return () => { active = false; };
+  }, [filters, refreshVersion]);
 
   // Server-master based pills
   const categoryPills = useMemo(() => {
@@ -168,27 +236,10 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
     ];
   }, [categories]);
 
-  // Accurate Inventory Metrics using (onHand - reserved)
-  const totalValueArs = useMemo(() => {
-    return products.reduce((acc, p) => {
-      const summary = calculateStockSummary(p.stock_balances);
-      return acc + (p.base_sale_price || 0) * summary.available;
-    }, 0);
-  }, [products]);
-
-  const lowStockCount = useMemo(() => {
-    return products.filter((p) => {
-      const summary = calculateStockSummary(p.stock_balances);
-      return summary.available > 0 && summary.available <= 3;
-    }).length;
-  }, [products]);
-
-  const outOfStockCount = useMemo(() => {
-    return products.filter((p) => {
-      const summary = calculateStockSummary(p.stock_balances);
-      return summary.available === 0;
-    }).length;
-  }, [products]);
+  const sellableLocationIds = useMemo(
+    () => new Set(locations.filter((l) => l.is_active && l.allows_sale).map((l) => l.id)),
+    [locations],
+  );
 
   const isPricingMode = activeModuleId === "pricing";
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
@@ -221,7 +272,9 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
         />
       )}
 
-      {legacyDatabase && <FeedbackAlert type="error" message="La ficha nueva requiere actualizar la base. El listado sigue disponible." onClose={() => setLegacyDatabase(false)} />}
+      {legacyDatabase && (
+        <FeedbackAlert type="error" message={SCHEMA_UNAVAILABLE} submessage="El listado básico sigue disponible." />
+      )}
 
       {masterError && (
         <FeedbackAlert
@@ -235,20 +288,22 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
               disabled={loadingMasters}
               style={{ background: "#ffffff", padding: "4px 8px", fontSize: "12px" }}
             >
-              <RefreshCw size={12} className={loadingMasters ? "animate-spin" : ""} /> Reintentar Maestros
+              <RefreshCw size={12} className={loadingMasters ? "animate-spin" : ""} /> Reintentar carga de filtros
             </button>
           }
           onClose={() => setMasterError(null)}
         />
       )}
 
-      {/* KPI Cards */}
+      {kpisError && kpisError !== error && !(legacyDatabase && kpisError === SCHEMA_UNAVAILABLE) && (
+        <FeedbackAlert type="error" message={kpisError} />
+      )}
       <div className="kpi-grid">
         <KpiCard
           icon={Boxes}
           iconVariant="green"
           label="Total Artículos"
-          value={totalCount}
+          value={kpis?.total_products ?? (loading || error ? "—" : totalCount)}
           trend={{ text: "Catálogo ERP", positive: true }}
           sublabel="Productos y fundas"
         />
@@ -256,17 +311,16 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
         <KpiCard
           icon={DollarSign}
           iconVariant="navy"
-          label="Valorización de Stock"
-          value={formatCurrencyCompact(totalValueArs, "ARS")}
-          trend={{ text: "ARS Final", positive: true }}
-          sublabel="Existencias disponibles"
+          label="Stock vendible a precio de venta"
+          value={kpis ? formatCurrencyCompact(kpis.stock_value_ars, "ARS") : "—"}
+          sublabel="Ubicaciones habilitadas para venta"
         />
 
         <KpiCard
           icon={AlertTriangle}
           iconVariant="steel"
           label="Stock Bajo"
-          value={lowStockCount}
+          value={kpis?.low_stock_count ?? "—"}
           trend={{ text: "Atención", positive: false }}
           sublabel="1 a 3 unidades restantes"
         />
@@ -275,7 +329,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           icon={Tag}
           iconVariant="dark"
           label="Sin Stock"
-          value={outOfStockCount}
+          value={kpis?.out_of_stock_count ?? "—"}
           trend={{ text: "Agotados", positive: false }}
           sublabel="0 unidades disponibles"
         />
@@ -291,18 +345,18 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
             </p>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div className="flow-card__tools" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", minWidth: 0, gap: "10px" }}>
             <button
               type="button"
               className="pag-btn"
-              onClick={fetchProducts}
+              onClick={refreshCatalog}
               disabled={loading}
               title="Recargar catálogo"
             >
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             </button>
 
-            <div className="flow-search-pill" style={{ width: "260px" }}>
+            <div className="flow-search-pill" style={{ width: "260px", maxWidth: "100%" }}>
               <Search size={15} />
               <input
                 type="text"
@@ -315,18 +369,18 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
               />
             </div>
 
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => setIsCreateOpen(true)}
-            >
-              <Plus size={16} />
-              Nuevo Producto
-            </button>
+            {canManage && (
+              <button type="button" className="btn-primary" onClick={() => setIsCreateOpen(true)}>
+                <Plus size={16} /> Nuevo Producto
+              </button>
+            )}
           </div>
         </div>
 
-        <label><input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(0); }} /> Ver inactivos</label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer" }}>
+          <input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(0); }} />
+          Ver inactivos
+        </label>
 
         {/* Filter Pills */}
         <div className="horizontal-scroll-pills" style={{ marginBottom: "16px" }}>
@@ -335,6 +389,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
               key={cat.id}
               type="button"
               className={`flow-select-pill ${selectedCategoryId === cat.id ? "active" : ""}`}
+              aria-pressed={selectedCategoryId === cat.id}
               onClick={() => {
                 setSelectedCategoryId(cat.id);
                 setPage(0);
@@ -357,27 +412,36 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           <StatePanel
             type="empty"
             title="No se encontraron productos"
-            message={search ? "Probá con otro término de búsqueda." : "Hacé click en 'Nuevo Producto' para registrar un artículo con variantes."}
+            message={hasFilters
+              ? "No hay productos en esta categoría o búsqueda."
+              : canManage
+                ? "Seleccioná Nuevo Producto para registrar el primer artículo."
+                : "Todavía no hay productos en el catálogo."}
+            action={hasFilters && <button type="button" className="pag-btn" onClick={clearFilters}>Limpiar filtros</button>}
           />
         ) : (
-          <div className="flow-table-wrapper">
-            <table className="flow-table">
+          <div className="flow-table-wrapper" role="region" aria-label="Listado de productos" tabIndex={0}>
+            <table className={`flow-table flow-table--catalog${hasActions ? " flow-table--actions" : ""}`}>
               <thead>
                 <tr>
                   <th>Código</th>
                   <th>Artículo / Modelo</th>
-                  <th>Variantes & Stock Disp.</th>
+                  <th>Variantes y stock</th>
                   <th>Categoría</th>
-                  <th>Precio Venta (Final)</th>
-                  <th>Stock Disp. Total</th>
+                  <th>Precio final</th>
+                  <th>Stock vendible</th>
                   <th>Estado</th>
-                  <th className="text-right">Acciones</th>
+                  {hasActions && <th className="catalog-actions">Acciones</th>}
                 </tr>
               </thead>
               <tbody>
                 {products.map((item) => {
                   const variants = item.product_variants || [];
-                  const totalSummary = calculateStockSummary(item.stock_balances);
+                  const sellableBalances = item.stock_balances?.filter(
+                    (b) => (b.location_id ? sellableLocationIds.has(b.location_id) : false),
+                  );
+                  const totalSummary = calculateStockSummary(sellableBalances);
+                  const webStatus = item.web_status && WEB_STATUS[item.web_status];
 
                   return (
                     <tr key={item.id}>
@@ -388,18 +452,11 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                       </td>
                       <td>
                         <div>
-                          <button type="button"
-                            style={{
-                              fontSize: "13px",
-                              color: "var(--text-main)",
-                              display: "block",
-                              cursor: "pointer",
-                            }}
-                            onClick={() => setEditingProduct(item)}
-                            title="Abrir ficha"
-                          >
-                            {item.internal_name}
-                          </button>
+                          {canManage ? (
+                            <button type="button" className="flow-link-btn" onClick={() => setEditingProduct(item)} title="Abrir ficha">
+                              {item.internal_name}
+                            </button>
+                          ) : <strong>{item.internal_name}</strong>}
                           {item.brands?.name && (
                             <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
                               {item.brands.name} {item.product_models?.name ? `• ${item.product_models.name}` : ""}
@@ -411,11 +468,12 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                         {variants.length > 0 ? (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
                             {variants.map((v) => {
-                              const vSummary = calculateStockSummary(item.stock_balances, v.id);
+                              const vSummary = calculateStockSummary(sellableBalances, v.id);
                               const barcode = getActiveBarcode(v.product_identifiers);
+                              const VariantControl = canLoadStock ? "button" : "span";
 
                               return (
-                                <button type="button"
+                                <VariantControl
                                   key={v.id}
                                   className="module-state-badge"
                                   style={{
@@ -424,12 +482,13 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                                     display: "inline-flex",
                                     alignItems: "center",
                                     gap: "4px",
-                                    cursor: "pointer",
+                                    cursor: canLoadStock ? "pointer" : undefined,
                                   }}
                                   title={barcode ? `Código de barras: ${barcode}` : undefined}
-                                  onClick={() => {
-                                    setStockIntakeTarget({ product: item, variantId: v.id });
-                                  }}
+                                  {...(canLoadStock ? {
+                                    type: "button" as const,
+                                    onClick: () => setStockIntakeTarget({ product: item, variantId: v.id }),
+                                  } : {})}
                                 >
                                   <strong>{v.name}</strong>
                                   <span style={{ opacity: 0.75 }}>({vSummary.available} u.)</span>
@@ -438,7 +497,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                                       [{vSummary.reserved}r]
                                     </span>
                                   )}
-                                </button>
+                                </VariantControl>
                               );
                             })}
                           </div>
@@ -447,7 +506,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                         )}
                       </td>
                       <td>
-                        <span className="module-state-badge nowrap" style={{ padding: "2px 8px", whiteSpace: "nowrap" }}>
+                        <span className="module-state-badge catalog-category">
                           {item.product_categories?.name || "General"}
                         </span>
                       </td>
@@ -480,32 +539,32 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                         )}
                       </td>
                       <td>
-                        <span className="flow-status-pill pending">{item.web_status === "published" ? "Publicado" : item.web_status === "paused" ? "Pausado" : item.web_status === "draft" ? "Borrador" : "Estado web no disponible"}{!item.is_active ? " · Inactivo" : ""}</span>
+                        {!item.is_active ? <StatusPill variant="slate">Inactivo</StatusPill>
+                          : webStatus ? <span className={`flow-status-pill ${webStatus.className}`}>{webStatus.label}</span>
+                          : <StatusPill variant="slate">Sin estado web</StatusPill>}
                       </td>
-                      <td className="text-right">
-                        <div style={{ display: "inline-flex", gap: "6px" }}>
-                          <button
-                            type="button"
-                            className="pag-btn"
-                            style={{ padding: "4px 8px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                            onClick={() => setEditingProduct(item)}
-                            title="Abrir ficha"
-                          >
-                            <FileText size={11} /> Ficha
-                          </button>
-                          <button
-                            type="button"
-                            className="pag-btn"
-                            style={{ padding: "4px 8px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                            onClick={() => {
-                              setStockIntakeTarget({ product: item });
-                            }}
-                            title="Cargar stock"
-                          >
-                            <ArrowDownRight size={11} /> Stock
-                          </button>
-                        </div>
-                      </td>
+                      {hasActions && (
+                        <td className="catalog-actions">
+                          <div className="catalog-row-actions">
+                            {canManage && (
+                              <button type="button" className="pag-btn" onClick={() => setEditingProduct(item)} title="Abrir ficha">
+                                <FileText size={11} /> Ficha
+                              </button>
+                            )}
+                            {canLoadStock && (
+                              <button
+                                type="button"
+                                className="pag-btn"
+                                onClick={() => setStockIntakeTarget({ product: item })}
+                                title="Cargar stock"
+                                aria-label="Cargar stock"
+                              >
+                                <ArrowDownRight size={11} /> Stock
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -518,6 +577,8 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
+            gap: "8px",
             alignItems: "center",
             justifyContent: "space-between",
             marginTop: "16px",
@@ -549,14 +610,14 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
         </div>
       </div>
 
-      {(isCreateOpen || editingProduct) && (
+      {canManage && (isCreateOpen || editingProduct) && (
         <CatalogSheetModal isOpen onClose={() => { setIsCreateOpen(false); setEditingProduct(null); }}
           product={editingProduct} categories={categories} brands={brands} models={models} locations={locations}
-          onSuccess={(message) => { setFeedback({ type: "success", message }); void fetchProducts(); }} />
+          onSuccess={(message) => { setFeedback({ type: "success", message }); refreshCatalog(); }} />
       )}
 
       {/* Modal: Dedicated Formal Stock Intake */}
-      {stockIntakeTarget && (
+      {canLoadStock && stockIntakeTarget && (
         <StockIntakeModal
           isOpen={Boolean(stockIntakeTarget)}
           onClose={() => setStockIntakeTarget(null)}
@@ -565,7 +626,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           locations={locations}
           onSuccess={(msg) => {
             setFeedback({ type: "success", message: msg });
-            fetchProducts();
+            refreshCatalog();
           }}
         />
       )}

@@ -1,7 +1,7 @@
 import React from "react";
 import { CheckCircle2, Printer, RefreshCw, Loader2 } from "lucide-react";
 import SaleReceipt from "../../components/erp/SaleReceipt";
-import { formatCurrency, formatPosCurrency } from "../../lib/formatters";
+import { formatCurrency } from "../../lib/formatters";
 import type { ConfirmedTicketState } from "./posReceiptFlow";
 
 export interface PosReceiptPanelProps {
@@ -72,7 +72,7 @@ export const PosReceiptPanel: React.FC<PosReceiptPanelProps> = ({
                   {" • "}
                   <span data-testid="receipt-amount">
                     {receipt.pricing_version === "v2"
-                      ? formatPosCurrency(receipt.total_amount, receipt.currency_code)
+                      ? formatCurrency(receipt.total_amount, receipt.currency_code)
                       : formatCurrency(receipt.total_amount, receipt.currency_code)}
                   </span>
                 </p>
@@ -86,16 +86,11 @@ export const PosReceiptPanel: React.FC<PosReceiptPanelProps> = ({
               )}
 
               <span
-                style={{ fontSize: "10px", color: "var(--text-light)", fontFamily: "monospace" }}
-                data-testid="confirmed-sale-id"
-              >
-                ID Venta ERP: {info.saleId}
-              </span>
-              <span
-                style={{ display: "block", fontSize: "10px", color: "var(--text-light)", fontFamily: "monospace" }}
+                style={{ display: "block", fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}
                 data-testid="confirmed-document-id"
+                title={`Venta ERP: ${info.saleId} · Documento ERP: ${info.documentId}`}
               >
-                {info.invoiceKind === "fiscal" ? "Comprobante fiscal" : "Comprobante no fiscal"}: {info.documentNumber} • Documento ERP: {info.documentId}
+                {info.invoiceKind === "fiscal" ? "Comprobante fiscal" : "Comprobante no fiscal"}: {info.documentNumber}
               </span>
             </div>
           </div>

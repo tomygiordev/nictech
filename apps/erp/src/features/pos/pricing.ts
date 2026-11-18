@@ -36,7 +36,7 @@ export const normalizeDecimalParts = (
   let str: string;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw new Error(`Invalid non-finite number: ${value}`);
+      throw new Error(`Número inválido (no finito): ${value}`);
     }
     str = value.toString();
   } else {
@@ -44,7 +44,7 @@ export const normalizeDecimalParts = (
   }
 
   if (str === "") {
-    throw new Error("Empty decimal string");
+    throw new Error("Cadena decimal vacía.");
   }
 
   // Handle optional leading sign
@@ -63,7 +63,7 @@ export const normalizeDecimalParts = (
     const expStr = str.slice(eIndex + 1);
     const exp = parseInt(expStr, 10);
     if (isNaN(exp)) {
-      throw new Error(`Invalid scientific exponent in: ${value}`);
+      throw new Error(`Exponente científico inválido en: ${value}`);
     }
 
     const [bInt, bFrac = ""] = baseStr.split(".");
@@ -104,7 +104,7 @@ export const normalizeDecimalParts = (
   if (intStr === "") intStr = "0";
   // Validate that intStr and fracStr are purely digits
   if (!/^\d+$/.test(intStr) || (fracStr !== "" && !/^\d+$/.test(fracStr))) {
-    throw new Error(`Invalid decimal representation: ${value}`);
+    throw new Error(`Representación decimal inválida: ${value}`);
   }
 
   return { sign, intStr, fracStr };
@@ -122,7 +122,7 @@ export const toScaledBigInt = (value: number | string): bigint => {
 
   // Check POS 1e9 magnitude limit (integer part alone cannot exceed 1e9)
   if (intBig > BigInt(POS_MAX_AMOUNT_ARS)) {
-    throw new Error(`Amount exceeds maximum allowed POS amount of ${POS_MAX_AMOUNT_ARS.toLocaleString()} ARS`);
+    throw new Error(`El importe supera el límite máximo permitido del POS de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS.`);
   }
 
   // First 4 decimal places
@@ -137,7 +137,7 @@ export const toScaledBigInt = (value: number | string): bigint => {
   const absScaled = intBig * SCALE + totalFrac;
 
   if (absScaled > BigInt(POS_MAX_AMOUNT_ARS) * SCALE) {
-    throw new Error(`Amount exceeds maximum allowed POS amount of ${POS_MAX_AMOUNT_ARS.toLocaleString()} ARS`);
+    throw new Error(`El importe supera el límite máximo permitido del POS de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS.`);
   }
 
   return sign * absScaled;
@@ -181,7 +181,7 @@ export const div4 = (numerator: number | string, denominator: number | string): 
   const num = toScaledBigInt(numerator);
   const den = toScaledBigInt(denominator);
   if (den === 0n) {
-    throw new Error("Division by zero");
+    throw new Error("División por cero.");
   }
   const scaledNum = num * SCALE;
   const sign = scaledNum < 0n !== den < 0n ? -1n : 1n;
@@ -207,7 +207,7 @@ export const divideGrossByTax = (grossScaled: bigint, taxRateScaled: bigint): bi
   const numerator = grossScaled * 1_000_000n;
   const denominator = 1_000_000n + taxRateScaled;
   if (denominator <= 0n) {
-    throw new Error(`Invalid tax rate denominator: ${denominator}`);
+    throw new Error(`Denominador de alícuota de IVA inválido: ${denominator}`);
   }
   const sign = grossScaled < 0n ? -1n : 1n;
   const absNum = grossScaled < 0n ? -grossScaled * 1_000_000n : numerator;
@@ -241,16 +241,16 @@ export const calculateGrossTaxBreakdown = (
   const grossDiscountScaled = toScaledBigInt(grossDiscount);
 
   if (unitGrossScaled < 0n) {
-    throw new Error("Unit gross price cannot be negative");
+    throw new Error("El precio unitario bruto no puede ser negativo.");
   }
   if (qtyScaled <= 0n) {
-    throw new Error("Quantity must be positive");
+    throw new Error("La cantidad debe ser mayor a cero.");
   }
   if (taxRateScaled < 0n || taxRateScaled > 100n * SCALE) {
-    throw new Error("Tax rate percent must be between 0 and 100");
+    throw new Error("La alícuota de IVA debe estar entre 0% y 100%.");
   }
   if (grossDiscountScaled < 0n) {
-    throw new Error("Gross discount cannot be negative");
+    throw new Error("El descuento bruto no puede ser negativo.");
   }
 
   // grossSubtotalScaled = round4(quantity * unit_gross)
@@ -260,7 +260,7 @@ export const calculateGrossTaxBreakdown = (
   const grossSubtotalScaled = grossSubtotalQuotient + (grossSubtotalRem * 2n >= SCALE ? 1n : 0n);
 
   if (grossDiscountScaled > grossSubtotalScaled) {
-    throw new Error("Gross discount cannot exceed gross subtotal");
+    throw new Error("El descuento bruto no puede superar el subtotal bruto.");
   }
 
   const lineTotalScaled = grossSubtotalScaled - grossDiscountScaled;
@@ -739,7 +739,7 @@ export const calculatePosCartTotals = (
       if (lineTotalScaled > maxCapScaled) {
         hasError = true;
         if (!errorMessage) {
-          errorMessage = `El subtotal de la línea supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS. Reduzca la cantidad para continuar.`;
+          errorMessage = `El subtotal de la línea supera el límite permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS. Reducí la cantidad para continuar.`;
         }
       }
 
@@ -777,7 +777,7 @@ export const calculatePosCartTotals = (
     errorMessage = `El total del carrito ($${fromScaledBigInt(totalGrossScaled).toLocaleString("es-AR", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 4,
-    })} ARS) supera el límite máximo permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS. Reduzca la cantidad o elimine artículos para continuar.`;
+    })} ARS) supera el límite máximo permitido de $${POS_MAX_AMOUNT_ARS.toLocaleString("es-AR")} ARS. Reducí la cantidad o eliminá artículos para continuar.`;
   }
 
   const totalGrossArs = fromScaledBigInt(totalGrossScaled);

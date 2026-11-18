@@ -77,8 +77,12 @@ describe("PosReceiptPanel UI component", () => {
     expect(screen.getByTestId("receipt-customer")).toHaveTextContent("Cliente Persistido Real");
     expect(screen.getByTestId("receipt-payment")).toHaveTextContent("Tarjeta de Crédito");
     expect(screen.getByTestId("receipt-amount")).toHaveTextContent("ARS 12.100,00");
-    expect(screen.getByTestId("confirmed-sale-id")).toHaveTextContent("ID Venta ERP: sale-uuid-001");
-    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("Comprobante fiscal: F-0001-00000001 • Documento ERP: doc-uuid-001");
+    expect(screen.queryByTestId("confirmed-sale-id")).toBeNull();
+    const docBadge = screen.getByTestId("confirmed-document-id");
+    expect(docBadge).toHaveTextContent("Comprobante fiscal: F-0001-00000001");
+    expect(docBadge).not.toHaveTextContent("sale-uuid-001");
+    expect(docBadge).not.toHaveTextContent("doc-uuid-001");
+    expect(docBadge).toHaveAttribute("title", "Venta ERP: sale-uuid-001 · Documento ERP: doc-uuid-001");
 
     expect(screen.getByTestId("print-receipt-btn")).toBeInTheDocument();
     expect(screen.queryByTestId("recover-receipt-btn")).toBeNull();
@@ -100,8 +104,12 @@ describe("PosReceiptPanel UI component", () => {
       />,
     );
 
-    expect(screen.getByTestId("confirmed-sale-id")).toHaveTextContent("ID Venta ERP: sale-uuid-001");
-    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("Comprobante fiscal: F-0001-00000001 • Documento ERP: doc-uuid-001");
+    expect(screen.queryByTestId("confirmed-sale-id")).toBeNull();
+    const docBadge = screen.getByTestId("confirmed-document-id");
+    expect(docBadge).toHaveTextContent("Comprobante fiscal: F-0001-00000001");
+    expect(docBadge).not.toHaveTextContent("sale-uuid-001");
+    expect(docBadge).not.toHaveTextContent("doc-uuid-001");
+    expect(docBadge).toHaveAttribute("title", "Venta ERP: sale-uuid-001 · Documento ERP: doc-uuid-001");
     expect(screen.getByTestId("pending-receipt-message")).toHaveTextContent(
       "El comprobante aún no devolvió datos persistidos en el ERP.",
     );
@@ -233,14 +241,16 @@ describe("PosReceiptPanel UI component", () => {
 
     render(<TestHost recoverFn={recoverFnMock} />);
 
-    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("doc-A");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("F-0001-00000001");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveAttribute("title", expect.stringContaining("doc-A"));
 
     fireEvent.click(screen.getByTestId("recover-receipt-btn"));
     expect(recoverFnMock).toHaveBeenCalledWith("doc-A");
 
     fireEvent.click(screen.getByTestId("switch-to-b"));
 
-    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("doc-B");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("F-0001-00000002");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveAttribute("title", expect.stringContaining("doc-B"));
     expect(screen.getByTestId("receipt-customer")).toHaveTextContent("Cliente Venta B");
 
     await act(async () => {
@@ -256,7 +266,8 @@ describe("PosReceiptPanel UI component", () => {
       });
     });
 
-    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("doc-B");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("F-0001-00000002");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveAttribute("title", expect.stringContaining("doc-B"));
     expect(screen.getByTestId("receipt-customer")).toHaveTextContent("Cliente Venta B");
     expect(createSaleWithInvoiceSpy).not.toHaveBeenCalled();
   });
@@ -313,7 +324,8 @@ describe("PosReceiptPanel UI component", () => {
 
     render(<TestHost initialTicket={ticketA} recoverFn={recoverFnMock} />);
 
-    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("doc-A");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("F-0001-00000001");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveAttribute("title", expect.stringContaining("doc-A"));
     expect(screen.getByTestId("recover-receipt-btn")).toBeInTheDocument();
     expect(screen.queryByTestId("print-receipt-btn")).toBeNull();
 
@@ -349,7 +361,8 @@ describe("PosReceiptPanel UI component", () => {
 
     render(<TestHost initialTicket={ticketA} recoverFn={recoverFnMock} />);
 
-    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("doc-A");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveTextContent("F-0001-00000001");
+    expect(screen.getByTestId("confirmed-document-id")).toHaveAttribute("title", expect.stringContaining("doc-A"));
     const recoverBtn = screen.getByTestId("recover-receipt-btn");
 
     await act(async () => {
@@ -379,7 +392,7 @@ describe("PosReceiptPanel UI component", () => {
     expect(createSaleWithInvoiceSpy).not.toHaveBeenCalled();
   });
 
-  it("formats v2 ticket amounts with up to 4 decimals in PosReceiptPanel header", () => {
+  it("formats v2 ticket amounts with 2 decimals in PosReceiptPanel header", () => {
     const v2Receipt: DocumentSaleReceipt = {
       ...dummyPersistedReceipt,
       pricing_version: "v2",
@@ -416,7 +429,7 @@ describe("PosReceiptPanel UI component", () => {
     );
 
     const amountEl = screen.getByTestId("receipt-amount");
-    expect(amountEl.textContent?.replace(/\u00a0/g, " ")).toBe("ARS 300,015");
+    expect(amountEl.textContent?.replace(/\u00a0/g, " ")).toBe("ARS 300,02");
   });
 
   it("handles malformed v2 readback failing closed with real parseDocumentSaleReceipt: no receipt rendered, no print button", () => {

@@ -13495,6 +13495,27 @@ export type Database = {
         }
         Returns: undefined
       }
+      catalog_sellable_stock:
+        | {
+            Args: { p_organization_id: string }
+            Returns: {
+              available: number
+              product_id: string
+              stock_value_ars: number
+              unit_price_ars: number
+              variant_id: string
+            }[]
+          }
+        | {
+            Args: { p_branch_id: string; p_organization_id: string }
+            Returns: {
+              available: number
+              product_id: string
+              stock_value_ars: number
+              unit_price_ars: number
+              variant_id: string
+            }[]
+          }
       claim_due_integration_retries: {
         Args: { batch_limit?: number; lease_seconds?: number }
         Returns: {
@@ -14038,6 +14059,14 @@ export type Database = {
         }
         Returns: string
       }
+      get_catalog_kpis: {
+        Args: {
+          include_inactive?: boolean
+          search_text?: string
+          target_category_id?: string
+        }
+        Returns: Json
+      }
       get_catalog_product_variants:
         | { Args: { p_product_id: string }; Returns: Json }
         | {
@@ -14070,6 +14099,10 @@ export type Database = {
           internal_notes: string
           tax_id: string
         }[]
+      }
+      get_dashboard_metrics: {
+        Args: { date_from: string; date_to: string; target_branch_id?: string }
+        Returns: Json
       }
       get_document_sale_receipts: {
         Args: { target_document_ids: string[] }
@@ -14564,6 +14597,10 @@ export type Database = {
           variables: Json
         }
         Returns: string
+      }
+      quote_pos_catalog_prices: {
+        Args: { p_product_ids: string[] }
+        Returns: Json
       }
       recode_catalog_product: {
         Args: { p_new_code: string; p_product_id: string }
@@ -15694,3 +15731,4 @@ export const Constants = {
     },
   },
 } as const
+

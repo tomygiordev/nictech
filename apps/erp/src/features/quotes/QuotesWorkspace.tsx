@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { z } from "zod";
+import { useState, useEffect, useMemo, useCallback, useId } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   DollarSign,
   CheckCircle,
@@ -11,7 +12,6 @@ import {
   Eye,
   Check,
   XCircle,
-  AlertCircle,
   RefreshCw,
   Clock,
   FileText,
@@ -22,45 +22,31 @@ import {
   FeedbackAlert,
   KpiCard,
 } from "../../components/erp/WorkspaceUi";
+import { Field, FieldError, FormError } from "../../components/erp/FormFeedback";
+import { useErpAuth } from "../../auth/ErpAuthContext";
+import { toUserMessage } from "../../lib/errors";
 import { formatCurrency, formatDate } from "../../lib/formatters";
 import { supabase } from "../../lib/supabase";
 import {
   QuoteOverview,
-  QuoteLineRecord,
   listQuotes,
   createRepairQuote,
   issueRepairQuote,
   respondQuoteDecision,
   CreateQuoteInput,
 } from "./api";
-
-interface LineFormItem {
-  id: string;
-  kind: "product" | "service" | "free_concept";
-  productId?: string;
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  unitCost: number;
-  taxRatePercent: number;
-}
-
-const quoteLineSchema = z.object({
-  kind: z.enum(["product", "service", "free_concept"]),
-  productId: z.string().uuid().optional(),
-  description: z.string().trim().min(1),
-  quantity: z.number().positive(),
-  unitPrice: z.number().nonnegative(),
-  unitCost: z.number().nonnegative(),
-  taxRatePercent: z.number().min(0).max(100),
-}).superRefine((line, context) => {
-  if ((line.kind === "product" || line.kind === "service") && !line.productId) {
-    context.addIssue({ code: "custom", path: ["productId"], message: line.kind === "service" ? "Seleccioná un servicio catalogado." : "Seleccioná un repuesto catalogado." });
-  }
-  if (line.kind === "free_concept" && line.productId) {
-    context.addIssue({ code: "custom", path: ["productId"], message: "Un concepto libre no puede vincularse a un artículo." });
-  }
-});
+import {
+  createQuoteSchema,
+  emptyCreateQuote,
+  emptyQuoteDecision,
+  emptyQuoteLine,
+  isZeroPrice,
+  quoteDecisionSchema,
+  type CreateQuoteFormValues,
+  type QuoteDecisionFormInput,
+  type QuoteDecisionFormValues,
+  type QuoteLineFormValues,
+} from "./schemas";
 
 interface RepairOrderOption {
   id: string;
@@ -72,6 +58,9 @@ interface RepairOrderOption {
 }
 
 export const QuotesWorkspace = () => {
+  const { hasPermission } = useErpAuth();
+  const canManageQuotes = hasPermission("quotes.manage");
+
   const [quotes, setQuotes] = useState<QuoteOverview[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState("");
@@ -83,32 +72,39 @@ export const QuotesWorkspace = () => {
   // New Quote Modal
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [repairOrders, setRepairOrders] = useState<RepairOrderOption[]>([]);
-  const [selectedOrderId, setSelectedOrderId] = useState<string>("");
   const [isLoadingQuotePrerequisites, setIsLoadingQuotePrerequisites] = useState(false);
   const [quotePrerequisitesError, setQuotePrerequisitesError] = useState<string | null>(null);
-  const [quoteCurrency, setQuoteCurrency] = useState<"ARS" | "USD">("ARS");
-  const [quoteReason, setQuoteReason] = useState<string>("Presupuesto inicial para reparación");
-  const [lines, setLines] = useState<LineFormItem[]>([
-    {
-      id: "l-1",
-      kind: "free_concept",
-      description: "Mano de obra diagnóstico y reparación",
-      quantity: 1,
-      unitPrice: 15000,
-      unitCost: 0,
-      taxRatePercent: 21,
-    },
-  ]);
-  const [submitting, setSubmitting] = useState(false);
 
   // Decision Modal
   const [decisionModalQuote, setDecisionModalQuote] = useState<QuoteOverview | null>(null);
-  const [decisionType, setDecisionType] = useState<"approved" | "rejected">("approved");
-  const [decisionNotes, setDecisionNotes] = useState<string>("");
-  const [submittingDecision, setSubmittingDecision] = useState<boolean>(false);
+  const decisionGroupId = useId();
+  const approvedRadioId = `${decisionGroupId}-approved`;
+  const rejectedRadioId = `${decisionGroupId}-rejected`;
+  const decisionErrorId = `${decisionGroupId}-error`;
 
   // Products for line selector
   const [availableProducts, setAvailableProducts] = useState<Array<{ id: string; internal_name: string; internal_code: string; item_kind: "product" | "service" }>>([]);
+
+  const createForm = useForm<CreateQuoteFormValues>({
+    resolver: zodResolver(createQuoteSchema),
+    defaultValues: emptyCreateQuote(),
+  });
+  const { fields: lineFields, append: appendLine, remove: removeLine } = useFieldArray({
+    control: createForm.control,
+    name: "lines",
+  });
+  const watchedLines = createForm.watch("lines");
+  const watchedCurrency = createForm.watch("currencyCode");
+  const createErrors = createForm.formState.errors;
+  const submittingQuote = createForm.formState.isSubmitting;
+
+  const decisionForm = useForm<QuoteDecisionFormInput, unknown, QuoteDecisionFormValues>({
+    resolver: zodResolver(quoteDecisionSchema),
+    defaultValues: emptyQuoteDecision(),
+  });
+  const selectedDecision = decisionForm.watch("decision");
+  const decisionErrors = decisionForm.formState.errors;
+  const submittingDecision = decisionForm.formState.isSubmitting;
 
   const fetchQuotesData = useCallback(async () => {
     try {
@@ -119,7 +115,7 @@ export const QuotesWorkspace = () => {
       console.error("Error al cargar presupuestos:", err);
       setFeedback({
         type: "error",
-        message: err instanceof Error ? err.message : "Error al conectar con la base de datos de presupuestos.",
+        message: toUserMessage(err, "Error al conectar con la base de datos de presupuestos."),
       });
     } finally {
       setLoading(false);
@@ -162,15 +158,9 @@ export const QuotesWorkspace = () => {
         }];
       });
       setRepairOrders(ordersList);
-      setSelectedOrderId((current) =>
-        ordersList.some((order) => order.id === current) ? current : ordersList[0]?.id ?? ""
-      );
-
       setAvailableProducts((prodsRes.data || []).filter((product) => product.item_kind === "product" || product.item_kind === "service"));
     } catch (e) {
-      const message = e instanceof Error ? e.message : "No se pudieron cargar las órdenes y los productos.";
-      setQuotePrerequisitesError(message);
-      setFeedback({ type: "error", message: `${message} Podés reintentar desde el formulario.` });
+      setQuotePrerequisitesError(toUserMessage(e, "No se pudieron cargar las órdenes y los productos."));
     } finally {
       setIsLoadingQuotePrerequisites(false);
     }
@@ -182,49 +172,36 @@ export const QuotesWorkspace = () => {
     }
   }, [isNewModalOpen, loadNewQuotePrerequisites]);
 
-  // Line item manipulation
-  const handleAddLine = () => {
-    setLines((prev) => [
-      ...prev,
-      {
-        id: `l-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        kind: "free_concept",
-        description: "",
-        quantity: 1,
-        unitPrice: 0,
-        unitCost: 0,
-        taxRatePercent: 21,
-      },
-    ]);
+  const openNewQuoteModal = () => {
+    if (!canManageQuotes) return;
+    createForm.reset(emptyCreateQuote());
+    setIsNewModalOpen(true);
   };
 
-  const handleRemoveLine = (index: number) => {
-    setLines((prev) => prev.filter((_, i) => i !== index));
+  const closeNewQuoteModal = () => {
+    if (!submittingQuote) setIsNewModalOpen(false);
   };
 
-  const handleUpdateLine = (index: number, patch: Partial<LineFormItem>) => {
-    setLines((prev) =>
-      prev.map((item, i) => {
-        if (i !== index) return item;
-        const updated = { ...item, ...patch };
-        if (patch.kind) updated.productId = undefined;
-        if (patch.productId && availableProducts.length > 0) {
-          const found = availableProducts.find((p) => p.id === patch.productId);
-          if (found && !updated.description) {
-            updated.description = `${found.internal_name} (${found.internal_code})`;
-          }
-        }
-        return updated;
-      })
-    );
+  const openDecisionModal = (quote: QuoteOverview) => {
+    if (!canManageQuotes) return;
+    decisionForm.reset(emptyQuoteDecision());
+    setDecisionModalQuote(quote);
+  };
+
+  const closeDecisionModal = () => {
+    if (!submittingDecision) setDecisionModalQuote(null);
   };
 
   const computedTotals = useMemo(() => {
     let subtotal = 0;
     let tax = 0;
-    lines.forEach((l) => {
-      const lineSub = Math.max(0, l.quantity) * Math.max(0, l.unitPrice);
-      const lineTax = (lineSub * Math.max(0, l.taxRatePercent)) / 100;
+    watchedLines.forEach((l) => {
+      const qty = Number(l.quantity);
+      const price = Number(l.unitPrice);
+      const validQty = Number.isFinite(qty) && qty > 0 ? qty : 0;
+      const validPrice = Number.isFinite(price) && price >= 0 ? price : 0;
+      const lineSub = validQty * validPrice;
+      const lineTax = (lineSub * 21) / 100;
       subtotal += lineSub;
       tax += lineTax;
     });
@@ -233,51 +210,33 @@ export const QuotesWorkspace = () => {
       tax,
       total: subtotal + tax,
     };
-  }, [lines]);
+  }, [watchedLines]);
 
-  // Submit New Quote
-  const handleCreateQuote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedOrderId) {
-      setFeedback({ type: "error", message: "Seleccioná una orden de reparación válida." });
-      return;
-    }
-    if (lines.length === 0) {
-      setFeedback({ type: "error", message: "Agregá al menos una línea al presupuesto." });
-      return;
-    }
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i];
-      if (!l.description.trim()) {
-        setFeedback({ type: "error", message: `La línea ${i + 1} debe contener una descripción válida.` });
-        return;
-      }
-      if (l.quantity <= 0 || l.unitPrice <= 0) {
-        setFeedback({ type: "error", message: `La línea ${i + 1} debe tener cantidad y precio mayores a 0.` });
-        return;
-      }
-      const parsedLine = quoteLineSchema.safeParse(l);
-      if (!parsedLine.success) {
-        setFeedback({ type: "error", message: `Línea ${i + 1}: ${parsedLine.error.issues[0]?.message ?? "revisá el tipo de ítem."}` });
-        return;
-      }
-    }
-
+  const handleCreateQuote = async (values: CreateQuoteFormValues) => {
+    if (!canManageQuotes) return;
+    createForm.clearErrors("root.server");
     try {
-      setSubmitting(true);
       const input: CreateQuoteInput = {
-        repairOrderId: selectedOrderId,
-        currencyCode: quoteCurrency,
-        reason: quoteReason,
-        lines: lines.map((l) => ({
-          kind: l.kind,
-          product_id: l.productId,
-          description: l.description.trim(),
-          quantity: Number(l.quantity),
-          unit_price: Number(l.unitPrice),
-          unit_cost: Number(l.unitCost || 0),
-          tax_rate_percent: Number(l.taxRatePercent || 0),
-        })),
+        repairOrderId: values.repairOrderId,
+        currencyCode: values.currencyCode,
+        reason: values.reason,
+        lines: values.lines.map((l) => {
+          const selectedProduct = l.kind === "free_concept"
+            ? undefined
+            : availableProducts.find((p) => p.id === l.productId);
+          const description = l.kind === "free_concept"
+            ? l.description
+            : l.description || (selectedProduct ? `${selectedProduct.internal_name} (${selectedProduct.internal_code})` : "");
+          return {
+            kind: l.kind,
+            product_id: l.kind === "free_concept" ? undefined : l.productId,
+            description,
+            quantity: Number(l.quantity),
+            unit_price: Number(l.unitPrice),
+            unit_cost: l.kind === "product" ? 0 : Number(l.unitCost || 0),
+            tax_rate_percent: 21,
+          };
+        }),
       };
 
       await createRepairQuote(input);
@@ -286,36 +245,21 @@ export const QuotesWorkspace = () => {
         message: "¡Presupuesto versionado creado exitosamente en base de datos!",
       });
       setIsNewModalOpen(false);
-      // Reset form
-      setLines([
-        {
-          id: "l-1",
-          kind: "free_concept",
-          description: "Mano de obra diagnóstico y reparación",
-          quantity: 1,
-          unitPrice: 15000,
-          unitCost: 0,
-          taxRatePercent: 21,
-        },
-      ]);
+      createForm.reset(emptyCreateQuote());
       await fetchQuotesData();
     } catch (err) {
-      console.error(err);
-      setFeedback({
-        type: "error",
-        message: err instanceof Error ? err.message : "Error al guardar el presupuesto.",
+      createForm.setError("root.server", {
+        message: toUserMessage(err, "No se pudo guardar el presupuesto. Reintentá."),
       });
-    } finally {
-      setSubmitting(false);
     }
   };
 
   // Issue Quote & Share WhatsApp (Finding H20)
   const handleIssueAndSendWhatsApp = async (q: QuoteOverview) => {
+    if (!q.issued_at && !canManageQuotes) return;
     try {
       let token = "";
       if (!q.issued_at) {
-        // Issue quote officially
         const res = await issueRepairQuote(q.id);
         token = res.response_token;
         setFeedback({
@@ -347,40 +291,34 @@ export const QuotesWorkspace = () => {
 
       window.open(url, "_blank");
     } catch (err) {
-      console.error(err);
       setFeedback({
         type: "error",
-        message: err instanceof Error ? err.message : "Error al emitir o compartir el presupuesto.",
+        message: toUserMessage(err, "No se pudo emitir o compartir el presupuesto."),
       });
     }
   };
 
   // Submit Client Decision (Finding H06)
-  const handleSubmitDecision = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!decisionModalQuote) return;
+  const handleSubmitDecision = async (values: QuoteDecisionFormValues) => {
+    if (!decisionModalQuote || !canManageQuotes) return;
+    decisionForm.clearErrors("root.server");
 
     try {
-      setSubmittingDecision(true);
-      await respondQuoteDecision(decisionModalQuote.id, decisionType, decisionNotes);
+      await respondQuoteDecision(decisionModalQuote.id, values.decision, values.notes || undefined);
       setFeedback({
         type: "success",
-        message: `Decisión "${decisionType === "approved" ? "Aprobado" : "Rechazado"}" registrada exitosamente para la orden ${decisionModalQuote.order_code} v${decisionModalQuote.version}.`,
+        message: `Decisión "${values.decision === "approved" ? "Aprobado" : "Rechazado"}" registrada exitosamente para la orden ${decisionModalQuote.order_code} v${decisionModalQuote.version}.`,
       });
-      setDecisionModalQuote(null);
-      setDecisionNotes("");
       if (selectedQuote?.id === decisionModalQuote.id) {
         setSelectedQuote(null);
       }
+      setDecisionModalQuote(null);
+      decisionForm.reset(emptyQuoteDecision());
       await fetchQuotesData();
     } catch (err) {
-      console.error(err);
-      setFeedback({
-        type: "error",
-        message: err instanceof Error ? err.message : "Error al registrar la decisión del cliente.",
+      decisionForm.setError("root.server", {
+        message: toUserMessage(err, "No se pudo registrar la decisión del cliente. Reintentá."),
       });
-    } finally {
-      setSubmittingDecision(false);
     }
   };
 
@@ -393,7 +331,7 @@ export const QuotesWorkspace = () => {
   }, [quotes, search]);
 
   // KPI Computations
-  const totalCotizadoArs = useMemo(() => {
+  const totalPresupuestadoArs = useMemo(() => {
     return quotes
       .filter((q) => q.currency_code === "ARS")
       .reduce((acc, q) => acc + q.total_amount, 0);
@@ -411,9 +349,9 @@ export const QuotesWorkspace = () => {
   return (
     <div className="flow-dashboard">
       <WorkspaceHeader
-        title="Presupuestos & Cotizaciones Comerciales"
+        title="Presupuestos comerciales"
         description="Presupuestos técnicos versionados vinculados a órdenes de servicio, líneas detalladas de repuestos y mano de obra, emisión trazable y registro formal de respuesta del cliente."
-        badge={`${quotes.length} Cotizaciones Registradas`}
+        badge={`${quotes.length} Presupuestos registrados`}
       />
 
       {feedback && (
@@ -429,8 +367,8 @@ export const QuotesWorkspace = () => {
         <KpiCard
           icon={DollarSign}
           iconVariant="green"
-          label="Total Cotizado ARS"
-          value={formatCurrency(totalCotizadoArs, "ARS")}
+          label="Total presupuestado ARS"
+          value={formatCurrency(totalPresupuestadoArs, "ARS")}
           trend={{ text: "Presupuestado", positive: true }}
           sublabel="Valor total de propuestas vigentes"
         />
@@ -438,19 +376,19 @@ export const QuotesWorkspace = () => {
         <KpiCard
           icon={CheckCircle}
           iconVariant="navy"
-          label="Cotizaciones Aprobadas"
+          label="Presupuestos aprobados"
           value={approvedCount}
-          trend={{ text: "Confirmadas", positive: true }}
-          sublabel="Aprobadas formalmente por el cliente"
+          trend={{ text: "Confirmados", positive: true }}
+          sublabel="Aprobados formalmente por el cliente"
         />
 
         <KpiCard
           icon={TrendingUp}
           iconVariant="steel"
-          label="Tasa de Cierre"
+          label="Tasa de cierre"
           value={rateConversion}
           trend={{ text: "Conversión", positive: true }}
-          sublabel="Aprobadas sobre total de presupuestos"
+          sublabel="Aprobados sobre total de presupuestos"
         />
       </div>
 
@@ -458,16 +396,17 @@ export const QuotesWorkspace = () => {
       <div className="flow-card">
         <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
           <div>
-            <h2 className="flow-card__title">Listado de Presupuestos Formales</h2>
+            <h2 className="flow-card__title">Listado de presupuestos formales</h2>
             <p className="flow-card__subtitle">Historial de versiones, estado de validez y decisiones del cliente</p>
           </div>
 
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             <div className="flow-search-pill" style={{ width: "260px" }}>
-              <Search size={15} />
+              <Search size={15} aria-hidden="true" />
               <input
                 type="text"
                 placeholder="Buscar por orden, cliente..."
+                aria-label="Buscar presupuestos por orden o cliente"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -478,22 +417,25 @@ export const QuotesWorkspace = () => {
               className="pag-btn"
               onClick={() => void fetchQuotesData()}
               title="Recargar datos"
+              aria-label="Recargar datos"
             >
-              <RefreshCw size={15} className={loading ? "spin" : ""} />
+              <RefreshCw size={15} className={loading ? "spin" : ""} aria-hidden="true" />
             </button>
 
             <button
               type="button"
               className="btn-primary"
-              onClick={() => setIsNewModalOpen(true)}
+              onClick={openNewQuoteModal}
+              disabled={!canManageQuotes}
+              title={!canManageQuotes ? "Necesitás permiso para gestionar presupuestos." : undefined}
             >
-              <Plus size={16} /> Nuevo Presupuesto
+              <Plus size={16} aria-hidden="true" /> Nuevo presupuesto
             </button>
           </div>
         </div>
 
         <div style={{ padding: "12px 16px", background: "var(--bg-app)", borderBottom: "1px solid var(--border-line)", display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "var(--text-muted)" }}>
-          <Receipt size={15} style={{ color: "var(--brand-primary)", flexShrink: 0 }} />
+          <Receipt size={15} style={{ color: "var(--brand-primary)", flexShrink: 0 }} aria-hidden="true" />
           <span>Cada presupuesto está formalmente vinculado a una orden de taller con líneas inmutables y congelamiento de costos en base de datos.</span>
         </div>
 
@@ -506,7 +448,7 @@ export const QuotesWorkspace = () => {
                 <th>Conceptos / Líneas</th>
                 <th>Validez</th>
                 <th>Total</th>
-                <th>Estado Comercial</th>
+                <th>Estado comercial</th>
                 <th className="text-right">Acciones</th>
               </tr>
             </thead>
@@ -514,7 +456,7 @@ export const QuotesWorkspace = () => {
               {loading ? (
                 <tr>
                   <td colSpan={7} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-                    Cargando cotizaciones desde la base de datos central...
+                    Cargando presupuestos desde la base de datos central...
                   </td>
                 </tr>
               ) : filteredQuotes.length === 0 ? (
@@ -526,6 +468,7 @@ export const QuotesWorkspace = () => {
               ) : (
                 filteredQuotes.map((q) => {
                   const isExpired = q.expires_at ? new Date(q.expires_at) < new Date() : false;
+                  const cannotIssueDraft = !q.issued_at && !canManageQuotes;
                   return (
                     <tr key={q.id}>
                       <td>
@@ -570,23 +513,23 @@ export const QuotesWorkspace = () => {
                       <td>
                         {q.decision === "approved" ? (
                           <span className="flow-status-pill completed" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <Check size={11} /> Aprobado
+                            <Check size={11} aria-hidden="true" /> Aprobado
                           </span>
                         ) : q.decision === "rejected" ? (
                           <span className="flow-status-pill failed" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <XCircle size={11} /> Rechazado
+                            <XCircle size={11} aria-hidden="true" /> Rechazado
                           </span>
                         ) : isExpired ? (
                           <span className="flow-status-pill cancelled" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <Clock size={11} /> Vencido
+                            <Clock size={11} aria-hidden="true" /> Vencido
                           </span>
                         ) : q.issued_at ? (
                           <span className="flow-status-pill confirmed" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <Clock size={11} /> Emitido / Pendiente
+                            <Clock size={11} aria-hidden="true" /> Emitido / Pendiente
                           </span>
                         ) : (
                           <span className="flow-status-pill pending" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <FileText size={11} /> Borrador
+                            <FileText size={11} aria-hidden="true" /> Borrador
                           </span>
                         )}
                       </td>
@@ -599,7 +542,7 @@ export const QuotesWorkspace = () => {
                             onClick={() => setSelectedQuote(q)}
                             title="Ver detalle del presupuesto"
                           >
-                            <Eye size={12} /> Ver
+                            <Eye size={12} aria-hidden="true" /> Ver
                           </button>
 
                           <button
@@ -613,9 +556,16 @@ export const QuotesWorkspace = () => {
                               borderColor: "var(--brand-border)",
                             }}
                             onClick={() => void handleIssueAndSendWhatsApp(q)}
-                            title={q.issued_at ? "Compartir por WhatsApp" : "Emitir y Enviar por WhatsApp"}
+                            disabled={cannotIssueDraft}
+                            title={
+                              cannotIssueDraft
+                                ? "Necesitás permiso para emitir presupuestos."
+                                : q.issued_at
+                                ? "Compartir por WhatsApp"
+                                : "Emitir y enviar por WhatsApp"
+                            }
                           >
-                            <Send size={12} /> {q.issued_at ? "WhatsApp" : "Emitir"}
+                            <Send size={12} aria-hidden="true" /> {q.issued_at ? "WhatsApp" : "Emitir"}
                           </button>
 
                           {!q.decision && (
@@ -629,14 +579,15 @@ export const QuotesWorkspace = () => {
                                 color: "var(--emerald-success)",
                                 borderColor: "var(--border-line)",
                               }}
-                              onClick={() => {
-                                setDecisionModalQuote(q);
-                                setDecisionType("approved");
-                                setDecisionNotes("");
-                              }}
-                              title="Registrar decisión del cliente"
+                              onClick={() => openDecisionModal(q)}
+                              disabled={!canManageQuotes}
+                              title={
+                                !canManageQuotes
+                                  ? "Necesitás permiso para registrar decisiones de presupuestos."
+                                  : "Registrar decisión del cliente"
+                              }
                             >
-                              <Check size={12} /> Decisión
+                              <Check size={12} aria-hidden="true" /> Decisión
                             </button>
                           )}
                         </div>
@@ -659,12 +610,13 @@ export const QuotesWorkspace = () => {
           subtitle={`Cliente: ${selectedQuote.customer_name} • Fecha: ${formatDate(selectedQuote.created_at)}`}
           icon={Receipt}
           maxWidth="680px"
+          scrollBody
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {/* Status overview bar */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--surface-subtle)", padding: "12px 16px", borderRadius: "8px" }}>
               <div>
-                <span className="stat-label">Estado de Decisión</span>
+                <span className="stat-label">Estado de decisión</span>
                 <div style={{ marginTop: "4px" }}>
                   {selectedQuote.decision === "approved" ? (
                     <span className="flow-status-pill completed">Aprobado por el cliente</span>
@@ -678,7 +630,7 @@ export const QuotesWorkspace = () => {
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <span className="stat-label">Total Presupuestado</span>
+                <span className="stat-label">Total presupuestado</span>
                 <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--brand-primary)", marginTop: "2px" }}>
                   {formatCurrency(selectedQuote.total_amount, selectedQuote.currency_code as "ARS" | "USD")}
                 </div>
@@ -687,7 +639,7 @@ export const QuotesWorkspace = () => {
 
             {/* Lines Table */}
             <div>
-              <h4 style={{ margin: "0 0 8px", fontSize: "13px", fontWeight: 600 }}>Líneas de la Cotización</h4>
+              <h4 style={{ margin: "0 0 8px", fontSize: "13px", fontWeight: 600 }}>Líneas del presupuesto</h4>
               <div className="flow-table-wrapper">
                 <table className="flow-table" style={{ fontSize: "12px" }}>
                   <thead>
@@ -696,7 +648,7 @@ export const QuotesWorkspace = () => {
                       <th>Tipo</th>
                       <th>Descripción</th>
                       <th>Cant.</th>
-                      <th>Precio Unit.</th>
+                      <th>Precio unit.</th>
                       <th>IVA</th>
                       <th className="text-right">Total</th>
                     </tr>
@@ -707,7 +659,7 @@ export const QuotesWorkspace = () => {
                         <td>{l.line_number}</td>
                         <td>
                           <span className="type-badge blue">
-                            {l.kind === "product" ? "Repuesto" : l.kind === "service" ? "Mano de Obra" : "Concepto"}
+                            {l.kind === "product" ? "Repuesto" : l.kind === "service" ? "Mano de obra" : "Concepto"}
                           </span>
                         </td>
                         <td>{l.description}</td>
@@ -730,7 +682,7 @@ export const QuotesWorkspace = () => {
                       <td className="text-right">{formatCurrency(selectedQuote.tax_amount, selectedQuote.currency_code as "ARS" | "USD")}</td>
                     </tr>
                     <tr>
-                      <td colSpan={6} style={{ textAlign: "right", fontWeight: 700, fontSize: "14px" }}>Total General:</td>
+                      <td colSpan={6} style={{ textAlign: "right", fontWeight: 700, fontSize: "14px" }}>Total general:</td>
                       <td className="text-right" style={{ fontWeight: 700, fontSize: "14px", color: "var(--brand-primary)" }}>
                         {formatCurrency(selectedQuote.total_amount, selectedQuote.currency_code as "ARS" | "USD")}
                       </td>
@@ -748,8 +700,14 @@ export const QuotesWorkspace = () => {
                   className="pag-btn"
                   style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--brand-primary)" }}
                   onClick={() => void handleIssueAndSendWhatsApp(selectedQuote)}
+                  disabled={!selectedQuote.issued_at && !canManageQuotes}
+                  title={
+                    !selectedQuote.issued_at && !canManageQuotes
+                      ? "Necesitás permiso para emitir presupuestos."
+                      : "Compartir por WhatsApp"
+                  }
                 >
-                  <Send size={14} /> Compartir por WhatsApp
+                  <Send size={14} aria-hidden="true" /> Compartir por WhatsApp
                 </button>
 
                 {!selectedQuote.decision && (
@@ -757,13 +715,15 @@ export const QuotesWorkspace = () => {
                     type="button"
                     className="pag-btn"
                     style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--emerald-success)" }}
-                    onClick={() => {
-                      setDecisionModalQuote(selectedQuote);
-                      setDecisionType("approved");
-                      setDecisionNotes("");
-                    }}
+                    onClick={() => openDecisionModal(selectedQuote)}
+                    disabled={!canManageQuotes}
+                    title={
+                      !canManageQuotes
+                        ? "Necesitás permiso para registrar decisiones de presupuestos."
+                        : "Registrar decisión del cliente"
+                    }
                   >
-                    <Check size={14} /> Registrar Decisión
+                    <Check size={14} aria-hidden="true" /> Registrar decisión
                   </button>
                 )}
               </div>
@@ -776,77 +736,114 @@ export const QuotesWorkspace = () => {
         </Modal>
       )}
 
-      {/* Modal: Registrar Decisión del Cliente (Finding H06) */}
+      {/* Modal: Registrar Decisión del Cliente */}
       {decisionModalQuote && (
         <Modal
           isOpen={Boolean(decisionModalQuote)}
-          onClose={() => setDecisionModalQuote(null)}
-          title="Registrar Decisión del Cliente"
+          onClose={closeDecisionModal}
+          title="Registrar decisión del cliente"
           subtitle={`Orden: ${decisionModalQuote.order_code} • Versión ${decisionModalQuote.version} (${formatCurrency(decisionModalQuote.total_amount, decisionModalQuote.currency_code as "ARS" | "USD")})`}
           icon={CheckCircle}
           maxWidth="480px"
+          scrollBody
         >
-          <form onSubmit={handleSubmitDecision} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Resultado de la Decisión *</label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          <form
+            onSubmit={decisionForm.handleSubmit(handleSubmitDecision, () => decisionForm.clearErrors("root.server"))}
+            noValidate
+            style={{ display: "flex", flexDirection: "column", gap: "14px" }}
+          >
+            <FormError message={decisionErrors.root?.server?.message ?? null} />
+            <fieldset disabled={submittingDecision} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: "14px" }}>
+              <fieldset
+                style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: "6px" }}
+                aria-describedby={decisionErrors.decision?.message ? decisionErrorId : undefined}
+              >
+                <legend className="erp-form-label">Resultado de la decisión (obligatorio)</legend>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <label
+                    htmlFor={approvedRadioId}
+                    className={`pag-btn ${selectedDecision === "approved" ? "active-filter" : ""}`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      padding: "10px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      borderColor: selectedDecision === "approved" ? "var(--emerald-success)" : "var(--border-line)",
+                      color: selectedDecision === "approved" ? "var(--emerald-success)" : "var(--text-main)",
+                    }}
+                  >
+                    <input
+                      id={approvedRadioId}
+                      type="radio"
+                      value="approved"
+                      {...decisionForm.register("decision")}
+                      style={{ accentColor: "var(--emerald-success)" }}
+                    />
+                    <Check size={16} aria-hidden="true" /> Aprobado
+                  </label>
+                  <label
+                    htmlFor={rejectedRadioId}
+                    className={`pag-btn ${selectedDecision === "rejected" ? "active-filter" : ""}`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      padding: "10px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      borderColor: selectedDecision === "rejected" ? "var(--rose-accent)" : "var(--border-line)",
+                      color: selectedDecision === "rejected" ? "var(--rose-accent)" : "var(--text-main)",
+                    }}
+                  >
+                    <input
+                      id={rejectedRadioId}
+                      type="radio"
+                      value="rejected"
+                      {...decisionForm.register("decision")}
+                      style={{ accentColor: "var(--rose-accent)" }}
+                    />
+                    <XCircle size={16} aria-hidden="true" /> Rechazado
+                  </label>
+                </div>
+                {decisionErrors.decision?.message && (
+                  <FieldError id={decisionErrorId} message={decisionErrors.decision.message} />
+                )}
+              </fieldset>
+
+              <Field label="Mensaje o notas del cliente (opcional)" error={decisionErrors.notes?.message}>
+                {(a11y) => (
+                  <textarea
+                    {...a11y}
+                    rows={3}
+                    placeholder="Ej: Cliente autorizó por llamada telefónica / Rechazado por presupuesto excedido..."
+                    className="erp-form-textarea"
+                    {...decisionForm.register("notes")}
+                  />
+                )}
+              </Field>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
                 <button
                   type="button"
-                  className={`pag-btn ${decisionType === "approved" ? "active-filter" : ""}`}
-                  style={{
-                    padding: "10px",
-                    fontWeight: 600,
-                    borderColor: decisionType === "approved" ? "var(--emerald-success)" : "var(--border-line)",
-                    color: decisionType === "approved" ? "var(--emerald-success)" : "var(--text-main)",
-                  }}
-                  onClick={() => setDecisionType("approved")}
+                  className="pag-btn"
+                  onClick={closeDecisionModal}
+                  disabled={submittingDecision}
                 >
-                  <Check size={16} /> Aprobado
+                  Cancelar
                 </button>
                 <button
-                  type="button"
-                  className={`pag-btn ${decisionType === "rejected" ? "active-filter" : ""}`}
-                  style={{
-                    padding: "10px",
-                    fontWeight: 600,
-                    borderColor: decisionType === "rejected" ? "var(--rose-accent)" : "var(--border-line)",
-                    color: decisionType === "rejected" ? "var(--rose-accent)" : "var(--text-main)",
-                  }}
-                  onClick={() => setDecisionType("rejected")}
+                  type="submit"
+                  className="btn-primary"
+                  disabled={submittingDecision}
                 >
-                  <XCircle size={16} /> Rechazado
+                  {submittingDecision ? "Registrando..." : "Confirmar decisión"}
                 </button>
               </div>
-            </div>
-
-            <div className="erp-form-group">
-              <label className="erp-form-label">Mensaje o Notas del Cliente (Opcional)</label>
-              <textarea
-                rows={3}
-                placeholder="Ej: Cliente autorizó por llamada telefónica / Rechazado por presupuesto excedido..."
-                value={decisionNotes}
-                onChange={(e) => setDecisionNotes(e.target.value)}
-                className="erp-form-textarea"
-              />
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
-              <button
-                type="button"
-                className="pag-btn"
-                onClick={() => setDecisionModalQuote(null)}
-                disabled={submittingDecision}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={submittingDecision}
-              >
-                {submittingDecision ? "Registrando..." : "Confirmar Decisión"}
-              </button>
-            </div>
+            </fieldset>
           </form>
         </Modal>
       )}
@@ -854,248 +851,348 @@ export const QuotesWorkspace = () => {
       {/* Modal: Nuevo Presupuesto */}
       <Modal
         isOpen={isNewModalOpen}
-        onClose={() => setIsNewModalOpen(false)}
-        title="Crear Presupuesto Técnico Versionado"
+        onClose={closeNewQuoteModal}
+        title="Nuevo presupuesto"
         subtitle="Presupuesto formal vinculado a una orden de taller con líneas de repuestos y servicios"
         icon={Receipt}
         maxWidth="900px"
+        scrollBody
       >
-        <form onSubmit={handleCreateQuote} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px" }}>
-            <div className="erp-form-group">
-              <label className="erp-form-label">Orden de Reparación *</label>
-              <select
-                value={selectedOrderId}
-                onChange={(e) => setSelectedOrderId(e.target.value)}
-                className="erp-form-select"
-                disabled={isLoadingQuotePrerequisites || Boolean(quotePrerequisitesError) || repairOrders.length === 0}
-                required
-              >
-                <option value="">
-                  {isLoadingQuotePrerequisites ? "Cargando órdenes abiertas…" : "Seleccionar orden abierta…"}
-                </option>
-                {repairOrders.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.order_code} — {o.customer_name} ({o.brand} {o.model})
-                  </option>
-                ))}
-              </select>
-              {isLoadingQuotePrerequisites && (
-                <span role="status" style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                  Consultando órdenes que siguen abiertas…
-                </span>
-              )}
-              {!isLoadingQuotePrerequisites && quotePrerequisitesError && (
-                <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", color: "var(--rose-accent)", fontSize: "12px" }}>
-                  <span>No se pudo consultar la lista de órdenes. {quotePrerequisitesError}</span>
-                  <button type="button" className="pag-btn" onClick={() => void loadNewQuotePrerequisites()}>Reintentar</button>
-                </div>
-              )}
-              {!isLoadingQuotePrerequisites && !quotePrerequisitesError && repairOrders.length === 0 && (
-                <div role="status" style={{ padding: "10px 12px", border: "1px solid var(--border-line)", borderRadius: "8px", background: "var(--surface-subtle)", fontSize: "12px", color: "var(--text-muted)" }}>
-                  <strong style={{ display: "block", marginBottom: "3px", color: "var(--text-main)" }}>No hay órdenes abiertas elegibles</strong>
-                  <span>Las órdenes cerradas o finalizadas no aparecen en esta lista. Abrí una orden desde Taller y volvé a crear el presupuesto.</span>
-                </div>
-              )}
-            </div>
-
-            <div className="erp-form-group">
-              <label className="erp-form-label">Moneda de Cotización</label>
-              <select
-                value={quoteCurrency}
-                onChange={(e) => setQuoteCurrency(e.target.value as "ARS" | "USD")}
-                className="erp-form-select"
-              >
-                <option value="ARS">ARS ($)</option>
-                <option value="USD">USD (Dólares)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="erp-form-group">
-            <label className="erp-form-label">Motivo o Razón de Emisión</label>
-            <input
-              type="text"
-              value={quoteReason}
-              onChange={(e) => setQuoteReason(e.target.value)}
-              className="erp-form-input"
-              placeholder="Ej: Presupuesto inicial tras diagnóstico de placa"
-            />
-          </div>
-
-          {/* Lines Editor */}
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-            <label className="erp-form-label" style={{ margin: 0 }}>Líneas de Repuestos, Servicios y Conceptos</label>
-              <button
-                type="button"
-                className="pag-btn"
-                style={{ fontSize: "11px", padding: "4px 8px" }}
-                onClick={handleAddLine}
-              >
-                <Plus size={12} /> Agregar Ítem
-              </button>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "260px", overflowY: "auto", overflowX: "auto" }}>
-              {lines.map((item, idx) => (
-                <div
-                  key={item.id}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(84px, 1fr) minmax(220px, 3fr) 52px 74px 74px 58px 28px",
-                    gap: "8px",
-                    alignItems: "center",
-                    background: "var(--surface-subtle)",
-                    padding: "8px 10px",
-                    borderRadius: "6px",
-                    minWidth: "640px",
-                  }}
-                >
-                  <select
-                    value={item.kind}
-                    onChange={(e) => handleUpdateLine(idx, { kind: e.target.value as LineFormItem["kind"] })}
-                    className="erp-form-select"
-                    style={{ fontSize: "11px", padding: "4px 6px" }}
-                  >
-                    <option value="service">Mano de Obra</option>
-                    <option value="product">Repuesto</option>
-                    <option value="free_concept">Concepto</option>
-                  </select>
-
-                  {(item.kind === "product" || item.kind === "service") ? (
+        <form
+          onSubmit={createForm.handleSubmit(handleCreateQuote, () => createForm.clearErrors("root.server"))}
+          noValidate
+          style={{ display: "flex", flexDirection: "column", gap: "16px" }}
+        >
+          <FormError message={createErrors.root?.server?.message ?? null} />
+          <fieldset disabled={submittingQuote} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: "12px" }}>
+              <Field label="Orden de reparación" required error={createErrors.repairOrderId?.message}>
+                {(a11y) => (
+                  <>
                     <select
-                      value={item.productId || ""}
-                      onChange={(e) => handleUpdateLine(idx, { productId: e.target.value })}
+                      {...a11y}
                       className="erp-form-select"
-                      style={{ fontSize: "11px", padding: "4px 6px" }}
+                      disabled={isLoadingQuotePrerequisites || Boolean(quotePrerequisitesError) || repairOrders.length === 0}
                       required
+                      {...createForm.register("repairOrderId")}
                     >
-                      <option value="">{item.kind === "service" ? "-- Seleccionar servicio --" : "-- Seleccionar repuesto --"}</option>
-                      {availableProducts.filter((p) => p.item_kind === item.kind).map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.internal_name} ({p.internal_code})
+                      <option value="">
+                        {isLoadingQuotePrerequisites ? "Cargando órdenes abiertas…" : "Seleccionar orden abierta…"}
+                      </option>
+                      {repairOrders.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.order_code} — {o.customer_name} ({o.brand} {o.model})
                         </option>
                       ))}
                     </select>
-                  ) : (
-                    <input
-                      type="text"
-                      placeholder="Descripción del trabajo..."
-                      value={item.description}
-                      onChange={(e) => handleUpdateLine(idx, { description: e.target.value })}
-                      className="erp-form-input"
-                      style={{ fontSize: "12px", padding: "4px 8px", minWidth: 0, width: "100%" }}
-                      required
-                    />
-                  )}
+                    {isLoadingQuotePrerequisites && (
+                      <span role="status" style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                        Consultando órdenes que siguen abiertas…
+                      </span>
+                    )}
+                    {!isLoadingQuotePrerequisites && quotePrerequisitesError && (
+                      <div role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", color: "var(--rose-accent)", fontSize: "12px" }}>
+                        <span>No se pudo consultar la lista de órdenes. {quotePrerequisitesError}</span>
+                        <button type="button" className="pag-btn" onClick={() => void loadNewQuotePrerequisites()}>Reintentar</button>
+                      </div>
+                    )}
+                    {!isLoadingQuotePrerequisites && !quotePrerequisitesError && repairOrders.length === 0 && (
+                      <div role="status" style={{ padding: "10px 12px", border: "1px solid var(--border-line)", borderRadius: "8px", background: "var(--surface-subtle)", fontSize: "12px", color: "var(--text-muted)" }}>
+                        <strong style={{ display: "block", marginBottom: "3px", color: "var(--text-main)" }}>No hay órdenes abiertas elegibles</strong>
+                        <span>Las órdenes cerradas o finalizadas no aparecen en esta lista. Abrí una orden desde Taller y volvé a crear el presupuesto.</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </Field>
 
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="Cant."
-                    value={item.quantity}
-                    onChange={(e) => handleUpdateLine(idx, { quantity: Number(e.target.value) })}
-                    className="erp-form-input"
-                    style={{ fontSize: "12px", padding: "4px 6px", textAlign: "center" }}
+              <Field label="Moneda del presupuesto" required error={createErrors.currencyCode?.message}>
+                {(a11y) => (
+                  <select
+                    {...a11y}
+                    className="erp-form-select"
                     required
-                  />
-
-                  {item.kind === "product" ? (
-                    <span style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "right" }}>Costo ERP</span>
-                  ) : (
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Costo"
-                      value={item.unitCost}
-                      onChange={(e) => handleUpdateLine(idx, { unitCost: Number(e.target.value) })}
-                      className="erp-form-input"
-                      style={{ fontSize: "12px", padding: "4px 6px", textAlign: "right" }}
-                      required
-                    />
-                  )}
-
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Precio"
-                    value={item.unitPrice}
-                    onChange={(e) => handleUpdateLine(idx, { unitPrice: Number(e.target.value) })}
-                    className="erp-form-input"
-                    style={{ fontSize: "12px", padding: "4px 6px", textAlign: "right" }}
-                    required
-                  />
-
-                  <span style={{ fontSize: "11px", color: "var(--text-muted)", textAlign: "center" }}>
-                    +21% IVA
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveLine(idx)}
-                    disabled={lines.length === 1}
-                    className="pag-btn"
-                    style={{
-                      padding: "4px",
-                      color: "var(--rose-accent)",
-                      opacity: lines.length === 1 ? 0.3 : 1,
-                    }}
-                    title="Quitar línea"
+                    {...createForm.register("currencyCode")}
                   >
-                    ×
-                  </button>
+                    <option value="ARS">ARS ($)</option>
+                    <option value="USD">USD (Dólares)</option>
+                  </select>
+                )}
+              </Field>
+            </div>
+
+            <Field label="Motivo o razón de emisión" required error={createErrors.reason?.message}>
+              {(a11y) => (
+                <input
+                  {...a11y}
+                  type="text"
+                  className="erp-form-input"
+                  placeholder="Ej: Presupuesto inicial tras diagnóstico de placa"
+                  required
+                  {...createForm.register("reason")}
+                />
+              )}
+            </Field>
+
+            {/* Lines Editor */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                <strong style={{ fontSize: "13px" }}>Líneas de repuestos, servicios y conceptos</strong>
+                <button
+                  type="button"
+                  className="pag-btn"
+                  style={{ fontSize: "12px", padding: "5px 10px" }}
+                  onClick={() => appendLine(emptyQuoteLine())}
+                >
+                  <Plus size={13} aria-hidden="true" /> Agregar ítem
+                </button>
+              </div>
+
+              {createErrors.lines?.root?.message && (
+                <FieldError id="quote-lines-root-error" message={createErrors.lines.root.message} />
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {lineFields.map((field, index) => {
+                  const line = watchedLines[index] ?? field;
+                  const lineErrors = createErrors.lines?.[index];
+                  const resetZeroPrice = () => createForm.setValue(`lines.${index}.confirmZeroPrice`, false);
+                  const rowGridStyle = {
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
+                    gap: "10px",
+                  };
+
+                  return (
+                    <fieldset
+                      key={field.id}
+                      style={{
+                        minWidth: 0,
+                        display: "grid",
+                        gap: "10px",
+                        padding: "12px",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border-line)",
+                        background: "var(--surface-subtle)",
+                      }}
+                    >
+                      <legend style={{ paddingInline: "4px", fontSize: "13px", fontWeight: 600 }}>Línea {index + 1}</legend>
+
+                      <div style={rowGridStyle}>
+                        <Field label="Tipo" error={lineErrors?.kind?.message}>
+                          {(a11y) => (
+                            <select
+                              {...a11y}
+                              className="erp-form-select"
+                              {...createForm.register(`lines.${index}.kind`, {
+                                onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
+                                  const nextKind = e.target.value as QuoteLineFormValues["kind"];
+                                  createForm.setValue(`lines.${index}.productId`, "");
+                                  createForm.setValue(`lines.${index}.description`, "");
+                                  if (nextKind === "product") {
+                                    createForm.setValue(`lines.${index}.unitCost`, "");
+                                  }
+                                },
+                              })}
+                            >
+                              <option value="service">Mano de obra</option>
+                              <option value="product">Repuesto</option>
+                              <option value="free_concept">Concepto</option>
+                            </select>
+                          )}
+                        </Field>
+
+                        {(line.kind === "product" || line.kind === "service") ? (
+                          <Field
+                            label={line.kind === "service" ? "Servicio" : "Repuesto"}
+                            required
+                            error={lineErrors?.productId?.message}
+                          >
+                            {(a11y) => (
+                              <select
+                                {...a11y}
+                                className="erp-form-select"
+                                required
+                                {...createForm.register(`lines.${index}.productId`, {
+                                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
+                                    const found = availableProducts.find((p) => p.id === e.target.value);
+                                    createForm.setValue(
+                                      `lines.${index}.description`,
+                                      found ? `${found.internal_name} (${found.internal_code})` : "",
+                                    );
+                                  },
+                                })}
+                              >
+                                <option value="">
+                                  {line.kind === "service" ? "-- Seleccionar servicio --" : "-- Seleccionar repuesto --"}
+                                </option>
+                                {availableProducts.filter((p) => p.item_kind === line.kind).map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.internal_name} ({p.internal_code})
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </Field>
+                        ) : (
+                          <Field label="Descripción" required error={lineErrors?.description?.message}>
+                            {(a11y) => (
+                              <input
+                                {...a11y}
+                                type="text"
+                                placeholder="Descripción del trabajo..."
+                                className="erp-form-input"
+                                required
+                                {...createForm.register(`lines.${index}.description`)}
+                              />
+                            )}
+                          </Field>
+                        )}
+                      </div>
+
+                      <div style={rowGridStyle}>
+                        <Field label="Cantidad" required error={lineErrors?.quantity?.message}>
+                          {(a11y) => (
+                            <input
+                              {...a11y}
+                              type="number"
+                              min="1"
+                              step="any"
+                              placeholder="Ej: 1"
+                              className="erp-form-input"
+                              required
+                              {...createForm.register(`lines.${index}.quantity`)}
+                            />
+                          )}
+                        </Field>
+
+                        {line.kind === "product" ? (
+                          <div className="erp-form-group">
+                            <span className="erp-form-label">Costo unitario</span>
+                            <span style={{ fontSize: "12px", color: "var(--text-muted)", paddingTop: "8px" }}>
+                              Costo ERP automático
+                            </span>
+                          </div>
+                        ) : (
+                          <Field label="Costo unitario" error={lineErrors?.unitCost?.message}>
+                            {(a11y) => (
+                              <input
+                                {...a11y}
+                                type="number"
+                                min="0"
+                                step="any"
+                                placeholder="0"
+                                className="erp-form-input"
+                                {...createForm.register(`lines.${index}.unitCost`)}
+                              />
+                            )}
+                          </Field>
+                        )}
+
+                        <Field label="Precio unitario" required error={lineErrors?.unitPrice?.message}>
+                          {(a11y) => (
+                            <input
+                              {...a11y}
+                              type="number"
+                              min="0"
+                              step="any"
+                              placeholder="0"
+                              className="erp-form-input"
+                              required
+                              {...createForm.register(`lines.${index}.unitPrice`, { onChange: resetZeroPrice })}
+                            />
+                          )}
+                        </Field>
+
+                        <div className="erp-form-group">
+                          <span className="erp-form-label">IVA</span>
+                          <span style={{ fontSize: "12px", color: "var(--text-muted)", paddingTop: "8px" }}>
+                            +21% IVA
+                          </span>
+                        </div>
+                      </div>
+
+                      {isZeroPrice(line.unitPrice) && (
+                        <Field
+                          label="Confirmo el precio de $0 para esta línea"
+                          required
+                          error={lineErrors?.confirmZeroPrice?.message}
+                        >
+                          {(a11y) => (
+                            <input
+                              {...a11y}
+                              type="checkbox"
+                              required
+                              {...createForm.register(`lines.${index}.confirmZeroPrice`)}
+                            />
+                          )}
+                        </Field>
+                      )}
+
+                      {lineFields.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeLine(index)}
+                          className="pag-btn"
+                          style={{ justifySelf: "start", color: "var(--rose-accent)" }}
+                        >
+                          Quitar línea {index + 1}
+                        </button>
+                      )}
+                    </fieldset>
+                  );
+                })}
+              </div>
+
+              {/* Totals Summary */}
+              <div
+                style={{
+                  marginTop: "4px",
+                  padding: "10px 14px",
+                  background: "var(--canvas-bg)",
+                  borderRadius: "8px",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  flexWrap: "wrap",
+                  gap: "24px",
+                  fontSize: "13px",
+                }}
+              >
+                <div>
+                  <span style={{ color: "var(--text-muted)" }}>Subtotal: </span>
+                  <strong>{formatCurrency(computedTotals.subtotal, watchedCurrency)}</strong>
                 </div>
-              ))}
-            </div>
-
-            {/* Totals Summary */}
-            <div
-              style={{
-                marginTop: "12px",
-                padding: "10px 14px",
-                background: "var(--canvas-bg)",
-                borderRadius: "8px",
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "24px",
-                fontSize: "13px",
-              }}
-            >
-              <div>
-                <span style={{ color: "var(--text-muted)" }}>Subtotal: </span>
-                <strong>{formatCurrency(computedTotals.subtotal, quoteCurrency)}</strong>
-              </div>
-              <div>
-                <span style={{ color: "var(--text-muted)" }}>IVA: </span>
-                <strong>{formatCurrency(computedTotals.tax, quoteCurrency)}</strong>
-              </div>
-              <div>
-                <span style={{ color: "var(--text-muted)" }}>Total: </span>
-                <strong style={{ color: "var(--brand-primary)", fontSize: "15px" }}>
-                  {formatCurrency(computedTotals.total, quoteCurrency)}
-                </strong>
+                <div>
+                  <span style={{ color: "var(--text-muted)" }}>IVA: </span>
+                  <strong>{formatCurrency(computedTotals.tax, watchedCurrency)}</strong>
+                </div>
+                <div>
+                  <span style={{ color: "var(--text-muted)" }}>Total: </span>
+                  <strong style={{ color: "var(--brand-primary)", fontSize: "15px" }}>
+                    {formatCurrency(computedTotals.total, watchedCurrency)}
+                  </strong>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
-            <button
-              type="button"
-              className="pag-btn"
-              onClick={() => setIsNewModalOpen(false)}
-              disabled={submitting}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={submitting || isLoadingQuotePrerequisites || Boolean(quotePrerequisitesError) || repairOrders.length === 0 || !selectedOrderId}
-            >
-              {submitting ? "Guardando..." : "Guardar Presupuesto Formal"}
-            </button>
-          </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
+              <button
+                type="button"
+                className="pag-btn"
+                onClick={closeNewQuoteModal}
+                disabled={submittingQuote}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={submittingQuote || isLoadingQuotePrerequisites}
+              >
+                {submittingQuote ? "Guardando..." : "Guardar presupuesto formal"}
+              </button>
+            </div>
+          </fieldset>
         </form>
       </Modal>
     </div>
