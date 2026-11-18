@@ -1,5 +1,6 @@
 import { RoleAssignment } from "./RoleAssignment";
 import { NavigationSettings } from "./NavigationSettings";
+import { UpdatesCard } from "./UpdatesCard";
 import { useState, useEffect } from "react";
 import { Building2, Save } from "lucide-react";
 import {
@@ -235,6 +236,7 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
         </div>
       )}
 
+      {activeModuleId === "settings" && <UpdatesCard />}
       {activeModuleId === "settings" && <NavigationSettings />}
       {activeModuleId === "settings" && (
         <div className="flow-card" style={{ maxWidth: "650px" }}>

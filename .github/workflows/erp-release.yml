@@ -86,7 +86,7 @@ jobs:
       - name: Ejecutar pruebas del ERP
         run: npm run test:run -- apps/erp
 
-      - name: Verificar controles de ventana
+      - name: Verificar ventana y actualizaciones de escritorio
         run: npm run test:erp:desktop
 
       - name: Verificar preparación de versiones
@@ -101,9 +101,10 @@ jobs:
         run: |
           $releaseDir = Join-Path $PWD 'apps/erp/release'
           $expectedNames = @(
-            "NicTech ERP Setup $env:ERP_VERSION.exe",
-            "NicTech ERP $env:ERP_VERSION.exe",
-            "NicTech ERP Setup $env:ERP_VERSION.exe.blockmap"
+            "NicTech-ERP-Setup-$env:ERP_VERSION.exe",
+            "NicTech-ERP-Setup-$env:ERP_VERSION.exe.blockmap",
+            "NicTech-ERP-Portable-$env:ERP_VERSION.exe",
+            "latest.yml"
           )
           $lines = foreach ($name in $expectedNames) {
             $file = Join-Path $releaseDir $name
@@ -120,16 +121,17 @@ jobs:
         with:
           name: nictech-erp-${{ steps.metadata.outputs.version }}-windows
           path: |
-            apps/erp/release/NicTech ERP Setup ${{ steps.metadata.outputs.version }}.exe
-            apps/erp/release/NicTech ERP ${{ steps.metadata.outputs.version }}.exe
-            apps/erp/release/NicTech ERP Setup ${{ steps.metadata.outputs.version }}.exe.blockmap
+            apps/erp/release/NicTech-ERP-Setup-${{ steps.metadata.outputs.version }}.exe
+            apps/erp/release/NicTech-ERP-Setup-${{ steps.metadata.outputs.version }}.exe.blockmap
+            apps/erp/release/NicTech-ERP-Portable-${{ steps.metadata.outputs.version }}.exe
+            apps/erp/release/latest.yml
             apps/erp/release/SHA256SUMS.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
 
   release:
-    name: Preparar borrador de versión
+    name: Publicar versión
     needs: build
     if: needs.build.outputs.release_tag != ''
     runs-on: ubuntu-latest
@@ -143,7 +145,7 @@ jobs:
           name: nictech-erp-${{ needs.build.outputs.version }}-windows
           path: assets
 
-      - name: Crear o completar borrador
+      - name: Publicar en GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -153,21 +155,15 @@ jobs:
         run: |
           set -euo pipefail
           (cd assets && sha256sum --check SHA256SUMS.txt)
-          # GitHub normaliza los espacios al adjuntar archivos a una Release.
-          # Preparar los nombres finales antes de generar el manifiesto público.
-          for asset in assets/*.exe assets/*.blockmap; do
-            mv -- "$asset" "${asset// /.}"
-          done
-          (cd assets && sha256sum -- *.exe *.blockmap > SHA256SUMS.txt)
           printf '%s\n' \
             "NicTech ERP ${ERP_VERSION} para Windows x64." \
             '' \
-            '- Setup: instalación habitual en la PC del cliente.' \
-            '- Portable: ejecución sin instalar.' \
+            '- Setup: instalación habitual con actualizaciones automáticas. Desde la 0.2.0, instalá esta versión a mano una vez.' \
+            '- Portable: ejecución sin instalar; avisa si hay una versión nueva.' \
             '- SHA256SUMS.txt: comprobación de integridad de los archivos.' \
             '' \
             'Requiere Internet y una cuenta creada en Supabase Auth con acceso al ERP.' \
-            'Los ejecutables todavía no tienen firma digital. Esta versión no incluye actualización automática.' \
+            'Los ejecutables todavía no tienen firma digital.' \
             '' \
             "Código: ${GITHUB_SHA}" > release-notes.md
           if existing=$(gh release view "$RELEASE_TAG" --json isDraft); then
@@ -176,11 +172,14 @@ jobs:
               exit 1
             fi
             gh release upload "$RELEASE_TAG" assets/* --clobber
+            gh release edit "$RELEASE_TAG" --draft=false --latest \
+              --title "NicTech ERP ${ERP_VERSION}" \
+              --notes-file release-notes.md
           else
             gh release create "$RELEASE_TAG" assets/* \
-              --draft --verify-tag \
+              --latest --verify-tag \
               --title "NicTech ERP ${ERP_VERSION}" \
               --notes-file release-notes.md
           fi
           release_url=$(gh release view "$RELEASE_TAG" --json url --jq '.url')
-          printf 'Borrador listo para revisar: %s\n' "$release_url" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Versión publicada: %s\n' "$release_url" >> "$GITHUB_STEP_SUMMARY"

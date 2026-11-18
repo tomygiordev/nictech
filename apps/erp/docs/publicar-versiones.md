@@ -1,6 +1,6 @@
 # Publicar versiones de NicTech ERP
 
-El repositorio genera el instalador de Windows y la versión portable mediante **GitHub Actions**. Al subir un tag `erp-vX.Y.Z`, prepara una **Release en borrador**, con los archivos y sus sumas SHA-256. La publicación para el cliente se hace desde GitHub después de revisar el borrador.
+Al subir un tag `erp-vX.Y.Z`, **GitHub Actions** genera el instalador de Windows y la versión portable. Si pasan las verificaciones, publica la Release y la marca como **Latest**. El actualizador del ERP busca `latest.yml` en esa Release pública, sin token.
 
 ## Configuración de GitHub (una sola vez)
 
@@ -23,12 +23,12 @@ El workflow `.github/workflows/erp-release.yml` debe estar en la rama predetermi
 2. Desde la raíz del repositorio, incrementar la versión del ERP y actualizar el lockfile:
 
    ```powershell
-   npm run version:erp -- 0.1.1
+   npm run version:erp -- X.Y.Z
    ```
 
-   Usar el próximo número disponible con formato `X.Y.Z`. Para la primera entrega puede conservarse `0.1.0` si todavía no existe el tag `erp-v0.1.0`.
+   Usar el próximo número disponible, superior a `0.2.0` para la primera entrega con actualizador. No reutilizar el tag `erp-v0.2.0`.
 
-3. Revisar y crear el commit con los cambios, incluyendo `apps/erp/package.json` y `package-lock.json`. Subir la rama al repositorio.
+3. Revisar y crear el commit con los cambios, incluyendo `apps/erp/package.json` y `package-lock.json`. Si necesitás probar el instalador antes de publicarlo, usá la ejecución desde una rama que se describe más abajo.
 4. Subir la rama y etiquetar **ese commit** con el comando de entrega:
 
    ```powershell
@@ -37,10 +37,10 @@ El workflow `.github/workflows/erp-release.yml` debe estar en la rama predetermi
 
    El comando exige que las fuentes de la entrega estén guardadas en commits; no crea commits automáticos. Obtiene la versión de `apps/erp/package.json`, sube la rama y el tag `erp-vX.Y.Z`. No hace falta cambiar a `main` para publicar una versión desde `dev/erp`.
 
-5. Abrir **Actions → ERP · Instaladores Windows**. El trabajo instala dependencias desde el lockfile, verifica TypeScript, ejecuta las pruebas del ERP y empaqueta en Windows con Node.js 24. El comando de empaquetado desactiva la publicación automática de Electron; solamente el trabajo final de Actions prepara el borrador.
-6. Cuando termine, abrir **Releases**, revisar el borrador, completar las novedades y probar el instalador en otra PC con una cuenta real del cliente. Presionar **Publish release** para habilitar la descarga.
+5. Abrir **Actions → ERP · Instaladores Windows**. El trabajo instala dependencias desde el lockfile, verifica TypeScript, ejecuta las pruebas del ERP y empaqueta en Windows con Node.js 24. Electron Builder genera los metadatos de actualización con `--publish never`; el trabajo final de Actions verifica los archivos y publica la Release como **Latest**.
+6. Confirmar en **Releases** que la versión aparece como **Latest** y que incluye los cinco archivos de la tabla. No hay un paso manual de publicación.
 
-El tag debe coincidir exactamente con `apps/erp/package.json.version`; por ejemplo, versión `0.1.1` exige tag `erp-v0.1.1`. Si ya existe una Release publicada, el flujo se detiene sin reemplazar sus archivos. Una corrección se entrega con una nueva versión. Reejecutar un flujo que corresponde a un borrador sí reemplaza sus archivos para completar ese borrador.
+El tag debe coincidir exactamente con `apps/erp/package.json.version`; por ejemplo, versión `0.2.1` exige tag `erp-v0.2.1`. Si ya existe una Release publicada para ese tag, el flujo se detiene sin reemplazar sus archivos. Una corrección se entrega con una nueva versión. Si existe un borrador para el tag, el flujo carga los archivos validados antes de publicarlo. No marcar como **Latest** una Release ajena al ERP: esa marca es compartida por todo el repositorio y el ERP dejaría de encontrar el feed.
 
 ## Probar la generación desde una rama
 
@@ -51,32 +51,42 @@ gh workflow run erp-release.yml --ref dev/erp
 gh run list --workflow erp-release.yml --limit 5
 ```
 
-También se puede usar **Actions → ERP · Instaladores Windows → Run workflow** y seleccionar la rama. Al ejecutarlo sobre una rama, guarda un artifact descargable durante 30 días; **no crea tags ni Releases**. Ejecutarlo sobre un tag válido sí prepara el borrador de esa versión.
+También se puede usar **Actions → ERP · Instaladores Windows → Run workflow** y seleccionar la rama. Al ejecutarlo sobre una rama, guarda un artifact descargable durante 30 días; **no crea tags ni Releases**. Ejecutarlo sobre un tag válido sí publica esa versión.
 
 ## Qué descargar y entregar
 
 | Archivo | Uso |
 | --- | --- |
-| `NicTech ERP Setup X.Y.Z.exe` | Instalador habitual para el cliente. |
-| `NicTech ERP X.Y.Z.exe` | Versión portable, sin instalación. |
-| `NicTech ERP Setup X.Y.Z.exe.blockmap` | Archivo complementario generado por el empaquetador. El cliente no necesita abrirlo. |
-| `SHA256SUMS.txt` | Huellas SHA-256 de los tres archivos anteriores para comprobar integridad. |
+| `NicTech-ERP-Setup-X.Y.Z.exe` | Instalador habitual para el cliente. |
+| `NicTech-ERP-Portable-X.Y.Z.exe` | Versión portable, sin instalación. |
+| `NicTech-ERP-Setup-X.Y.Z.exe.blockmap` | Metadatos para la descarga diferencial. El cliente no necesita abrirlos. |
+| `latest.yml` | Versión, nombre y huella del instalador que lee el actualizador. |
+| `SHA256SUMS.txt` | Huellas SHA-256 de los cuatro archivos anteriores. |
 
-Los mismos ejecutables quedan en el artifact de la ejecución y en la Release en borrador. En la Release, los nombres usan puntos en lugar de espacios: por ejemplo, `NicTech.ERP.Setup.0.1.1.exe`. Cada descarga incluye un `SHA256SUMS.txt` correspondiente a sus propios nombres de archivo. Las Releases publicadas permanecen hasta que se eliminen; los artifacts de Actions vencen a los 30 días, sujeto a la política del repositorio. En un repositorio privado, el cliente necesita acceso al repositorio para descargar desde GitHub: se puede entregar el `.exe` por otro medio sin cambiar la privacidad del código.
+El artifact de Actions y la Release usan los mismos nombres y sumas. No renombrar el instalador: `latest.yml` referencia su nombre exacto. Para entregar la versión al cliente, usar la [última Release pública](https://github.com/tomygiordev/nictech/releases/latest).
 
 Para consultar la huella de un archivo descargado en Windows:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath '.\NicTech.ERP.Setup.0.1.1.exe'
+Get-FileHash -Algorithm SHA256 -LiteralPath '.\NicTech-ERP-Setup-0.2.1.exe'
 ```
 
-Comparar el valor con la línea correspondiente de `SHA256SUMS.txt`. Si se descargó el artifact de Actions, usar el nombre con espacios.
+Comparar el valor con la línea correspondiente de `SHA256SUMS.txt`.
+
+## Pasar desde la versión 0.2.0
+
+La **0.2.0 no tiene actualizador**. El cliente debe descargar de GitHub y ejecutar **una sola vez** el primer `NicTech-ERP-Setup-X.Y.Z.exe` que incluya el actualizador. La `0.2.0` que se genere localmente para probar estos cambios no debe publicarse.
+
+Desde esa primera instalación, el ERP busca actualizaciones 10 segundos después de abrir la ventana y luego cada cuatro horas. Descarga la nueva versión y ofrece reiniciar cuando está lista. Si el cliente elige **Más tarde**, la instala al cerrar la aplicación. Sin conexión no aparece ningún aviso de error.
+
+La edición portable solo avisa de una versión nueva. **Abrir descargas** lleva a GitHub para bajar el instalador; el portable no se actualiza ni instala nada por su cuenta. La versión instalada se ve en la barra de título del ERP de escritorio.
+
+También podés usar **Configuración → Actualizaciones → Buscar actualizaciones**. La tarjeta muestra la versión instalada y el progreso sin abrir un diálogo adicional. Si la descarga termina, elegí **Reiniciar e instalar**; en la edición portable, **Descargar** abre la última Release en GitHub.
 
 ## Alcance de esta entrega
 
 - Windows x64, instalador NSIS y portable.
 - Inicio de sesión con las cuentas creadas en Supabase Auth y los permisos que tengan asignados en el ERP; requiere Internet.
-- Actualización manual: descargar e instalar la versión nueva. El archivo `.blockmap` no activa actualizaciones automáticas por sí solo.
 - Ejecutables sin firma digital: Windows puede mostrar un aviso de editor desconocido.
 - Los instaladores se guardan como archivos de Release, no se agregan al historial de Git.
 

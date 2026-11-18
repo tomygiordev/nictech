@@ -9,7 +9,7 @@ const { pathToFileURL } = require("node:url");
 const electronDirectory = path.resolve(__dirname, "../electron");
 const appUrl = pathToFileURL(path.resolve(electronDirectory, "../dist/index.html")).href;
 
-async function bootMain({ development = false, platform = "win32" } = {}) {
+async function bootMain({ development = false, platform = "win32", autoUpdater } = {}) {
   const handlers = new Map();
   const menus = [];
   const windows = [];
@@ -79,7 +79,17 @@ async function bootMain({ development = false, platform = "win32" } = {}) {
     dialog: { showErrorBox: () => {} },
   };
   vm.runInNewContext(fs.readFileSync(path.join(electronDirectory, "main.cjs"), "utf8"), {
-    require: (name) => name === "electron" ? electron : require(name),
+    require: (name) => {
+      if (name === "electron") return electron;
+      if (name === "./updater.cjs") {
+        const { startUpdateChecks } = require("../electron/updater.cjs");
+        return { startUpdateChecks: (options) => startUpdateChecks({
+          ...options,
+          ...(autoUpdater && { loadUpdater: () => autoUpdater }),
+        }) };
+      }
+      return require(name);
+    },
     __dirname: electronDirectory,
     URL,
     process: { argv: [], env: {}, platform, resourcesPath: "C:/NicTech/resources" },
@@ -228,17 +238,52 @@ test("development navigation validates origin and developer shortcuts leave edit
   assert.equal(editingPrevented, false);
 });
 
+test("showing the unpackaged main window does not schedule update checks", async (t) => {
+  const timeout = t.mock.method(globalThis, "setTimeout");
+  const { window, app, handlers, trustedEvent } = await bootMain({ development: true });
+  window.emit("ready-to-show");
+  assert.equal(window.shown, true);
+  assert.equal(timeout.mock.callCount(), 0);
+  assert.equal(app.listenerCount("will-quit"), 0);
+  assert.equal(handlers.get("get-update-status")(trustedEvent), null);
+  assert.throws(() => handlers.get("check-for-updates")(trustedEvent), /no disponible/);
+  assert.throws(() => handlers.get("install-update")(trustedEvent), /no disponible/);
+});
+
+test("trusted update IPC checks, sends status to the main window and installs only when ready", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const autoUpdater = Object.assign(new EventEmitter(), {
+    checkForUpdates: async () => {
+      autoUpdater.emit("update-available", { version: "0.2.1" });
+      autoUpdater.emit("update-downloaded", { version: "0.2.1" });
+      return { downloadPromise: Promise.resolve() };
+    },
+    quitAndInstall: t.mock.fn(),
+  });
+  const { window, handlers, trustedEvent } = await bootMain({ autoUpdater });
+  window.emit("ready-to-show");
+  assert.throws(() => handlers.get("install-update")(trustedEvent), /No hay una actualización lista/);
+  await handlers.get("check-for-updates")(trustedEvent);
+  const status = { kind: "downloaded", version: "0.2.1" };
+  assert.deepEqual(window.lastMessage, { channel: "update-status", state: status });
+  assert.deepEqual(handlers.get("get-update-status")(trustedEvent), status);
+  handlers.get("install-update")(trustedEvent);
+  assert.equal(autoUpdater.quitAndInstall.mock.callCount(), 1);
+});
+
 test("preload only exposes discrete methods and subscriptions never expose IPC event objects", async () => {
   const ipcRenderer = Object.assign(new EventEmitter(), { invoke: async (...args) => args });
-  let api;
+  const bridges = {};
   vm.runInNewContext(fs.readFileSync(path.join(electronDirectory, "preload.cjs"), "utf8"), {
-    require: () => ({ ipcRenderer, contextBridge: { exposeInMainWorld: (_name, value) => { api = value; } } }),
+    require: () => ({ ipcRenderer, contextBridge: { exposeInMainWorld: (name, value) => { bridges[name] = value; } } }),
     process: { platform: "win32" },
   });
+  const { electronAPI: api, erpDesktop } = bridges;
   assert.equal(api.isElectron, true);
   assert.equal(api.platform, "win32");
   assert.equal("send" in api, false);
   assert.equal("invoke" in api, false);
+  assert.deepEqual(await api.getAppVersion(), ["get-app-version"]);
   assert.deepEqual(await api.minimizeWindow(), ["minimize-window"]);
   assert.deepEqual(await api.toggleMaximizeWindow(), ["toggle-maximize-window"]);
   assert.deepEqual(await api.closeWindow(), ["close-window"]);
@@ -250,4 +295,31 @@ test("preload only exposes discrete methods and subscriptions never expose IPC e
   assert.deepEqual(Object.keys(received[0]), ["isMaximized", "isFocused", "isFullScreen"]);
   remove();
   assert.equal(ipcRenderer.listenerCount("window-state-changed"), 0);
+  assert.deepEqual(await erpDesktop.getVersion(), ["get-app-version"]);
+  assert.deepEqual(await erpDesktop.updates.check(), ["check-for-updates"]);
+  assert.deepEqual(await erpDesktop.updates.install(), ["install-update"]);
+  assert.equal("invoke" in erpDesktop.updates, false);
+});
+
+test("update subscription strips the IPC event, ignores stale snapshots and unsubscribes", async () => {
+  const snapshot = { kind: "checking" };
+  const ipcRenderer = Object.assign(new EventEmitter(), { invoke: async () => snapshot });
+  const bridges = {};
+  vm.runInNewContext(fs.readFileSync(path.join(electronDirectory, "preload.cjs"), "utf8"), {
+    require: () => ({ ipcRenderer, contextBridge: { exposeInMainWorld: (name, value) => { bridges[name] = value; } } }),
+    process: { platform: "win32" },
+  });
+  const seen = [];
+  const { onStatus } = bridges.erpDesktop.updates;
+  const remove = onStatus((...args) => seen.push(args));
+  const downloaded = { kind: "downloaded", version: "0.2.1" };
+  ipcRenderer.emit("update-status", { secretEvent: true }, downloaded);
+  await Promise.resolve();
+  assert.deepEqual(seen, [[downloaded]]);
+  remove();
+  assert.equal(ipcRenderer.listenerCount("update-status"), 0);
+  const removeSnapshot = onStatus((...args) => seen.push(args));
+  await Promise.resolve();
+  assert.deepEqual(seen, [[downloaded], [snapshot]]);
+  removeSnapshot();
 });

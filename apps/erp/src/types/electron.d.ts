@@ -16,8 +16,24 @@ export interface ElectronAPI {
   openExternal: (url: string) => Promise<boolean>;
 }
 
+export type DesktopUpdateStatus =
+  | { kind: "checking" | "not-available" }
+  | { kind: "available" | "downloaded" | "portable-available"; version: string }
+  | { kind: "downloading"; version: string; percent: number }
+  | { kind: "error"; message: string };
+
+export interface ErpDesktopAPI {
+  getVersion: () => Promise<string>;
+  updates: {
+    check: () => Promise<void>;
+    install: () => Promise<void>;
+    onStatus: (callback: (status: DesktopUpdateStatus) => void) => () => void;
+  };
+}
+
 declare global {
   interface Window {
     electronAPI?: ElectronAPI;
+    erpDesktop?: ErpDesktopAPI;
   }
 }

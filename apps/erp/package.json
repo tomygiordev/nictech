@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview --port 8081",
     "typecheck": "tsc --noEmit",
-    "test:desktop": "node --test tests/electron-window.node.cjs",
+    "test:desktop": "node --test --test-concurrency=1 tests/electron-window.node.cjs tests/electron-updater.node.cjs",
     "electron:dev": "node electron/dev.cjs",
     "electron:start": "electron .",
     "electron:preview": "npm run build && electron .",
@@ -21,6 +21,12 @@
     "electronVersion": "44.4.5",
     "appId": "ar.com.nictech.erp",
     "productName": "NicTech ERP",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/tomygiordev/nictech/releases/latest/download"
+      }
+    ],
     "directories": {
       "output": "release"
     },
@@ -43,11 +49,15 @@
       ]
     },
     "nsis": {
+      "artifactName": "NicTech-ERP-Setup-${version}.${ext}",
       "installerIcon": "public/brand/nictech.ico",
       "uninstallerIcon": "public/brand/nictech.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "NicTech ERP"
+    },
+    "portable": {
+      "artifactName": "NicTech-ERP-Portable-${version}.${ext}"
     }
   },
   "dependencies": {
@@ -55,6 +65,7 @@
     "@nictech/domain": "*",
     "@supabase/supabase-js": "^2.89.0",
     "@tanstack/react-query": "^5.83.0",
+    "electron-updater": "^6.8.11",
     "lucide-react": "^0.462.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

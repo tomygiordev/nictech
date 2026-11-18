@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require("electron")
 const path = require("path");
 const fs = require("fs");
 const { pathToFileURL } = require("url");
+const { startUpdateChecks } = require("./updater.cjs");
 
 const MANUAL_FILENAME = "Manual_Operativo_ERP_NicTech.pdf";
 const bundledManualUrl = pathToFileURL(path.join(__dirname, "../dist", MANUAL_FILENAME)).href;
@@ -33,6 +34,8 @@ if (!gotTheLock) {
 }
 
 let mainWindow = null;
+let updateChecksStarted = false;
+let updates;
 
 function isExternalUrl(url) {
   if (typeof url !== "string") return false;
@@ -143,6 +146,23 @@ function createMainWindow() {
   // Reveal window smoothly once ready
   window.once("ready-to-show", () => {
     window.show();
+    if (!updateChecksStarted) {
+      updateChecksStarted = true;
+      updates = startUpdateChecks({
+        app,
+        dialog,
+        shell,
+        getWindow: () => mainWindow,
+        isPortable: Boolean(process.env.PORTABLE_EXECUTABLE_DIR),
+        onStatus: (status) => {
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          const { webContents } = mainWindow;
+          if (!webContents.isDestroyed() && isAppUrl(webContents.mainFrame?.url)) {
+            webContents.send("update-status", status);
+          }
+        },
+      });
+    }
     if (isDev && process.argv.includes("--open-devtools")) {
       window.webContents.openDevTools({ mode: "detach" });
     }
@@ -203,6 +223,20 @@ function createMainWindow() {
 ipcMain.handle("get-app-version", (event) => {
   getTrustedWindow(event);
   return app.getVersion();
+});
+ipcMain.handle("get-update-status", (event) => {
+  getTrustedWindow(event);
+  return updates?.getStatus() ?? null;
+});
+ipcMain.handle("check-for-updates", (event) => {
+  getTrustedWindow(event);
+  if (!updates) throw new Error("Actualizador no disponible.");
+  return updates.check();
+});
+ipcMain.handle("install-update", (event) => {
+  getTrustedWindow(event);
+  if (!updates) throw new Error("Actualizador no disponible.");
+  return updates.install();
 });
 ipcMain.handle("open-external", async (event, url) => {
   getTrustedWindow(event);
