@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "../types/supabase";
+import type { Database, Json } from "../types/supabase";
 import { resolveSupabaseConfig } from "./supabaseConfig";
 
 type ErpTables = Database["erp"]["Tables"];
@@ -153,6 +153,7 @@ export type ErpDatabase = Omit<Database, "erp"> & {
       "record_repair_payment" | "intake_trade_in_direct" | "record_trade_in_refurbishment"
       | "save_catalog_product_sheet" | "set_product_compatible_models" | "manage_product_variants"
     > & {
+      quote_pos_catalog_prices: { Args: { p_product_ids: string[] }; Returns: Json };
       search_repairs_by_document: { Args: { p_document: string }; Returns: Array<{ repair_order_id: string }> };
       add_repair_note: { Args: { p_repair_order_id: string; p_content: string; p_is_public: boolean }; Returns: string };
       save_catalog_product_sheet: {

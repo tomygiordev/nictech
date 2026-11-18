@@ -294,6 +294,7 @@ export interface CartItemToSync {
   variantId?: string | null;
   displayName: string;
   priceArs: number;
+  promotionListPriceArs?: number;
   taxRatePercent: number;
   quantity: number;
   availableStock: number;
@@ -302,17 +303,17 @@ export interface CartItemToSync {
 export interface CatalogVariantForSync {
   id: string;
   effectiveGrossPrice: number;
+  promotionListPriceArs?: number;
   stock: number;
   isPriceOutOfRange?: boolean;
   priceRangeError?: string | null;
-  hasOverride?: boolean;
-  finalPriceArs?: number | null;
 }
 
 export interface CatalogProductForSync {
   id: string;
   name: string;
   priceArs: number;
+  promotionListPriceArs?: number;
   taxRatePercent: number;
   stock: number;
   hasVariants: boolean;
@@ -499,6 +500,7 @@ export const syncCartWithCatalog = <T extends CartItemToSync>(
     }
 
     let freshPrice = prod.priceArs;
+    let promotionListPriceArs = prod.promotionListPriceArs;
     let freshTaxRate = prod.taxRatePercent;
     let freshStock = prod.stock;
 
@@ -528,28 +530,6 @@ export const syncCartWithCatalog = <T extends CartItemToSync>(
         };
       }
 
-      const hasOverride = Boolean(
-        v.hasOverride || (v.finalPriceArs !== null && v.finalPriceArs !== undefined),
-      );
-
-      if (
-        !hasOverride &&
-        (prod.isPriceOutOfRange ||
-          prod.priceArs < 0 ||
-          prod.priceArs > POS_MAX_AMOUNT_ARS ||
-          !Number.isFinite(prod.priceArs))
-      ) {
-        return {
-          isValid: false,
-          error: `La variante "${item.displayName}" hereda un precio base fuera de rango en el catálogo vigente: ${prod.priceRangeError || "precio base inválido"}.`,
-          errorReason: "price_out_of_range",
-          updatedCart: cart,
-          changes: [],
-          hasChanges: false,
-          newTotalArs: 0,
-        };
-      }
-
       if (v.isPriceOutOfRange) {
         return {
           isValid: false,
@@ -563,6 +543,7 @@ export const syncCartWithCatalog = <T extends CartItemToSync>(
       }
 
       freshPrice = v.effectiveGrossPrice;
+      promotionListPriceArs = v.promotionListPriceArs;
       freshStock = v.stock;
     } else {
       if (
@@ -626,6 +607,7 @@ export const syncCartWithCatalog = <T extends CartItemToSync>(
     const updatedItem: T = {
       ...item,
       priceArs: round4(freshPrice),
+      promotionListPriceArs,
       taxRatePercent: round4(freshTaxRate),
       availableStock: freshStock,
     };

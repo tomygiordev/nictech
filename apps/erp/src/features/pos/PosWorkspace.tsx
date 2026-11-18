@@ -28,14 +28,12 @@ import {
   calculatePosCartTotals,
   div4,
   mul4,
-  round4,
   POS_MAX_AMOUNT_ARS,
   parsePriceSafe,
-  resolveVariantPrice,
 } from "./pricing";
 import { PosCoordinator } from "./posCoordinator";
 import { runPosCatalogFetch, type PosCatalogOwner } from "./posCatalogFlow";
-import type { CreateSaleWithInvoiceResult } from "./api";
+import { listPosCatalogQuotes, posQuoteKey, type CreateSaleWithInvoiceResult } from "./api";
 import {
   recoverConfirmedTicket,
   type ConfirmedTicketState,
@@ -54,15 +52,13 @@ export interface PosVariantItem {
   id: string;
   code: string;
   name: string;
-  priceDelta: number;
-  finalPriceArs?: number | null;
   effectiveGrossPrice: number;
+  promotionListPriceArs?: number;
   stock: number;
   barcodes: string[];
   inventoryUnits: PosInventoryUnit[];
   isPriceOutOfRange?: boolean;
   priceRangeError?: string | null;
-  hasOverride?: boolean;
 }
 
 export interface PosProductItem {
@@ -71,6 +67,7 @@ export interface PosProductItem {
   name: string;
   category: string;
   priceArs: number;
+  promotionListPriceArs?: number;
   priceUsd: number;
   stock: number;
   taxRatePercent: number;
@@ -81,7 +78,6 @@ export interface PosProductItem {
   inventoryUnits: PosInventoryUnit[];
   isPriceOutOfRange?: boolean;
   priceRangeError?: string | null;
-  hasOverride?: boolean;
 }
 
 export interface CartItem {
@@ -92,7 +88,7 @@ export interface CartItem {
   displayName: string;
   code: string;
   priceArs: number;
-  priceUsd: number;
+  promotionListPriceArs?: number;
   quantity: number;
   availableStock: number;
   locationId: string;
@@ -104,16 +100,12 @@ interface RawProductData {
   id: string;
   internal_code: string;
   internal_name: string;
-  base_sale_price: number | null;
-  tax_rate_percent: number | null;
   inventory_tracking: "none" | "quantity" | "serial" | "imei";
   product_categories?: { name: string } | null;
   product_variants?: Array<{
     id: string;
     code: string;
     name: string;
-    price_delta: number | null;
-    final_price_ars?: number | null;
     is_active: boolean;
     product_identifiers?: Array<{ kind: string; value: string; is_active?: boolean }>;
   }> | null;
@@ -123,6 +115,19 @@ interface RawProductData {
     quantity_reserved: number;
     variant_id: string | null;
   }> | null;
+}
+
+function PosAmount({ amount, list }: { amount: number; list?: number }) {
+  return (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 6px" }}>
+      {list !== undefined && (
+        <del title="Precio de lista" style={{ color: "var(--text-muted)", fontSize: "0.85em", fontWeight: 500 }}>
+          {formatPosCurrency(list, "ARS")}
+        </del>
+      )}
+      <span>{formatPosCurrency(amount, "ARS")}</span>
+    </span>
+  );
 }
 
 interface BranchOption {
@@ -279,11 +284,9 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
             id,
             internal_code,
             internal_name,
-            base_sale_price,
-            tax_rate_percent,
             inventory_tracking,
             product_categories:product_categories!products_category_organization_fk(name),
-            product_variants(id, code, name, price_delta, final_price_ars, is_active, product_identifiers(kind, value, is_active)),
+            product_variants(id, code, name, is_active, product_identifiers(kind, value, is_active)),
             stock_balances(location_id, quantity_on_hand, quantity_reserved, variant_id)
           `)
           .eq("organization_id", organizationId)
@@ -329,26 +332,22 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
 
       const rawUnits: RawInventoryUnit[] = unitResult.data ?? [];
       const rawProducts: RawProductData[] = productResult.data ?? [];
+      const quotes = await listPosCatalogQuotes(rawProducts.map((product) => product.id));
+      const priceFor = (productId: string, variantId?: string) => {
+        const quote = quotes.get(posQuoteKey(productId, variantId));
+        const checked = quote ? parsePriceSafe(quote.final_price_ars) : {
+          price: -1, valid: false, error: "Precio POS no disponible",
+        };
+        return {
+          ...checked,
+          taxRatePercent: quote?.tax_rate_percent ?? 0,
+          promotionListPriceArs: quote?.promotion_id ? quote.list_price_ars : undefined,
+        };
+      };
 
       const mapped: PosProductItem[] = rawProducts.map((p) => {
-        const basePriceCheck = parsePriceSafe(p.base_sale_price);
-        const baseGross = basePriceCheck.price;
-        const productPriceOutOfRange = !basePriceCheck.valid;
-        const productPriceRangeError = basePriceCheck.error;
-
-        let taxRatePercent = 0;
-        const rawTax = Number(p.tax_rate_percent || 0);
-        if (Number.isFinite(rawTax) && rawTax >= 0 && rawTax <= 100) {
-          try {
-            taxRatePercent = round4(rawTax);
-          } catch {
-            taxRatePercent = 0;
-          }
-        }
-
-        const baseUsd = currentRate && currentRate > 0 && !productPriceOutOfRange && baseGross >= 0 && baseGross <= POS_MAX_AMOUNT_ARS
-          ? div4(baseGross, currentRate)
-          : 0;
+        const base = priceFor(p.id);
+        const baseUsd = currentRate && base.valid ? div4(base.price, currentRate) : 0;
         const catName = p.product_categories?.name || "General";
 
         const balances = p.stock_balances || [];
@@ -374,32 +373,22 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
             .map((pi) => pi.value)
             .filter(Boolean);
 
-          const hasOverride = v.final_price_ars !== null && v.final_price_ars !== undefined;
-          const resolvedPricing = resolveVariantPrice({
-            baseGrossPrice: baseGross,
-            productPriceOutOfRange,
-            productPriceRangeError,
-            hasOverride,
-            finalPriceArs: v.final_price_ars,
-            priceDelta: v.price_delta,
-          });
+          const price = priceFor(p.id, v.id);
 
           return {
             id: v.id,
             code: v.code,
             name: v.name,
-            priceDelta: resolvedPricing.delta,
-            finalPriceArs: resolvedPricing.finalPrice,
-            effectiveGrossPrice: resolvedPricing.effectiveGrossPrice,
+            effectiveGrossPrice: price.price,
+            promotionListPriceArs: price.promotionListPriceArs,
             stock: varStock,
             barcodes,
             inventoryUnits: variantUnits.map((unit) => ({
               id: unit.id,
               label: unit.imei || unit.serial_number || unit.id.slice(0, 8).toUpperCase(),
             })),
-            isPriceOutOfRange: resolvedPricing.isPriceOutOfRange,
-            priceRangeError: resolvedPricing.priceRangeError,
-            hasOverride,
+            isPriceOutOfRange: !price.valid,
+            priceRangeError: price.error,
           };
         });
 
@@ -423,10 +412,11 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
           code: p.internal_code || p.id.slice(0, 8).toUpperCase(),
           name: p.internal_name,
           category: catName,
-          priceArs: baseGross,
+          priceArs: base.price,
           priceUsd: baseUsd,
+          promotionListPriceArs: base.promotionListPriceArs,
           stock: simpleStock,
-          taxRatePercent,
+          taxRatePercent: base.taxRatePercent,
           inventoryTracking: p.inventory_tracking,
           hasVariants,
           variants,
@@ -435,8 +425,8 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
             id: unit.id,
             label: unit.imei || unit.serial_number || unit.id.slice(0, 8).toUpperCase(),
           })),
-          isPriceOutOfRange: productPriceOutOfRange,
-          priceRangeError: productPriceRangeError,
+          isPriceOutOfRange: !base.valid,
+          priceRangeError: base.error,
         };
       });
 
@@ -530,14 +520,13 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
     const priceArs = variant ? variant.effectiveGrossPrice : product.priceArs;
     const isOutOfRange = variant ? variant.isPriceOutOfRange : product.isPriceOutOfRange;
     const rangeError = variant ? variant.priceRangeError : product.priceRangeError;
-    if (isOutOfRange || priceArs < 0 || priceArs > POS_MAX_AMOUNT_ARS) {
+    if (isOutOfRange || !parsePriceSafe(priceArs).valid) {
       setFeedback({
         type: "error",
         message: rangeError || `El artículo ${product.name} tiene un precio fuera de rango permitido.`,
       });
       return;
     }
-    const priceUsd = dollarRate && dollarRate > 0 ? div4(priceArs, dollarRate) : 0;
     const baseDisplayName = variant ? `${product.name} (${variant.name})` : product.name;
     const displayName = inventoryUnit ? `${baseDisplayName} · ${inventoryUnit.label}` : baseDisplayName;
     const displayCode = variant ? variant.code : product.code;
@@ -576,7 +565,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
           displayName,
           code: displayCode,
           priceArs,
-          priceUsd,
+          promotionListPriceArs: variant ? variant.promotionListPriceArs : product.promotionListPriceArs,
           quantity: 1,
           availableStock: targetStock,
           locationId: selectedLocationId,
@@ -1025,6 +1014,9 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                                       }
                                     >
                                       {v.name} · {unit.label}
+                                      {!isInvalidPrice && v.promotionListPriceArs !== undefined && (
+                                        <> · <PosAmount amount={v.effectiveGrossPrice} list={v.promotionListPriceArs} /></>
+                                      )}
                                     </button>
                                   );
                                 })
@@ -1066,6 +1058,9 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                                       }
                                     >
                                       {v.name} {isInvalidPrice ? `(${v.priceRangeError ? "Fuera de rango" : "Inválido"})` : `(${v.stock})`}
+                                      {!isInvalidPrice && v.promotionListPriceArs !== undefined && (
+                                        <> · <PosAmount amount={v.effectiveGrossPrice} list={v.promotionListPriceArs} /></>
+                                      )}
                                     </button>
                                   );
                                 })()
@@ -1114,7 +1109,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                       >
                         {product.isPriceOutOfRange
                           ? (product.priceRangeError || "Precio fuera de rango")
-                          : formatPosCurrency(product.priceArs, "ARS")}
+                          : <PosAmount amount={product.priceArs} list={product.promotionListPriceArs} />}
                       </div>
                       <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 600 }}>
                         {product.isPriceOutOfRange
@@ -1335,6 +1330,8 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
 
           {/* Cart Items List */}
           <div
+            role="group"
+            aria-label="Artículos del carrito"
             style={{
               display: "flex",
               flexDirection: "column",
@@ -1383,8 +1380,16 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                     </strong>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                       <span style={{ fontSize: "11px", color: "var(--brand-primary)", fontWeight: 800 }}>
-                        {formatPosCurrency(cartTotals.lines[index]?.lineTotal ?? mul4(item.priceArs, item.quantity), "ARS")}
+                        <PosAmount
+                          amount={item.promotionListPriceArs === undefined
+                            ? cartTotals.lines[index]?.lineTotal ?? mul4(item.priceArs, item.quantity)
+                            : item.priceArs}
+                          list={item.promotionListPriceArs}
+                        />
                       </span>
+                      {item.promotionListPriceArs !== undefined && item.quantity > 1 && (
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>c/u</span>
+                      )}
                       <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>
                         (disp: {item.availableStock})
                       </span>

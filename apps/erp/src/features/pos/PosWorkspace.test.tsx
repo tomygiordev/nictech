@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   receipt: vi.fn(),
   productLoad: vi.fn(),
+  catalogQuotes: vi.fn(),
 }));
 const ids = {
   branch: "11111111-1111-4111-8111-111111111111",
@@ -52,6 +53,10 @@ const productResponse = () => ({ data: [{ id: ids.product, internal_code: "ITEM"
   product_categories: null, product_variants: [],
   stock_balances: [{ location_id: ids.location, quantity_on_hand: 10, quantity_reserved: 0, variant_id: null }],
 }], error: null });
+const quote = (price = 100.005, promotionId: string | null = null) => ({
+  product_id: ids.product, variant_id: null, list_price_ars: 100.005,
+  final_price_ars: price, promotion_id: promotionId, tax_rate_percent: 21,
+});
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((res) => { resolve = res; });
@@ -69,17 +74,45 @@ async function charge() {
 describe("POS Workspace financial flow", () => {
   beforeEach(() => {
     mocks.organizationId = "org-a";
-    mocks.rpc.mockReset(); mocks.receipt.mockReset(); mocks.productLoad.mockReset();
+    mocks.rpc.mockReset(); mocks.receipt.mockReset(); mocks.productLoad.mockReset(); mocks.catalogQuotes.mockReset();
     mocks.productLoad.mockImplementation(async () => productResponse());
+    mocks.catalogQuotes.mockResolvedValue({ data: [quote()], error: null });
     mocks.receipt.mockResolvedValue(null);
     mocks.rpc.mockImplementation(async (name: string) => {
       if (name === "get_or_create_exchange_snapshot") return { data: ids.snapshot, error: null };
       if (name === "get_or_create_pos_customer") return { data: ids.customer, error: null };
+      if (name === "quote_pos_catalog_prices") return mocks.catalogQuotes();
       if (name === "create_sale_with_invoice") return { data: saleResponse, error: null };
       return { data: [], error: null };
     });
   });
   afterEach(cleanup);
+
+  it("muestra el precio de lista tachado, usa la cotización POS y recotiza cuando vence", async () => {
+    mocks.catalogQuotes.mockResolvedValueOnce({ data: [quote(90, ids.document)], error: null });
+    const baseRpc = mocks.rpc.getMockImplementation()!;
+    mocks.rpc.mockImplementation(async (...args: unknown[]) => {
+      if (args[0] === "create_sale_with_invoice" && saleCalls().length === 1) {
+        return { data: null, error: { code: "23514", message: "stale quote: catalog price or tax rate has changed, requote required" } };
+      }
+      return baseRpc(...args);
+    });
+    render(<PosWorkspace coordinator={new PosCoordinator()} />);
+    await ready();
+    await charge();
+    expect(screen.getAllByTitle("Precio de lista").map((element) => element.tagName)).toEqual(["DEL", "DEL"]);
+    expect(saleCalls()[0][1]).toMatchObject({
+      lines: [expect.objectContaining({ expected_unit_price: 90 })],
+      payment_lines: [expect.objectContaining({ amount: 90 })],
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Actualizar precios del carrito" }));
+    await waitFor(() => expect(screen.queryByTitle("Precio de lista")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Cobrar y Emitir Comprobante" }));
+    await waitFor(() => expect(saleCalls()[1]?.[1]).toMatchObject({
+      lines: [expect.objectContaining({ expected_unit_price: 100.005 })],
+      payment_lines: [expect.objectContaining({ amount: 100.005 })],
+    }));
+  });
 
   it("mounts, adopts defaults, charges through the real API, and completes the queued catalog refresh", async () => {
     const coordinator = new PosCoordinator();

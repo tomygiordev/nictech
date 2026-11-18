@@ -12,6 +12,32 @@ const client = () => {
   return supabase;
 };
 
+const catalogQuoteSchema = z.object({
+  product_id: z.string().uuid(),
+  variant_id: z.string().uuid().nullable(),
+  final_price_ars: z.number().finite(),
+  list_price_ars: z.number().finite(),
+  tax_rate_percent: z.number().min(0).max(100),
+  promotion_id: z.string().uuid().nullable(),
+});
+
+export const posQuoteKey = (productId: string, variantId: string | null = null) =>
+  `${productId}:${variantId ?? ""}`;
+
+export async function listPosCatalogQuotes(productIds: string[]) {
+  const quotes = new Map<string, z.infer<typeof catalogQuoteSchema>>();
+  for (let index = 0; index < productIds.length; index += 1000) {
+    const { data, error } = await client().rpc("quote_pos_catalog_prices", {
+      p_product_ids: productIds.slice(index, index + 1000),
+    });
+    if (error) throw error;
+    const result = z.array(catalogQuoteSchema).safeParse(data);
+    if (!result.success) throw new Error("El servidor devolvió precios POS inválidos.");
+    for (const quote of result.data) quotes.set(posQuoteKey(quote.product_id, quote.variant_id), quote);
+  }
+  return quotes;
+}
+
 const deepCloneAndFreeze = <T>(val: T): T => {
   if (val === null || typeof val !== "object") return val;
   if (Array.isArray(val)) {

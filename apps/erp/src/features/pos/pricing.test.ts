@@ -412,14 +412,12 @@ describe("Authoritative POS 4-decimal arithmetic", () => {
               id: "var-override",
               effectiveGrossPrice: 1500,
               stock: 10,
-              hasOverride: true,
               isPriceOutOfRange: false,
             },
             {
               id: "var-inherited",
               effectiveGrossPrice: 1_000_000_001,
               stock: 10,
-              hasOverride: false,
             },
           ],
         },
@@ -434,7 +432,7 @@ describe("Authoritative POS 4-decimal arithmetic", () => {
       const resultInherited = syncCartWithCatalog(cartInherited, catalog);
       expect(resultInherited.isValid).toBe(false);
       expect(resultInherited.errorReason).toBe("price_out_of_range");
-      expect(resultInherited.error).toContain("hereda un precio base fuera de rango");
+      expect(resultInherited.error).toContain("no es válido o está fuera de rango");
     });
   });
 
