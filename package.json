@@ -38,7 +38,8 @@
     "db:stop": "supabase stop",
     "db:seed:qa-owner": "node scripts/seed-erp-qa-owner.mjs",
     "db:reset:qa": "supabase db reset && npm run db:seed:qa-owner",
-    "test:e2e:tienda": "playwright test"
+    "test:e2e:tienda": "playwright test",
+    "test:e2e:erp": "node e2e/erp/run-local.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
