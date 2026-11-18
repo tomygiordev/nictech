@@ -22,6 +22,7 @@
     "build": "vite build",
     "build:storefront": "vite build",
     "build:erp": "npm run build --workspace @nictech/erp",
+    "build:erp:web": "node scripts/build-erp-web.mjs",
     "typecheck:erp": "npm run typecheck --workspace @nictech/erp",
     "test:erp:desktop": "npm run test:desktop --workspace @nictech/erp",
     "types:erp": "supabase gen types typescript --local --schema erp > apps/erp/src/types/supabase.ts",

@@ -277,13 +277,9 @@ export type ErpDatabase = Omit<Database, "erp"> & {
   };
 };
 
-const runtimeEnv = (import.meta as ImportMeta & {
-  env?: Record<string, string | undefined>;
-}).env ?? {};
-
 export const configResult = resolveSupabaseConfig({
-  VITE_SUPABASE_URL: runtimeEnv.VITE_SUPABASE_URL,
-  VITE_SUPABASE_PUBLISHABLE_KEY: runtimeEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
+  VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
+  VITE_SUPABASE_PUBLISHABLE_KEY: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
 });
 
 export const supabaseConfigError: string | null = configResult.ok ? null : configResult.message;

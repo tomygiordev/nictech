@@ -357,7 +357,7 @@ const Admin = () => {
 
   const { session, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
-  const erpUrl = import.meta.env.VITE_ERP_URL?.trim() || '';
+  const erpUrl = import.meta.env.VITE_ERP_URL?.trim() || '/erp';
   const { hiddenTabs } = useAdminCutoverFlags({ enabled: Boolean(session) });
   const { visibleTabs, nextActiveTab } = filterAdminTabs(ADMIN_TABS, hiddenTabs, activeTab);
 

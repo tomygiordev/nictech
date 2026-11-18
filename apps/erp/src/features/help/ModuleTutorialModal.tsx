@@ -72,7 +72,7 @@ export const ModuleTutorialModal: React.FC<ModuleTutorialModalProps> = ({
   };
 
   const handleOpenPdf = () => {
-    const manualUrl = new URL("Manual_Operativo_ERP_NicTech.pdf", document.baseURI);
+    const manualUrl = new URL(`${import.meta.env.BASE_URL}Manual_Operativo_ERP_NicTech.pdf`, window.location.href);
     window.open(manualUrl.href, "_blank");
   };
 

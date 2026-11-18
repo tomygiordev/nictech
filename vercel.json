@@ -1,13 +1,9 @@
 {
-    "buildCommand": "npm run build && node scripts/prerender-storefront-seo.mjs",
+    "buildCommand": "npm run build && node scripts/prerender-storefront-seo.mjs && npm run build:erp:web",
     "headers": [
         {
             "source": "/(.*)",
             "headers": [
-                {
-                    "key": "Content-Security-Policy",
-                    "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://http2.mlstatic.com https://www.mercadopago.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://qatkzvlomuaoaxlfgjfa.supabase.co https://images.unsplash.com https://plus.unsplash.com; connect-src 'self' https://qatkzvlomuaoaxlfgjfa.supabase.co https://api.mercadopago.com wss://qatkzvlomuaoaxlfgjfa.supabase.co; frame-src 'self' https://www.mercadopago.com.ar https://www.google.com;"
-                },
                 {
                     "key": "X-Frame-Options",
                     "value": "SAMEORIGIN"
@@ -25,11 +21,37 @@
                     "value": "camera=(), microphone=(), geolocation=()"
                 }
             ]
+        },
+        {
+            "source": "/((?!erp(?:/|$)).*)",
+            "headers": [
+                {
+                    "key": "Content-Security-Policy",
+                    "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://http2.mlstatic.com https://www.mercadopago.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://qatkzvlomuaoaxlfgjfa.supabase.co https://images.unsplash.com https://plus.unsplash.com; connect-src 'self' https://qatkzvlomuaoaxlfgjfa.supabase.co https://api.mercadopago.com wss://qatkzvlomuaoaxlfgjfa.supabase.co; frame-src 'self' https://www.mercadopago.com.ar https://www.google.com;"
+                }
+            ]
+        },
+        {
+            "source": "/erp/:path*",
+            "headers": [
+                {
+                    "key": "Content-Security-Policy",
+                    "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://qatkzvlomuaoaxlfgjfa.supabase.co https://images.unsplash.com https://plus.unsplash.com; connect-src 'self' https://qatkzvlomuaoaxlfgjfa.supabase.co wss://qatkzvlomuaoaxlfgjfa.supabase.co; base-uri 'self'; form-action 'self';"
+                }
+            ]
         }
     ],
     "rewrites": [
         {
-            "source": "/(.*)",
+            "source": "/erp",
+            "destination": "/erp/index.html"
+        },
+        {
+            "source": "/erp/((?!assets(?:/|$)|brand(?:/|$)|index\\.html$|Manual_Operativo_ERP_NicTech\\.(?:html|pdf)$).*)",
+            "destination": "/erp/index.html"
+        },
+        {
+            "source": "/((?!erp(?:/|$)).*)",
             "destination": "/index.html"
         }
     ]
