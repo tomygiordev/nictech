@@ -36,7 +36,8 @@
     "db:test": "supabase test db",
     "db:stop": "supabase stop",
     "db:seed:qa-owner": "node scripts/seed-erp-qa-owner.mjs",
-    "db:reset:qa": "supabase db reset && npm run db:seed:qa-owner"
+    "db:reset:qa": "supabase db reset && npm run db:seed:qa-owner",
+    "test:e2e:tienda": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -97,6 +98,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
