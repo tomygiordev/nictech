@@ -117,6 +117,8 @@ describe("ERP App Navigation & Workspaces", () => {
     expect(screen.getByRole("button", { name: "Stock y almacén" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Contabilidad y análisis" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Configuración y accesos" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Nueva Venta POS" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mensajes" })).not.toBeInTheDocument();
   });
 
   it("exposes a skip link and keeps keyboard focus inside open dialogs", async () => {

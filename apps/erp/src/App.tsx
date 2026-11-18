@@ -264,26 +264,24 @@ export const App = () => {
     return result;
   }, [searchQuery, hasPermission, visibleModules]);
 
+  const canOpenModule = (id: ErpModuleId) => {
+    const module = getErpModuleById(id);
+    return module !== undefined && visibleModules.includes(id) && hasPermission(module.permission);
+  };
+
   const selectModule = (id: ErpModuleId) => {
+    if (!canOpenModule(id)) return;
     setActiveModuleId(id);
     setNavOpen(false);
   };
 
   const selectWorkspace = (ws: ErpWorkspaceDefinition) => {
-    if (ws.moduleIds.includes(activeModuleId) && visibleModules.includes(activeModuleId) && hasPermission(getErpModuleById(activeModuleId)?.permission ?? "")) {
+    if (ws.moduleIds.includes(activeModuleId) && canOpenModule(activeModuleId)) {
       setNavOpen(false);
       return;
     }
-    const firstAuthorized = ws.moduleIds.find((id) => {
-      const mod = getErpModuleById(id);
-      return visibleModules.includes(id) && mod && hasPermission(mod.permission);
-    });
-    if (firstAuthorized) {
-      setActiveModuleId(firstAuthorized);
-    } else {
-      setActiveModuleId(ws.moduleIds[0]);
-    }
-    setNavOpen(false);
+    const firstAuthorized = ws.moduleIds.find(canOpenModule);
+    if (firstAuthorized) selectModule(firstAuthorized);
   };
 
   const handleLogout = async () => {
@@ -403,7 +401,7 @@ export const App = () => {
             </div>
 
             {/* Primary action stays named on desktop so it is not mistaken for a generic add action. */}
-            <button
+            {canOpenModule("pos") && <button
               type="button"
               className="header-primary-action"
               aria-label="Nueva Venta POS"
@@ -412,7 +410,7 @@ export const App = () => {
             >
               <Plus size={18} />
               <span>Nueva venta</span>
-            </button>
+            </button>}
 
             {/* Notifications Button */}
             <button
@@ -426,7 +424,7 @@ export const App = () => {
             </button>
 
             {/* WhatsApp / Messaging Button */}
-            {visibleModules.includes("whatsapp") && <button
+            {canOpenModule("whatsapp") && <button
               type="button"
               className="header-action-btn topbar-hide-mobile"
               aria-label="Mensajes"
