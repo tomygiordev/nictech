@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(48);
+select plan(50);
 select ok(position('public.repair_status' in pg_get_functiondef('public.get_repair_by_tracking_code_erp(text)'::regprocedure)) > 0,
   'El adaptador califica el enum público aunque su search_path no incluya public');
 select is((select count(*) from erp.repair_statuses where organization_id='10000000-0000-0000-0000-000000000001' and
@@ -43,6 +43,8 @@ select is((select count(*) from public.get_repair_by_tracking_code_erp('30123456
 select is((select count(*) from public.get_repair_by_tracking_code_erp('30.123.456')),2::bigint,'Búsqueda por DNI con puntos');
 select ok((select repair_logs::text like '%Nota pública%' from public.get_repair_by_tracking_code_erp((select code from tracking_test_ids where kind='one'))),'Nota pública visible');
 select ok((select repair_logs::text not like '%NOTA INTERNA SECRETA%' and notes not like '%SECRETO DE INGRESO%' from public.get_repair_by_tracking_code_erp((select code from tracking_test_ids where kind='one'))),'No se exponen notas internas');
+select is((select client_dni from public.get_repair_by_tracking_code_erp((select code from tracking_test_ids where kind='one'))),'','No se devuelve el DNI al consultar por código');
+select is((select count(*) from public.get_repair_by_tracking_code_erp('30123456') where client_dni=''),2::bigint,'Buscar por DNI no devuelve el dato privado en los resultados');
 select is((select count(*) from public.get_repair_by_tracking_code_erp('ZZZZ-ZZZZ')),0::bigint,'Código inexistente no expone datos');
 reset role;
 select ok(not has_table_privilege('anon','erp.repair_orders','select'),'Anon no puede leer órdenes');
