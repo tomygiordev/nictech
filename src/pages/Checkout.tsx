@@ -10,9 +10,11 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useCart, type AuthoritativeCartPrice } from '@/contexts/CartContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { checkoutPayerSchema } from '@/lib/checkout-payer';
 
 type PaymentMethod = 'mercadopago' | 'card';
 type DeliveryMethod = 'pickup_urdinarrain' | 'pickup_gilbert' | 'shipping';
+type PayerField = keyof typeof checkoutPayerSchema.shape;
 
 const PICKUP_BRANCH_ADDRESSES: Record<Exclude<DeliveryMethod, 'shipping'>, string> = {
   pickup_urdinarrain: 'Retiro en sucursal Urdinarrain (Héroes de Malvinas 08)',
@@ -35,6 +37,22 @@ const Checkout = () => {
     dni: '',
     address: '',
   });
+  const [payerErrors, setPayerErrors] = useState<Partial<Record<PayerField, string[]>>>({});
+
+  const updatePayer = (field: PayerField, value: string) => {
+    setPayerInfo((previous) => ({ ...previous, [field]: value }));
+    setPayerErrors((previous) => ({ ...previous, [field]: undefined }));
+  };
+
+  const errorProps = (field: PayerField) => payerErrors[field]
+    ? { 'aria-invalid': true, 'aria-describedby': `${field}-error` }
+    : {};
+
+  const fieldError = (field: PayerField) => payerErrors[field]?.[0] && (
+    <p className="mt-1 text-sm text-destructive" id={`${field}-error`} role="alert">
+      {payerErrors[field][0]}
+    </p>
+  );
 
   // Handle payment status from redirect
   const paymentStatus = searchParams.get('payment');
@@ -138,18 +156,6 @@ const Checkout = () => {
   }
 
   const handleCheckout = async () => {
-    const requiresShippingAddress = deliveryMethod === 'shipping';
-    if (
-      !payerInfo.name.trim() ||
-      !payerInfo.email.trim() ||
-      !payerInfo.phone.trim() ||
-      !payerInfo.dni.trim() ||
-      (requiresShippingAddress && !payerInfo.address.trim())
-    ) {
-      toast.error('Por favor completa todos los campos obligatorios');
-      return;
-    }
-
     const addressNote = payerInfo.address.trim();
     const resolvedAddress =
       deliveryMethod === 'shipping'
@@ -158,6 +164,13 @@ const Checkout = () => {
           ? `${PICKUP_BRANCH_ADDRESSES[deliveryMethod]} (${addressNote})`
           : PICKUP_BRANCH_ADDRESSES[deliveryMethod];
 
+    const payer = checkoutPayerSchema.safeParse({ ...payerInfo, address: resolvedAddress });
+    if (!payer.success) {
+      setPayerErrors(payer.error.flatten().fieldErrors);
+      document.getElementById(String(payer.error.issues[0]?.path[0]))?.focus();
+      return;
+    }
+    setPayerErrors({});
     setLoading(true);
     try {
       // ── Final stock validation before payment ──
@@ -191,10 +204,7 @@ const Checkout = () => {
             quantity: item.quantity,
             image_url: item.image_url,
           })),
-          payer: {
-            ...payerInfo,
-            address: resolvedAddress,
-          },
+          payer: payer.data,
           origin: window.location.origin,
         },
       });
@@ -293,10 +303,12 @@ const Checkout = () => {
                       <Input
                         id="name"
                         required
+                        {...errorProps('name')}
                         value={payerInfo.name}
-                        onChange={(e) => setPayerInfo(prev => ({ ...prev, name: e.target.value }))}
+                        onChange={(e) => updatePayer('name', e.target.value)}
                         placeholder="Tu nombre completo"
                       />
+                      {fieldError('name')}
                     </div>
                     <div>
                       <Label htmlFor="dni">DNI / CUIL *</Label>
@@ -304,10 +316,12 @@ const Checkout = () => {
                         id="dni"
                         required
                         type="text"
+                        {...errorProps('dni')}
                         value={payerInfo.dni}
-                        onChange={(e) => setPayerInfo(prev => ({ ...prev, dni: e.target.value }))}
+                        onChange={(e) => updatePayer('dni', e.target.value)}
                         placeholder="Sin puntos ni espacios"
                       />
+                      {fieldError('dni')}
                     </div>
                     <div>
                       <Label htmlFor="email">Email *</Label>
@@ -315,10 +329,12 @@ const Checkout = () => {
                         id="email"
                         type="email"
                         required
+                        {...errorProps('email')}
                         value={payerInfo.email}
-                        onChange={(e) => setPayerInfo(prev => ({ ...prev, email: e.target.value }))}
+                        onChange={(e) => updatePayer('email', e.target.value)}
                         placeholder="tu@email.com"
                       />
+                      {fieldError('email')}
                     </div>
                     <div>
                       <Label htmlFor="phone">Teléfono / WhatsApp *</Label>
@@ -326,10 +342,12 @@ const Checkout = () => {
                         id="phone"
                         type="tel"
                         required
+                        {...errorProps('phone')}
                         value={payerInfo.phone}
-                        onChange={(e) => setPayerInfo(prev => ({ ...prev, phone: e.target.value }))}
+                        onChange={(e) => updatePayer('phone', e.target.value)}
                         placeholder="+54 9 11 1234-5678"
                       />
+                      {fieldError('phone')}
                     </div>
                     <div className="pt-4 border-t border-border/60">
                       <Label className="text-base font-semibold mb-3 block">Modalidad de Entrega *</Label>
@@ -420,14 +438,16 @@ const Checkout = () => {
                         id="address"
                         type="text"
                         required={deliveryMethod === 'shipping'}
+                        {...errorProps('address')}
                         value={payerInfo.address}
-                        onChange={(e) => setPayerInfo(prev => ({ ...prev, address: e.target.value }))}
+                        onChange={(e) => updatePayer('address', e.target.value)}
                         placeholder={
                           deliveryMethod === 'shipping'
                             ? 'Calle, altura, localidad, provincia'
                             : 'Opcional: horario estimado o quién retira'
                         }
                       />
+                      {fieldError('address')}
                       {deliveryMethod !== 'shipping' && (
                         <p className="text-xs text-muted-foreground mt-1.5">
                           Retirás sin cargo en{' '}

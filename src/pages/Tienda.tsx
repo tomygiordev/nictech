@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- legacy storefront payload shape. */
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useParams, useNavigate, useLocation, Link } from 'react-router-dom';
+import NotFound from './NotFound';
 import { Helmet } from 'react-helmet-async';
 import {
   Search,
@@ -604,16 +605,12 @@ const Tienda = () => {
   };
 
   const productNotFound = Boolean(productId && !loading && !findProductByParam(productId, resolvedProducts));
+  if (productNotFound) return <NotFound product />;
 
   return (
     <>
       <Helmet>
-        {productNotFound ? (
-          <>
-            <title>Producto no encontrado | Nictech</title>
-            <meta name="robots" content="noindex" />
-          </>
-        ) : selectedProduct ? (
+        {selectedProduct ? (
           <>
             <title>{`${selectedProduct.name} | Tienda Nictech`}</title>
             <meta name="description" content={selectedProductDescription} />

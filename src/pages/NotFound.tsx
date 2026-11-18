@@ -5,17 +5,18 @@ import { ShoppingBag, Wrench } from "lucide-react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 
-const NotFound = () => {
+const NotFound = ({ product = false }: { product?: boolean }) => {
   const location = useLocation();
+  const heading = product ? 'Producto no encontrado' : 'Página no encontrada';
 
   useEffect(() => {
-    console.error("404 Error: User attempted to access non-existent route:", location.pathname);
-  }, [location.pathname]);
+    if (!product) console.error("404 Error: User attempted to access non-existent route:", location.pathname);
+  }, [location.pathname, product]);
 
   return (
     <>
       <Helmet>
-        <title>Página no encontrada | Nictech</title>
+        <title>{`${heading} | Nictech`}</title>
         <meta name="robots" content="noindex, nofollow" />
       </Helmet>
       <Layout>
@@ -25,7 +26,7 @@ const NotFound = () => {
               Error 404
             </span>
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-3">
-              Página no encontrada
+              {heading}
             </h1>
             <p className="text-sm sm:text-base text-muted-foreground mb-8 leading-relaxed">
               El enlace que estás buscando no existe o fue movido. Podés explorar nuestro catálogo de productos o consultar por nuestro servicio técnico.

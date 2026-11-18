@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { repairLookupSchema } from '@/lib/repair-lookup';
 import { RepairLogs } from '@/components/tracking/RepairLogs';
 
 interface Repair {
@@ -54,6 +55,15 @@ const Seguimiento = () => {
       return;
     }
 
+    const lookup = repairLookupSchema.safeParse(searchValue);
+    if (!lookup.success) {
+      toast({
+        title: lookup.error.issues[0].message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const now = Date.now();
     const elapsed = now - lastSearchTime;
     if (elapsed < SEARCH_COOLDOWN_MS) {
@@ -75,7 +85,7 @@ const Seguimiento = () => {
     // Security: Usamos una función RPC (Stored Procedure) segura en la base de datos.
     // Esto evita exponer la tabla completa 'repairs' al frontend de manera pública.
     const { data, error } = await supabase
-      .rpc('get_repair_by_tracking_code', { search_code: searchValue.trim() })
+      .rpc('get_repair_by_tracking_code', { search_code: lookup.data })
       .order('created_at', { ascending: false })
       .limit(5);
 

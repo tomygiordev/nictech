@@ -18,6 +18,13 @@ export const buildProductPath = (product: ProductIdentity): string => {
 export const canonicalProductUrl = (product: ProductIdentity): string =>
   `${SITE_URL}${buildProductPath(product)}`;
 
+export function productWhatsAppUrl(product: ProductIdentity, price: number, color?: string): string {
+  const name = color ? `${product.name} (${color})` : product.name;
+  const amount = price.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  const message = `Hola Nictech! Quiero consultar por ${name} ($ ${amount}). ¿Está disponible? ${canonicalProductUrl(product)}`;
+  return `https://wa.me/5493446353769?text=${encodeURIComponent(message)}`;
+}
+
 export const parseProductParam = (param: string): string => {
   const separatorIdx = param.lastIndexOf('--');
   return separatorIdx === -1 ? param : param.slice(separatorIdx + 2);

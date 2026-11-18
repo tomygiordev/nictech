@@ -100,7 +100,7 @@ const Contacto = () => {
               {/* Mapa Google (Derecha - 7/12) */}
               <div className="lg:col-span-7 rounded-2xl overflow-hidden bg-muted border border-border shadow-sm min-h-[350px] lg:h-auto">
                 <iframe
-                  src="https://maps.google.com/maps?q=H%C3%A9roes%20de%20Malvinas%2008%2C%20Urdinarrain%2C%20Entre%20R%C3%ADos%2C%20Argentina&t=&z=16&ie=UTF8&iwloc=&output=embed"
+                  src="https://www.google.com/maps?q=H%C3%A9roes%20de%20Malvinas%2008%2C%20Urdinarrain%2C%20Entre%20R%C3%ADos%2C%20Argentina&t=&z=16&ie=UTF8&iwloc=&output=embed"
                   width="100%"
                   height="100%"
                   style={{ border: 0, minHeight: '350px' }}
