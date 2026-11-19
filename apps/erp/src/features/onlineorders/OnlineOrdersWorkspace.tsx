@@ -586,7 +586,7 @@ export const OnlineOrdersWorkspace = () => {
         <Modal
           isOpen={Boolean(selectedOrder)}
           onClose={() => setSelectedOrder(null)}
-          title={`Pedido Web: ORD-${shortId(selectedOrder.id)}`}
+          title={`Pedido Web: ${shortId(selectedOrder.id)}`}
           subtitle={`${formatCurrency(Number(selectedOrder.total_amount || 0), "ARS")} • ${formatDateTime(selectedOrder.created_at)}`}
           icon={ShoppingBag}
           maxWidth="600px"
@@ -748,7 +748,7 @@ export const OnlineOrdersWorkspace = () => {
         <Modal
           isOpen={Boolean(fulfillOrder)}
           onClose={closeFulfill}
-          title={`Despachar pedido ORD-${shortId(fulfillOrder.id)}`}
+          title={`Despachar pedido ${shortId(fulfillOrder.id)}`}
           subtitle={`Total ${formatCurrency(Number(fulfillOrder.total_amount || 0), "ARS")} • Registra venta, stock y asiento`}
           icon={CheckCircle2}
           maxWidth="520px"
@@ -824,7 +824,7 @@ export const OnlineOrdersWorkspace = () => {
           isOpen={Boolean(lifecycleAction)}
           onClose={closeLifecycleAction}
           title={actionTitle[lifecycleAction.kind]}
-          subtitle={`Pedido ORD-${shortId(lifecycleAction.order.id)} • operación auditable`}
+          subtitle={`Pedido ${shortId(lifecycleAction.order.id)} • operación auditable`}
           icon={actionIcon[lifecycleAction.kind]}
           maxWidth="520px"
         >

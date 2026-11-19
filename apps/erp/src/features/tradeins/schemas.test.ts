@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_IMEI_DOCUMENTATION_BYTES,
+  MAX_IMEI_NOTES_LENGTH,
+  buildImeiFallbackDocumentation,
   createTradeInIntakeSchema,
   emptyTradeInEvaluation,
   emptyTradeInImeiFallback,
@@ -139,26 +141,55 @@ describe("tradeins schemas", () => {
       expect(tradeInImeiCheckSchema.safeParse({ providerName: "ENACOM" }).success).toBe(true);
     });
 
-    it("exige estado explícito y objeto JSON no vacío dentro de 256 KB", () => {
+    it("exige estado explícito y al menos una casilla o una observación para el respaldo manual", () => {
       expect(tradeInImeiFallbackSchema.safeParse(emptyTradeInImeiFallback()).success).toBe(false);
       expect(
-        tradeInImeiFallbackSchema.safeParse({ fallbackStatus: "clear", fallbackDoc: "{}" }).success,
-      ).toBe(false);
-      expect(
-        tradeInImeiFallbackSchema.safeParse({ fallbackStatus: "clear", fallbackDoc: "[]" }).success,
-      ).toBe(false);
-      expect(
         tradeInImeiFallbackSchema.safeParse({
+          ...emptyTradeInImeiFallback(),
           fallbackStatus: "clear",
-          fallbackDoc: JSON.stringify({ nota: "a".repeat(MAX_IMEI_DOCUMENTATION_BYTES + 10) }),
         }).success,
       ).toBe(false);
       expect(
         tradeInImeiFallbackSchema.safeParse({
-          fallbackStatus: "not_required",
-          fallbackDoc: '{"acta":"123"}',
+          ...emptyTradeInImeiFallback(),
+          fallbackStatus: "clear",
+          notes: "   ",
         }).success,
-      ).toBe(true);
+      ).toBe(false);
+      expect(
+        tradeInImeiFallbackSchema.safeParse({
+          ...emptyTradeInImeiFallback(),
+          fallbackStatus: "clear",
+          notes: "a".repeat(MAX_IMEI_NOTES_LENGTH + 1),
+        }).success,
+      ).toBe(false);
+
+      const withCheckbox = {
+        ...emptyTradeInImeiFallback(),
+        fallbackStatus: "clear",
+        sellerDniVerified: true,
+      };
+      expect(tradeInImeiFallbackSchema.safeParse(withCheckbox).success).toBe(true);
+      expect(buildImeiFallbackDocumentation(withCheckbox)).toEqual({
+        dni_vendedor_verificado: true,
+      });
+
+      const withNotes = {
+        ...emptyTradeInImeiFallback(),
+        fallbackStatus: "not_required",
+        originalInvoiceOrBox: true,
+        chargerOrAccessories: true,
+        notes: "Notebook solo con número de serie",
+      };
+      expect(tradeInImeiFallbackSchema.safeParse(withNotes).success).toBe(true);
+      expect(buildImeiFallbackDocumentation(withNotes)).toEqual({
+        factura_o_caja_original: true,
+        cargador_accesorios: true,
+        observaciones: "Notebook solo con número de serie",
+      });
+      expect(
+        new TextEncoder().encode(JSON.stringify(buildImeiFallbackDocumentation(withNotes))).length,
+      ).toBeLessThanOrEqual(MAX_IMEI_DOCUMENTATION_BYTES);
     });
   });
 

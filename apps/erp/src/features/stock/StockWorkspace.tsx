@@ -1001,7 +1001,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         <form noValidate onSubmit={handleCreateAdjustment} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <FormError message={adjError} onDismiss={() => setAdjError(null)} />
           <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-adjustment-balance">Variante / Ubicación a Ajustar (obligatorio)</label>
+            <label className="erp-form-label" htmlFor="stock-adjustment-balance">Variante / ubicación a ajustar (obligatorio)</label>
             <select
               id="stock-adjustment-balance"
               value={adjRowId}
@@ -1019,7 +1019,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="stock-adjustment-direction">Sentido del Movimiento (obligatorio)</label>
+              <label className="erp-form-label" htmlFor="stock-adjustment-direction">Sentido del movimiento (obligatorio)</label>
               <select
                 id="stock-adjustment-direction"
                 value={adjType}
@@ -1032,7 +1032,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
             </div>
 
             <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="stock-adjustment-quantity">Cantidad (Unidades) (obligatorio)</label>
+              <label className="erp-form-label" htmlFor="stock-adjustment-quantity">Cantidad (unidades) (obligatorio)</label>
               <input
                 id="stock-adjustment-quantity"
                 type="number"
@@ -1068,7 +1068,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           )}
 
           <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-adjustment-reason">Motivo de Auditoría (obligatorio)</label>
+            <label className="erp-form-label" htmlFor="stock-adjustment-reason">Motivo de auditoría (obligatorio)</label>
             <input
               id="stock-adjustment-reason"
               type="text"
@@ -1085,7 +1085,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           <div className="erp-modal-footer">
             <button type="button" className="btn-secondary" onClick={() => setIsAdjModalOpen(false)}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={submitting}>
-              {submitting ? "Registrando…" : "Confirmar Movimiento"}
+              {submitting ? "Registrando…" : "Confirmar movimiento"}
             </button>
           </div>
         </form>

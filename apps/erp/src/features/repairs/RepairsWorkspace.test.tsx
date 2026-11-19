@@ -255,4 +255,50 @@ describe("RepairsWorkspace", () => {
     expect(qcDialog.getByRole("alert")).toHaveTextContent("No tenés permiso para realizar esta acción.");
     expect(screen.getByRole("dialog", { name: "Control de calidad: REP-0001" })).toBeInTheDocument();
   });
+
+  it("muestra mano de obra y cobros en una tabla compacta con monto alineado a la derecha y clase estándar", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.listRepairLabor).mockResolvedValueOnce([
+      {
+        id: "lab-1",
+        repair_order_id: baseOrder.id,
+        description: "Limpieza de conectores",
+        quantity_hours: 2,
+        unit_cost_base: 350,
+        total_cost_base: 700,
+        performed_at: "2026-10-01T13:00:00Z",
+      },
+    ]);
+    vi.mocked(api.listRepairPayments).mockResolvedValueOnce([
+      {
+        id: "pay-1",
+        repair_order_id: baseOrder.id,
+        payment_method_id: "pm-1",
+        cash_session_id: "cs-1",
+        currency_code: "ARS",
+        amount: 2000,
+        amount_base: 2000,
+        reversal_of_payment_id: null,
+        reason: "Seña inicial",
+        occurred_at: "2026-10-01T14:00:00Z",
+      },
+    ]);
+    renderWorkspace();
+
+    await user.click(await screen.findByRole("button", { name: /REP-0001/ }));
+    const detailDialog = await screen.findByRole("dialog", { name: "Ficha de Reparación: REP-0001" });
+    const workSection = within(detailDialog).getByRole("region", { name: "Mano de obra y cobros" });
+    const table = within(workSection).getByRole("table");
+    expect(table).toHaveClass("flow-table", "flow-table--compact");
+
+    expect(within(table).getByText("Limpieza de conectores")).toBeInTheDocument();
+    const laborAmount = within(table).getByText(/ARS\s*700,00/);
+    expect(laborAmount).toHaveClass("amount-val");
+    expect(laborAmount.closest("td")).toHaveClass("num");
+
+    const paymentAmount = within(table).getByText(/ARS\s*2\.000,00/);
+    expect(paymentAmount).toHaveClass("amount-val");
+    expect(paymentAmount.closest("td")).toHaveClass("num");
+    expect(within(table).getByRole("button", { name: "Revertir cobro" })).toBeInTheDocument();
+  });
 });

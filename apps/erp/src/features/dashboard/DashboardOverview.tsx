@@ -268,7 +268,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
               ? undefined
               : !metrics.can_view_sales
                 ? "Requiere permiso para ver ventas"
-                : channels.map(({ key, label }) => `${label} ${localCurrency.format(metrics.sales[key])}`).join(" · ")
+                : channels.map(({ key, label }) => `${label}\u00A0${localCurrency.format(metrics.sales[key]).replace(/\s/g, "\u00A0")}`).join(" · ")
           }
         />
 

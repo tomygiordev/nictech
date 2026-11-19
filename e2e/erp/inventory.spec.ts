@@ -22,13 +22,13 @@ test('ingreso, ajuste y transferencia concilian el saldo por ubicación', async 
   await expect(source).toBeVisible();
   await source.getByRole('button', { name: 'Ajustar', exact: true }).click();
   const adjust = page.getByRole('dialog', { name: 'Registrar movimiento de stock' });
-  await adjust.getByLabel(/Sentido del Movimiento/).selectOption('out');
-  const submitAdjust = adjust.getByRole('button', { name: 'Confirmar Movimiento' });
+  await adjust.getByLabel(/Sentido del movimiento/).selectOption('out');
+  const submitAdjust = adjust.getByRole('button', { name: 'Confirmar movimiento' });
   await submitAdjust.click();
   await expect(adjust.getByRole('alert')).toContainText(/cantidad|motivo/i);
   await capture(page, 'existencias-ajuste-validacion');
   await adjust.getByLabel(/Cantidad/).fill('2');
-  await adjust.getByLabel(/Motivo de Auditoría/).fill(`Ajuste QA ${tag()}`);
+  await adjust.getByLabel(/Motivo de auditoría/).fill(`Ajuste QA ${tag()}`);
   await submitAdjust.click();
   await expect(adjust).toBeHidden();
   expect(balancesOf(id)).toMatchObject([{ location_id: depotId, qty: 14, reserved: 0 }]);

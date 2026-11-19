@@ -7,6 +7,8 @@ export type TradeInJsonObject = { [key: string]: Json | undefined };
 export const IMEI_REGEX = /^[0-9]{14,16}$/;
 export const MAX_IMEI_DOCUMENTATION_BYTES = 256 * 1024;
 
+export const MAX_IMEI_NOTES_LENGTH = 2000;
+
 export function isZeroAmount(value: string): boolean {
   const trimmed = value.trim();
   if (trimmed === "") return false;
@@ -14,23 +16,23 @@ export function isZeroAmount(value: string): boolean {
   return Number.isFinite(parsed) && parsed === 0;
 }
 
-export function parseNonEmptyJsonObject(raw: string): TradeInJsonObject | null {
-  const trimmed = raw.trim();
-  if (trimmed === "") return null;
-  try {
-    const parsed: unknown = JSON.parse(trimmed);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-    if (Object.keys(parsed).length === 0) return null;
-    return parsed as TradeInJsonObject;
-  } catch {
-    return null;
-  }
+export function buildImeiFallbackDocumentation(values: {
+  sellerDniVerified: boolean;
+  originalInvoiceOrBox: boolean;
+  chargerOrAccessories: boolean;
+  notes: string;
+}): TradeInJsonObject {
+  const documentation: TradeInJsonObject = {};
+  if (values.sellerDniVerified) documentation.dni_vendedor_verificado = true;
+  if (values.originalInvoiceOrBox) documentation.factura_o_caja_original = true;
+  if (values.chargerOrAccessories) documentation.cargador_accesorios = true;
+  const trimmedNotes = values.notes.trim();
+  if (trimmedNotes !== "") documentation.observaciones = trimmedNotes;
+  return documentation;
 }
 
-const optionalUuidSchema = z.union([
-  z.literal(""),
-  z.string().trim().uuid("Ingresá un UUID válido."),
-]);
+const optionalUuidSchema = (message = "Ingresá un UUID válido.") =>
+  z.union([z.literal(""), z.string().trim().uuid(message)]);
 
 const nonNegativeDecimalString = (requiredMessage: string, invalidMessage: string) =>
   z
@@ -56,7 +58,7 @@ const baseTradeInIntakeSchema = z.object({
   branchId: z.string().trim().uuid("Elegí una sucursal."),
   customerId: z.string().trim().uuid("Elegí un cliente."),
   productId: z.string().trim().uuid("Elegí un producto compatible."),
-  variantId: optionalUuidSchema,
+  variantId: optionalUuidSchema("Elegí una variante válida."),
   deviceSerial: z.string().trim().max(200, "El número de serie no puede superar los 200 caracteres."),
   deviceImei: z.string().trim(),
   ownerName: z
@@ -155,32 +157,49 @@ export const emptyTradeInImeiCheck = (): TradeInImeiCheckFormValues => ({
   providerName: "",
 });
 
-export const tradeInImeiFallbackSchema = z.object({
-  fallbackStatus: z.string().pipe(
-    z.enum(["clear", "not_required"], {
-      message: "Elegí el resultado del respaldo manual.",
-    }),
-  ),
-  fallbackDoc: z
-    .string()
-    .trim()
-    .min(1, "Ingresá la documentación en formato JSON.")
-    .refine((value) => parseNonEmptyJsonObject(value) !== null, {
-      message: "La documentación debe ser un objeto JSON válido y no vacío.",
-    })
-    .refine((value) => {
-      const parsed = parseNonEmptyJsonObject(value);
-      if (!parsed) return false;
-      return new TextEncoder().encode(JSON.stringify(parsed)).length <= MAX_IMEI_DOCUMENTATION_BYTES;
-    }, "La documentación supera el máximo de 256 KB."),
-});
+export const tradeInImeiFallbackSchema = z
+  .object({
+    fallbackStatus: z.string().pipe(
+      z.enum(["clear", "not_required"], {
+        message: "Elegí el resultado del respaldo manual.",
+      }),
+    ),
+    sellerDniVerified: z.boolean(),
+    originalInvoiceOrBox: z.boolean(),
+    chargerOrAccessories: z.boolean(),
+    notes: z
+      .string()
+      .trim()
+      .max(MAX_IMEI_NOTES_LENGTH, "Las observaciones no pueden superar los 2000 caracteres."),
+  })
+  .superRefine((values, context) => {
+    const documentation = buildImeiFallbackDocumentation(values);
+    if (Object.keys(documentation).length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["notes"],
+        message: "Marcá al menos una casilla de documentación o ingresá observaciones.",
+      });
+      return;
+    }
+    if (new TextEncoder().encode(JSON.stringify(documentation)).length > MAX_IMEI_DOCUMENTATION_BYTES) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["notes"],
+        message: "La documentación supera el máximo de 256 KB.",
+      });
+    }
+  });
 
 export type TradeInImeiFallbackFormInput = z.input<typeof tradeInImeiFallbackSchema>;
 export type TradeInImeiFallbackFormValues = z.output<typeof tradeInImeiFallbackSchema>;
 
 export const emptyTradeInImeiFallback = (): TradeInImeiFallbackFormInput => ({
   fallbackStatus: "",
-  fallbackDoc: "",
+  sellerDniVerified: false,
+  originalInvoiceOrBox: false,
+  chargerOrAccessories: false,
+  notes: "",
 });
 
 export const tradeInEvaluationSchema = z
@@ -238,7 +257,7 @@ export const tradeInRefurbishmentSchema = z.object({
     "Ingresá el costo real del reacondicionamiento.",
     "El costo real no puede ser negativo.",
   ),
-  repairOrderId: optionalUuidSchema,
+  repairOrderId: optionalUuidSchema("Elegí una orden de reparación válida."),
 });
 
 export type TradeInRefurbishmentFormValues = z.infer<typeof tradeInRefurbishmentSchema>;
@@ -250,7 +269,7 @@ export const emptyTradeInRefurbishment = (): TradeInRefurbishmentFormValues => (
 });
 
 export const tradeInReleaseSchema = z.object({
-  locationId: z.string().trim().uuid("Ingresá un UUID válido para el depósito destino."),
+  locationId: z.string().trim().uuid("Elegí un depósito destino."),
 });
 
 export type TradeInReleaseFormValues = z.infer<typeof tradeInReleaseSchema>;
@@ -260,7 +279,7 @@ export const emptyTradeInRelease = (): TradeInReleaseFormValues => ({
 });
 
 export const tradeInApplyPaymentSchema = z.object({
-  saleId: z.string().trim().uuid("Ingresá un UUID válido para la venta destino."),
+  saleId: z.string().trim().uuid("Elegí una venta destino."),
   paymentAmount: positiveDecimalString(
     "Ingresá el monto del pago.",
     "El monto del pago debe ser mayor a cero.",

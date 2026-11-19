@@ -56,9 +56,9 @@ export const AccountsWorkspace = () => {
       branchId: "",
       customerId: "",
       currency: "ARS",
-      principal: "250000",
-      downPayment: "50000",
-      interestRate: "0.05",
+      principal: "",
+      downPayment: "",
+      interestRate: "",
       installmentsCount: 3,
       firstDue: addDaysIsoAR(todayIsoAR(), 30),
       operationKey: generateIdempotencyKey("fin"),
@@ -73,7 +73,7 @@ export const AccountsWorkspace = () => {
       contractId: "",
       paymentMethodId: "",
       cashSessionId: "",
-      amount: "50000",
+      amount: "",
       paymentReference: "",
       operationKey: generateIdempotencyKey("pay"),
       reason: "Cobro de cuota presencial en mostrador",
@@ -419,16 +419,25 @@ export const AccountsWorkspace = () => {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
-                  <label className="erp-form-label">Monto Principal ($)</label>
-                  <input className="erp-form-input" type="number" placeholder="250000" {...createForm.register("principal")} />
+                  <label className="erp-form-label" htmlFor="financing-principal">Monto principal ($)</label>
+                  <input id="financing-principal" className="erp-form-input" type="number" placeholder="250000" {...createForm.register("principal")} />
+                  {createForm.formState.errors.principal?.message ? (
+                    <span role="alert" style={{ fontSize: "12px", color: "var(--rose-accent)" }}>{createForm.formState.errors.principal.message}</span>
+                  ) : null}
                 </div>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
-                  <label className="erp-form-label">Anticipo ($)</label>
-                  <input className="erp-form-input" type="number" placeholder="50000" {...createForm.register("downPayment")} />
+                  <label className="erp-form-label" htmlFor="financing-down-payment">Anticipo ($)</label>
+                  <input id="financing-down-payment" className="erp-form-input" type="number" placeholder="50000" {...createForm.register("downPayment")} />
+                  {createForm.formState.errors.downPayment?.message ? (
+                    <span role="alert" style={{ fontSize: "12px", color: "var(--rose-accent)" }}>{createForm.formState.errors.downPayment.message}</span>
+                  ) : null}
                 </div>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
-                  <label className="erp-form-label">Interés Mensual</label>
-                  <input className="erp-form-input" placeholder="Interés mensual" {...createForm.register("interestRate")} />
+                  <label className="erp-form-label" htmlFor="financing-interest-rate">Interés mensual</label>
+                  <input id="financing-interest-rate" className="erp-form-input" placeholder="Interés mensual" {...createForm.register("interestRate")} />
+                  {createForm.formState.errors.interestRate?.message ? (
+                    <span role="alert" style={{ fontSize: "12px", color: "var(--rose-accent)" }}>{createForm.formState.errors.interestRate.message}</span>
+                  ) : null}
                 </div>
               </div>
 
@@ -488,8 +497,11 @@ export const AccountsWorkspace = () => {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                 <div className="erp-form-group">
-                  <label className="erp-form-label">Importe a Cobrar ($)</label>
-                  <input className="erp-form-input" type="number" placeholder="50000" {...paymentForm.register("amount")} />
+                  <label className="erp-form-label" htmlFor="receivable-amount">Importe a cobrar ($)</label>
+                  <input id="receivable-amount" className="erp-form-input" type="number" placeholder="50000" {...paymentForm.register("amount")} />
+                  {paymentForm.formState.errors.amount?.message ? (
+                    <span role="alert" style={{ fontSize: "12px", color: "var(--rose-accent)" }}>{paymentForm.formState.errors.amount.message}</span>
+                  ) : null}
                 </div>
                 <div className="erp-form-group">
                   <label className="erp-form-label">Sucursal de cobro (obligatorio)</label>

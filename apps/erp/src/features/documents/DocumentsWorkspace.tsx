@@ -563,7 +563,7 @@ export const DocumentsWorkspace = () => {
                           <strong>{customerDisplayName(doc)}</strong>
                         </td>
                         <td>
-                          <span className="nowrap" style={{ fontSize: "12px", fontFamily: "monospace", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          <span className="nowrap" style={{ fontSize: "12px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                             {customerLegalNameLabel(doc)}
                           </span>
                         </td>
@@ -667,7 +667,7 @@ export const DocumentsWorkspace = () => {
                 </div>
                 <div>
                   <span className="stat-label">PDF</span>
-                  <span style={{ display: "block", fontSize: "11px", marginTop: "2px" }}>No adjuntado</span>
+                  <span style={{ display: "block", fontSize: "13px", marginTop: "2px", fontWeight: 700 }}>No adjuntado</span>
                 </div>
                 {selectedDoc.sale_receipt && (
                   <>

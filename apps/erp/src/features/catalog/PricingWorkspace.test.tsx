@@ -112,5 +112,6 @@ describe("PricingWorkspace", () => {
     expect(screen.getByRole("button", { name: "Registrar tipo de cambio" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Historial de tipos de cambio" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Tipo de cambio" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Tipo de cambio a moneda base (obligatorio)")).toBeInTheDocument();
   });
 });

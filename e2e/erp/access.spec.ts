@@ -74,7 +74,7 @@ test('navegación completa: módulos, submódulos y búsqueda por F2', async ({ 
   }
   async function captureWorkspace(name: string) {
     await opened();
-    await expect(main(page).getByText(/^Cargando\b/i)).toHaveCount(0);
+    await expect(main(page).getByText(/^(Cargando|Leyendo|Actualizando)\b/i)).toHaveCount(0);
     await capture(page, name, { workspaceTop: true });
   }
   async function internalTabs(prefix: string) {

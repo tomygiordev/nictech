@@ -194,7 +194,7 @@ test('WhatsApp: consentimiento, plantillas y cola local; Auditoría muestra el e
   await code.fill(`PED-${tag()}`);
   await page.getByPlaceholder('Ej.: aviso de presupuesto aprobado').fill(`Notificación QA ${tag()}`);
   await queue.click();
-  await expect(page.getByText(/Mensaje encolado en estado queued/)).toBeVisible();
+  await expect(page.getByText(/Mensaje en cola\./)).toBeVisible();
   await expect(page.getByText(`Tu pedido PED-${tag()} esta listo para retirar.`, { exact: true })).toBeVisible();
   expect(sqlRows(`select status from erp.communication_message_events e
     join erp.communication_messages m on m.id=e.message_id where m.conversation_id=${literal(conversationId)}`))
@@ -206,4 +206,13 @@ test('WhatsApp: consentimiento, plantillas y cola local; Auditoría muestra el e
   const row = page.getByRole('row').filter({ hasText: reason });
   await expect(row).toContainText('QA ERP Owner');
   await capture(page, 'auditoria-consentimiento-whatsapp');
+});
+
+test('Integraciones: espera a que desaparezca el estado de carga antes de capturar', async ({ page }) => {
+  await owner(page);
+  await setProfile(page, 'completo');
+  await workspace(page, 'Integraciones');
+  await expect(page.getByText('Actualizando…')).toHaveCount(0);
+  await expect(page.getByText('Leyendo eventos e intentos de integración…')).toHaveCount(0);
+  await capture(page, 'integraciones-inicio', { workspaceTop: true });
 });

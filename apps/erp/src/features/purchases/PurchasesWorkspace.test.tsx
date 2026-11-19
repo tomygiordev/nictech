@@ -244,7 +244,7 @@ describe("órdenes de compra", () => {
     const approve = await screen.findByRole("button", { name: "Aprobar" });
     fireEvent.click(approve);
     const dialog = within(screen.getByRole("dialog", { name: "Aprobar orden de compra" }));
-    expect(dialog.getByText(/Aprobar la orden de compra por \$\s*25\.000,00 a Distribuidora Sur\. Genera deuda con el proveedor\./)).toBeInTheDocument();
+    expect(dialog.getByText(/Aprobar la orden de compra por ARS\s*25\.000,00 a Distribuidora Sur\. Genera deuda con el proveedor\./)).toBeInTheDocument();
     expect(mock.rpc).not.toHaveBeenCalled();
     fireEvent.click(dialog.getByRole("button", { name: "Cancelar" }));
     expect(mock.rpc).not.toHaveBeenCalled();
@@ -318,5 +318,28 @@ describe("errores en los diálogos de compras y proveedores", () => {
     fireEvent.change(dialog.getByRole("textbox", { name: /Motivo/ }), { target: { value: "Pago duplicado" } });
     fireEvent.click(dialog.getByRole("button", { name: "Confirmar reversa" }));
     expect(await dialog.findByRole("alert")).toHaveTextContent("No tenés permiso para realizar esta acción.");
+  });
+
+  it("muestra estado de carga en la tabla de órdenes sin mostrar vacío falso", async () => {
+    let resolveOrders: (value: { data: unknown[]; error: null }) => void = () => {};
+    mock.from.mockImplementation((table: string) => {
+      if (table === "purchase_orders") {
+        const pending = new Promise<{ data: unknown[]; error: null }>((resolve) => {
+          resolveOrders = resolve;
+        });
+        const query = { select: () => query, eq: () => query, order: () => pending, then: pending.then.bind(pending) };
+        return query;
+      }
+      const result = Promise.resolve({ data: rows[table] ?? [], error: null });
+      const query = { select: () => query, eq: () => query, order: () => result, then: result.then.bind(result) };
+      return query;
+    });
+
+    render(<PurchasesWorkspace />);
+    expect(screen.getByText("Cargando órdenes de compra…")).toBeInTheDocument();
+    expect(screen.queryByText("No hay órdenes de compra registradas en el ERP.")).not.toBeInTheDocument();
+
+    resolveOrders({ data: [], error: null });
+    expect(await screen.findByText("No hay órdenes de compra registradas en el ERP.")).toBeInTheDocument();
   });
 });

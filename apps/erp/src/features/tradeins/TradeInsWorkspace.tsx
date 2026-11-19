@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useForm, type FieldValues, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Smartphone, Search, Eye, Plus, ShieldCheck, RefreshCw, DollarSign } from "lucide-react";
 import { WorkspaceHeader, Modal, FeedbackAlert, KpiCard, StatePanel } from "../../components/erp/WorkspaceUi";
@@ -11,6 +11,9 @@ import { supabase } from "../../lib/supabase";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   listTradeIns,
+  listTradeInLocations,
+  listRecentBranchSales,
+  listRecentBranchRepairOrders,
   intakeTradeInDirect,
   reviewTradeInProvenance,
   requestTradeInImeiCheck,
@@ -25,9 +28,13 @@ import {
   isTradeInRejected,
   isImeiVerified,
   type TradeInCosts,
+  type TradeInLocationOption,
   type TradeInOverview,
+  type TradeInRepairOrderOption,
+  type TradeInSaleOption,
 } from "./api";
 import {
+  buildImeiFallbackDocumentation,
   createTradeInIntakeSchema,
   emptyTradeInApplyPayment,
   emptyTradeInEvaluation,
@@ -37,7 +44,6 @@ import {
   emptyTradeInRefurbishment,
   emptyTradeInRelease,
   isZeroAmount,
-  parseNonEmptyJsonObject,
   tradeInApplyPaymentSchema,
   tradeInEvaluationSchema,
   tradeInImeiCheckSchema,
@@ -94,11 +100,19 @@ interface Feedback {
   message: string;
 }
 
+interface TradeInProductVariantOption {
+  id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+}
+
 interface TradeInProductOption {
   id: string;
   internal_code: string;
   internal_name: string;
   inventory_tracking: TradeInProductTracking;
+  product_variants?: TradeInProductVariantOption[] | null;
 }
 
 interface TradeInBranchOption {
@@ -165,6 +179,10 @@ export const TradeInsWorkspace = () => {
   const [actionBusy, setActionBusy] = useState<boolean>(false);
   const [reason, setReason] = useState<string>("");
   const [costsResult, setCostsResult] = useState<TradeInCosts | null>(null);
+  const [locations, setLocations] = useState<TradeInLocationOption[]>([]);
+  const [branchSales, setBranchSales] = useState<TradeInSaleOption[]>([]);
+  const [branchRepairOrders, setBranchRepairOrders] = useState<TradeInRepairOrderOption[]>([]);
+  const [detailOptionsError, setDetailOptionsError] = useState<string | null>(null);
 
   const productsRef = useRef<TradeInProductOption[]>([]);
   productsRef.current = tradeInProducts;
@@ -232,7 +250,7 @@ export const TradeInsWorkspace = () => {
     const [productsResult, branchesResult, customersResult] = await Promise.all([
       supabase
         .from("products")
-        .select("id, internal_code, internal_name, inventory_tracking")
+        .select("id, internal_code, internal_name, inventory_tracking, product_variants(id, code, name, is_active)")
         .eq("item_kind", "product")
         .eq("is_active", true)
         .in("inventory_tracking", ["serial", "imei"])
@@ -322,9 +340,59 @@ export const TradeInsWorkspace = () => {
     [items, selectedId],
   );
 
+  const selectedItemId = selectedItem?.id ?? null;
+  const selectedBranchId = selectedItem?.branch_id ?? null;
+  const selectedCustomerId = selectedItem?.customer_id ?? null;
+
+  useEffect(() => {
+    if (!selectedItemId || !selectedBranchId || !selectedCustomerId) {
+      setBranchSales([]);
+      setBranchRepairOrders([]);
+      setDetailOptionsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setDetailOptionsError(null);
+    setBranchSales([]);
+    setBranchRepairOrders([]);
+
+    void Promise.all([
+      listTradeInLocations(),
+      listRecentBranchSales(selectedBranchId, selectedCustomerId),
+      listRecentBranchRepairOrders(selectedBranchId, selectedCustomerId),
+    ])
+      .then(([loadedLocations, loadedSales, loadedRepairOrders]) => {
+        if (cancelled) return;
+        setLocations(loadedLocations);
+        setBranchSales(loadedSales);
+        setBranchRepairOrders(loadedRepairOrders);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setDetailOptionsError(
+          formatTradeInError(loadError, "No se pudieron cargar depósitos, órdenes o ventas de la sucursal."),
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedItemId, selectedBranchId, selectedCustomerId]);
+
+  const branchLocations = useMemo(
+    () => (selectedBranchId ? locations.filter((location) => location.branch_id === selectedBranchId) : []),
+    [locations, selectedBranchId],
+  );
+
   const selectedProduct = useMemo(
     () => tradeInProducts.find((product) => product.id === watchedProductId) ?? null,
     [watchedProductId, tradeInProducts],
+  );
+
+  const availableVariants = useMemo(
+    () => (selectedProduct?.product_variants ?? []).filter((variant) => variant.is_active !== false),
+    [selectedProduct],
   );
 
   const filteredItems = useMemo(() => {
@@ -418,7 +486,20 @@ export const TradeInsWorkspace = () => {
 
   const operationReasonValue = () => (reason.trim() === "" ? undefined : reason.trim());
 
+  const submitDetailForm =
+    <TInput extends FieldValues, TOutput = TInput>(
+      form: UseFormReturn<TInput, unknown, TOutput>,
+      handler: (values: TOutput) => void | Promise<void>,
+    ) =>
+    (event: FormEvent<HTMLFormElement>) => {
+      setDetailSuccess(null);
+      setDetailError(null);
+      return form.handleSubmit(handler)(event);
+    };
+
   const handleProvenance = (decision: "approved" | "rejected") => {
+    setDetailSuccess(null);
+    setDetailError(null);
     if (!canApproveTradeIns) {
       setDetailError(NO_APPROVE_PERMISSION);
       return;
@@ -461,9 +542,9 @@ export const TradeInsWorkspace = () => {
       setDetailError("Primero debe aprobarse la procedencia del equipo.");
       return;
     }
-    const doc = parseNonEmptyJsonObject(values.fallbackDoc);
-    if (!doc) {
-      setDetailError("La documentación debe ser un objeto JSON válido y no vacío.");
+    const doc = buildImeiFallbackDocumentation(values);
+    if (Object.keys(doc).length === 0) {
+      setDetailError("Marcá al menos una casilla de documentación o ingresá observaciones.");
       return;
     }
     const ok = await runDetailAction(
@@ -509,6 +590,8 @@ export const TradeInsWorkspace = () => {
   };
 
   const handleReviewEvaluation = (decision: "approved" | "rejected") => {
+    setDetailSuccess(null);
+    setDetailError(null);
     if (!canApproveTradeIns) {
       setDetailError(NO_APPROVE_PERMISSION);
       return;
@@ -603,6 +686,8 @@ export const TradeInsWorkspace = () => {
   };
 
   const handleReversePayment = () => {
+    setDetailSuccess(null);
+    setDetailError(null);
     if (!canReversePayment) {
       setDetailError(NO_REVERSE_PAYMENT_PERMISSION);
       return;
@@ -620,6 +705,8 @@ export const TradeInsWorkspace = () => {
   };
 
   const handleCosts = () => {
+    setDetailSuccess(null);
+    setDetailError(null);
     if (!canViewCosts) {
       setDetailError(NO_COSTS_PERMISSION);
       return;
@@ -884,7 +971,7 @@ export const TradeInsWorkspace = () => {
               <FeedbackAlert type="error" message="Equipo rechazado por procedencia o tasación." />
             )}
 
-            {(detailSuccess || detailError) && (
+            {((detailSuccess && !detailError) || detailError) && (
               <div
                 style={{
                   position: "sticky",
@@ -897,12 +984,13 @@ export const TradeInsWorkspace = () => {
                   gap: "8px",
                 }}
               >
-                {detailSuccess && (
+                {detailSuccess && !detailError && (
                   <FeedbackAlert type="success" message={detailSuccess} onClose={() => setDetailSuccess(null)} />
                 )}
                 <FormError message={detailError} onDismiss={() => setDetailError(null)} />
               </div>
             )}
+            <FormError message={detailOptionsError} onDismiss={() => setDetailOptionsError(null)} />
 
             <div style={{ padding: "12px", background: "var(--canvas-bg)", borderRadius: "10px" }}>
               <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase" }}>
@@ -1035,7 +1123,7 @@ export const TradeInsWorkspace = () => {
             <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>2. Verificación IMEI</strong>
               <form
-                onSubmit={imeiCheckForm.handleSubmit(handleImeiCheck)}
+                onSubmit={submitDetailForm(imeiCheckForm, handleImeiCheck)}
                 noValidate
                 style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}
               >
@@ -1069,47 +1157,105 @@ export const TradeInsWorkspace = () => {
               </form>
 
               <form
-                onSubmit={imeiFallbackForm.handleSubmit(handleImeiFallback)}
+                onSubmit={submitDetailForm(imeiFallbackForm, handleImeiFallback)}
                 noValidate
                 style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" }}
               >
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "8px" }}>
-                  <Field
-                    label="Respaldo manual"
-                    required
-                    error={imeiFallbackForm.formState.errors.fallbackStatus?.message}
+                <Field
+                  label="Respaldo manual"
+                  required
+                  error={imeiFallbackForm.formState.errors.fallbackStatus?.message}
+                >
+                  {(a11y) => (
+                    <select
+                      {...a11y}
+                      className="erp-form-select"
+                      required
+                      disabled={!canApproveTradeIns || actionBusy}
+                      {...imeiFallbackForm.register("fallbackStatus")}
+                    >
+                      <option value="">Seleccionar resultado…</option>
+                      <option value="clear">Limpio</option>
+                      <option value="not_required">No requerido</option>
+                    </select>
+                  )}
+                </Field>
+                <div className="erp-form-group">
+                  <span className="erp-form-label">Documentación (obligatorio)</span>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "8px",
+                      padding: "10px",
+                      border: "1px solid var(--border-line)",
+                      borderRadius: "8px",
+                    }}
                   >
-                    {(a11y) => (
-                      <select
-                        {...a11y}
-                        className="erp-form-select"
-                        required
-                        disabled={!canApproveTradeIns || actionBusy}
-                        {...imeiFallbackForm.register("fallbackStatus")}
-                      >
-                        <option value="">Seleccionar resultado…</option>
-                        <option value="clear">Limpio</option>
-                        <option value="not_required">No requerido</option>
-                      </select>
-                    )}
-                  </Field>
-                  <Field
-                    label="Documentación (JSON no vacío)"
-                    required
-                    error={imeiFallbackForm.formState.errors.fallbackDoc?.message}
-                  >
-                    {(a11y) => (
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        fontSize: "13px",
+                        cursor: canApproveTradeIns && !actionBusy ? "pointer" : "not-allowed",
+                      }}
+                    >
                       <input
-                        {...a11y}
-                        type="text"
-                        className="erp-form-input"
-                        placeholder='Ej: {"acta":"123","verificado_por":"taller"}'
-                        required
+                        type="checkbox"
                         disabled={!canApproveTradeIns || actionBusy}
-                        {...imeiFallbackForm.register("fallbackDoc")}
+                        {...imeiFallbackForm.register("sellerDniVerified")}
                       />
-                    )}
-                  </Field>
+                      <span>DNI del vendedor verificado</span>
+                    </label>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        fontSize: "13px",
+                        cursor: canApproveTradeIns && !actionBusy ? "pointer" : "not-allowed",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={!canApproveTradeIns || actionBusy}
+                        {...imeiFallbackForm.register("originalInvoiceOrBox")}
+                      />
+                      <span>Factura o caja original</span>
+                    </label>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        fontSize: "13px",
+                        cursor: canApproveTradeIns && !actionBusy ? "pointer" : "not-allowed",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={!canApproveTradeIns || actionBusy}
+                        {...imeiFallbackForm.register("chargerOrAccessories")}
+                      />
+                      <span>Cargador / accesorios</span>
+                    </label>
+                    <Field
+                      label="Observaciones"
+                      error={imeiFallbackForm.formState.errors.notes?.message}
+                    >
+                      {(a11y) => (
+                        <input
+                          {...a11y}
+                          type="text"
+                          className="erp-form-input"
+                          placeholder="Ej: Respaldo documental o aclaración"
+                          disabled={!canApproveTradeIns || actionBusy}
+                          {...imeiFallbackForm.register("notes")}
+                        />
+                      )}
+                    </Field>
+                  </div>
                 </div>
                 <div>
                   <button
@@ -1127,7 +1273,7 @@ export const TradeInsWorkspace = () => {
             <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>3. Tasación y revisión</strong>
               <form
-                onSubmit={evaluationForm.handleSubmit(handleCreateEvaluation)}
+                onSubmit={submitDetailForm(evaluationForm, handleCreateEvaluation)}
                 noValidate
                 style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}
               >
@@ -1262,7 +1408,7 @@ export const TradeInsWorkspace = () => {
             <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>4. Reacondicionamiento</strong>
               <form
-                onSubmit={refurbishmentForm.handleSubmit(handleRefurbishment)}
+                onSubmit={submitDetailForm(refurbishmentForm, handleRefurbishment)}
                 noValidate
                 style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}
               >
@@ -1308,14 +1454,20 @@ export const TradeInsWorkspace = () => {
                   error={refurbishmentForm.formState.errors.repairOrderId?.message}
                 >
                   {(a11y) => (
-                    <input
+                    <select
                       {...a11y}
-                      type="text"
-                      className="erp-form-input"
-                      placeholder="UUID de la orden"
+                      className="erp-form-select"
                       disabled={!canRefurbishTradeIns || actionBusy}
                       {...refurbishmentForm.register("repairOrderId")}
-                    />
+                    >
+                      <option value="">Sin orden de reparación</option>
+                      {branchRepairOrders.map((order) => (
+                        <option key={order.id} value={order.id}>
+                          {order.orderCode} · {order.openedAt ? formatDateTime(order.openedAt) : "—"} · {order.customerName}
+                          {order.equipmentLabel ? ` · ${order.equipmentLabel}` : ""} · {order.statusLabel}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </Field>
                 <div>
@@ -1334,7 +1486,7 @@ export const TradeInsWorkspace = () => {
             <div style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
               <strong style={{ fontSize: "13px" }}>5. Liberar a stock y aplicar a venta</strong>
               <form
-                onSubmit={releaseForm.handleSubmit(handleRelease)}
+                onSubmit={submitDetailForm(releaseForm, handleRelease)}
                 noValidate
                 style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}
               >
@@ -1344,15 +1496,28 @@ export const TradeInsWorkspace = () => {
                   error={releaseForm.formState.errors.locationId?.message}
                 >
                   {(a11y) => (
-                    <input
+                    <select
                       {...a11y}
-                      type="text"
-                      className="erp-form-input"
-                      placeholder="UUID del depósito"
+                      className="erp-form-select"
                       required
                       disabled={!canReleaseTradeIns || actionBusy}
                       {...releaseForm.register("locationId")}
-                    />
+                    >
+                      {branchLocations.length === 0 ? (
+                        <option value="" disabled>
+                          No hay depósitos habilitados para venta
+                        </option>
+                      ) : (
+                        <>
+                          <option value="">Elegí un depósito…</option>
+                          {branchLocations.map((location) => (
+                            <option key={location.id} value={location.id}>
+                              {location.name}
+                            </option>
+                          ))}
+                        </>
+                      )}
+                    </select>
                   )}
                 </Field>
                 <div>
@@ -1368,7 +1533,7 @@ export const TradeInsWorkspace = () => {
               </form>
 
               <form
-                onSubmit={applyPaymentForm.handleSubmit(handleApplyPayment)}
+                onSubmit={submitDetailForm(applyPaymentForm, handleApplyPayment)}
                 noValidate
                 style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" }}
               >
@@ -1379,15 +1544,29 @@ export const TradeInsWorkspace = () => {
                     error={applyPaymentForm.formState.errors.saleId?.message}
                   >
                     {(a11y) => (
-                      <input
+                      <select
                         {...a11y}
-                        type="text"
-                        className="erp-form-input"
-                        placeholder="UUID de la venta"
+                        className="erp-form-select"
                         required
                         disabled={!canApplyPayment || actionBusy}
                         {...applyPaymentForm.register("saleId")}
-                      />
+                      >
+                        {branchSales.length === 0 ? (
+                          <option value="" disabled>
+                            No hay ventas de este cliente en la sucursal
+                          </option>
+                        ) : (
+                          <>
+                            <option value="">Elegí una venta…</option>
+                            {branchSales.map((sale) => (
+                              <option key={sale.saleId} value={sale.saleId}>
+                                {sale.documentNumber} · {formatDateTime(sale.issuedAt)} · {sale.customerName} ·{" "}
+                                {sale.totalArs !== null ? formatCurrency(sale.totalArs, "ARS") : "—"}
+                              </option>
+                            ))}
+                          </>
+                        )}
+                      </select>
                     )}
                   </Field>
                   <Field
@@ -1593,15 +1772,21 @@ export const TradeInsWorkspace = () => {
                 )}
               </Field>
             </div>
-            <Field label="Variante (ID, opcional)" error={intakeForm.formState.errors.variantId?.message}>
+            <Field label="Variante (opcional)" error={intakeForm.formState.errors.variantId?.message}>
               {(a11y) => (
-                <input
+                <select
                   {...a11y}
-                  type="text"
-                  className="erp-form-input"
-                  placeholder="UUID de variante"
+                  className="erp-form-select"
+                  disabled={isLoadingIntakeOptions || Boolean(intakeOptionsError) || !selectedProduct}
                   {...intakeForm.register("variantId")}
-                />
+                >
+                  <option value="">Sin variante</option>
+                  {availableVariants.map((variant) => (
+                    <option key={variant.id} value={variant.id}>
+                      {variant.code} · {variant.name}
+                    </option>
+                  ))}
+                </select>
               )}
             </Field>
           </div>

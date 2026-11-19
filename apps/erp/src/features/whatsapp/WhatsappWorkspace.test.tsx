@@ -135,4 +135,19 @@ describe("whatsapp", () => {
     fireEvent.click(assignBtn);
     expect(await screen.findByText("No tenés permiso para realizar esta acción.")).toBeInTheDocument();
   });
+
+  it("muestra el aviso en español y referencia corta al encolar un mensaje", async () => {
+    mocks.queueMessage.mockResolvedValueOnce("321a5636-080b-4587-9194-31ea67f6d23c");
+
+    renderWhatsapp(["messages.view", "messages.manage"]);
+
+    const queueBtn = await screen.findByRole("button", { name: /Encolar mensaje/i });
+    fireEvent.change(screen.getByLabelText("Plantilla"), { target: { value: "tpl-1" } });
+    fireEvent.change(await screen.findByLabelText("nombre"), { target: { value: "Sofía" } });
+    fireEvent.click(queueBtn);
+
+    expect(
+      await screen.findByText("Mensaje en cola. Se enviará cuando la integración con WhatsApp esté activa. Referencia: 321A5636"),
+    ).toBeInTheDocument();
+  });
 });

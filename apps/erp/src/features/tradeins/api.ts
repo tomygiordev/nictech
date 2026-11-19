@@ -333,3 +333,133 @@ export const getTradeInCosts = async (tradeInId: string): Promise<TradeInCosts> 
   if (error) throw error;
   return data;
 };
+
+export interface TradeInLocationOption {
+  id: string;
+  branch_id: string;
+  name: string;
+}
+
+export interface TradeInSaleOption {
+  saleId: string;
+  documentNumber: string;
+  issuedAt: string;
+  customerName: string;
+  totalArs: number | null;
+}
+
+export interface TradeInRepairOrderOption {
+  id: string;
+  orderCode: string;
+  openedAt: string | null;
+  customerName: string;
+  equipmentLabel: string;
+  statusLabel: string;
+}
+
+const extractRelationDisplayName = (
+  relation: { display_name?: string | null } | Array<{ display_name?: string | null }> | null | undefined,
+): string => {
+  if (!relation) return "";
+  const row = Array.isArray(relation) ? relation[0] : relation;
+  return typeof row?.display_name === "string" ? row.display_name.trim() : "";
+};
+
+export const listTradeInLocations = async (): Promise<TradeInLocationOption[]> => {
+  const { data, error } = await client()
+    .from("locations")
+    .select("id, branch_id, name")
+    .eq("is_active", true)
+    .eq("allows_sale", true)
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+  return data ?? [];
+};
+
+export const listRecentBranchSales = async (
+  branchId: string,
+  customerId: string,
+): Promise<TradeInSaleOption[]> => {
+  const sb = client();
+  const { data: saleRows, error: saleError } = await sb
+    .from("sales")
+    .select("id, confirmed_at, total_amount, exchange_rate, currency_code, customers(display_name)")
+    .eq("branch_id", branchId)
+    .eq("customer_id", customerId)
+    .order("confirmed_at", { ascending: false })
+    .limit(50);
+  if (saleError) throw saleError;
+  const sales = saleRows ?? [];
+  if (sales.length === 0) return [];
+
+  const { data: cancelledRows, error: cancelledError } = await sb
+    .from("sale_state_events")
+    .select("sale_id")
+    .in("sale_id", sales.map((sale) => sale.id))
+    .eq("sale_state", "cancelled");
+  if (cancelledError) throw cancelledError;
+
+  const cancelledSaleIds = new Set((cancelledRows ?? []).map((row) => row.sale_id));
+  const activeSales = sales.filter((sale) => !cancelledSaleIds.has(sale.id));
+  if (activeSales.length === 0) return [];
+
+  const { data: docRows, error: docError } = await sb
+    .from("documents")
+    .select("owner_id, document_number, issued_at")
+    .eq("owner_type", "sale")
+    .in("owner_id", activeSales.map((sale) => sale.id))
+    .order("issued_at", { ascending: true });
+  if (docError) throw docError;
+
+  const numberBySale = new Map<string, string>();
+  for (const doc of docRows ?? []) {
+    if (!numberBySale.has(doc.owner_id)) numberBySale.set(doc.owner_id, doc.document_number);
+  }
+
+  return activeSales.map((sale) => {
+    const rawTotal = Number(sale.total_amount);
+    const rate = Number(sale.exchange_rate);
+    const totalArs = !Number.isFinite(rawTotal)
+      ? null
+      : sale.currency_code.toUpperCase() === "ARS"
+        ? rawTotal
+        : Number.isFinite(rate)
+          ? rawTotal * rate
+          : null;
+    return {
+      saleId: sale.id,
+      documentNumber: numberBySale.get(sale.id) ?? `Venta ${sale.id.slice(0, 8).toUpperCase()}`,
+      issuedAt: sale.confirmed_at,
+      customerName: extractRelationDisplayName(sale.customers) || "Cliente",
+      totalArs,
+    };
+  });
+};
+
+export const listRecentBranchRepairOrders = async (
+  branchId: string,
+  customerId: string,
+): Promise<TradeInRepairOrderOption[]> => {
+  const { data, error } = await client()
+    .from("repair_orders_overview")
+    .select("id, order_code, opened_at, customer_name, brand_snapshot, model_snapshot, status_name, delivery_id")
+    .eq("branch_id", branchId)
+    .eq("customer_id", customerId)
+    .not("delivery_id", "is", null)
+    .order("opened_at", { ascending: false })
+    .limit(50);
+
+  if (error) throw error;
+
+  return (data ?? [])
+    .filter((row): row is typeof row & { id: string } => typeof row.id === "string" && row.id.length > 0)
+    .map((row) => ({
+      id: row.id,
+      orderCode: row.order_code || row.id.slice(0, 8),
+      openedAt: row.opened_at,
+      customerName: row.customer_name || "Cliente",
+      equipmentLabel: [row.brand_snapshot, row.model_snapshot].filter(Boolean).join(" "),
+      statusLabel: row.delivery_id ? "Entregado" : row.status_name || "En taller",
+    }));
+};

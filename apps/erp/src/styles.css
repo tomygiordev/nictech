@@ -143,7 +143,13 @@ select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
-  scroll-margin-block: 80px 60px;
+}
+
+input,
+select,
+textarea {
+  scroll-margin-top: calc(84px + var(--desktop-titlebar-height, 0px));
+  scroll-margin-bottom: 104px;
 }
 
 input[type="checkbox"],
@@ -397,6 +403,11 @@ input[type="radio"] {
   border-bottom: 1px solid var(--border-line);
 }
 
+.flow-topbar__left {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .flow-topbar__left h1 {
   margin: 0;
   font-size: 21px;
@@ -410,12 +421,16 @@ input[type="radio"] {
   font-size: 13px;
   color: var(--text-muted);
   font-weight: 450;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .flow-topbar__right {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 /* Search Bar Pill */
@@ -2203,6 +2218,11 @@ html[data-native-shell] .erp-auth-screen {
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
   margin-top: 16px;
+}
+
+.state-panel--alert {
+  scroll-margin-top: calc(84px + var(--desktop-titlebar-height, 0px));
+  scroll-margin-bottom: 84px;
 }
 
 .state-panel__icon {

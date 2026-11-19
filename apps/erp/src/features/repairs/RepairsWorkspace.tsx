@@ -560,6 +560,11 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const completedQcItems = requiredQcItems.filter((item) => Boolean(qcChecks[item.key])).length;
   const isQcComplete =
     requiredQcItems.length > 0 && completedQcItems === requiredQcItems.length;
+  const canReversePayment = (payment: RepairPaymentRecord) =>
+    hasPermission("repairs.manage") &&
+    !payment.reversal_of_payment_id &&
+    !ticketPayments.some((entry) => entry.reversal_of_payment_id === payment.id);
+  const showWorkActionColumn = ticketPayments.some(canReversePayment);
 
   return (
     <div className="flow-dashboard">
@@ -1298,19 +1303,83 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             )}
 
             <section aria-label="Mano de obra y cobros">
-              <h3>Mano de obra y cobros</h3>
+              <h3 style={{ margin: "0 0 10px", fontSize: "14px", fontWeight: 700 }}>Mano de obra y cobros</h3>
               <div className="flow-tabs-nav">
                 {canRecordLabor && <button type="button" className="btn-primary" onClick={() => setIsLaborModalOpen(true)}><BriefcaseBusiness size={16} /> Registrar trabajo</button>}
                 {canRecordPayment && <button type="button" className="btn-primary" onClick={() => setIsPaymentModalOpen(true)}><Banknote size={16} /> Registrar cobro o seña</button>}
               </div>
-              {loadingWork ? <p role="status">Cargando movimientos…</p> : <>
-                {ticketLabor.map((labor) => <p key={labor.id}>{labor.description} · {labor.quantity_hours} h · costo {formatCurrency(labor.total_cost_base)}</p>)}
-                {ticketPayments.map((payment) => <p key={payment.id}>
-                  {formatDateTime(payment.occurred_at)} · {formatCurrency(payment.amount, payment.currency_code)} · {payment.reason}
-                  {hasPermission("repairs.manage") && !payment.reversal_of_payment_id && !ticketPayments.some((entry) => entry.reversal_of_payment_id === payment.id) && <button type="button" className="btn-ghost" onClick={() => { setReversalOperationKey(operationKey("repair-payment-reversal")); setPaymentToReverse(payment); }}>Revertir cobro</button>}
-                </p>)}
-                {ticketLabor.length === 0 && ticketPayments.length === 0 && <p>No hay trabajos ni cobros registrados.</p>}
-              </>}
+              {loadingWork ? (
+                <p role="status" style={{ fontSize: "13px", color: "var(--text-muted)", margin: "10px 0 0" }}>Cargando movimientos…</p>
+              ) : ticketLabor.length === 0 && ticketPayments.length === 0 ? (
+                <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "10px 0 0" }}>No hay trabajos ni cobros registrados.</p>
+              ) : (
+                <div className="flow-table-wrapper" style={{ marginTop: "10px" }}>
+                  <table className="flow-table flow-table--compact" style={{ minWidth: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>Concepto</th>
+                        <th>Detalle</th>
+                        <th className="num">Monto</th>
+                        {showWorkActionColumn && <th className="num">Acción</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ticketLabor.map((labor) => (
+                        <tr key={labor.id}>
+                          <td>
+                            <span className="flow-status-pill neutral">Mano de obra</span>
+                          </td>
+                          <td>
+                            <strong>{labor.description}</strong>
+                            <span style={{ color: "var(--text-muted)", marginLeft: "6px" }}>
+                              · {labor.quantity_hours} h
+                            </span>
+                          </td>
+                          <td className="num">
+                            <span className="amount-val">{formatCurrency(labor.total_cost_base)}</span>
+                          </td>
+                          {showWorkActionColumn && <td className="num">—</td>}
+                        </tr>
+                      ))}
+                      {ticketPayments.map((payment) => (
+                        <tr key={payment.id}>
+                          <td>
+                            <span className="flow-status-pill completed">Cobro</span>
+                          </td>
+                          <td>
+                            <strong>{payment.reason}</strong>
+                            <span style={{ color: "var(--text-muted)", marginLeft: "6px" }}>
+                              · {formatDateTime(payment.occurred_at)}
+                            </span>
+                          </td>
+                          <td className="num">
+                            <span className="amount-val">{formatCurrency(payment.amount, payment.currency_code)}</span>
+                          </td>
+                          {showWorkActionColumn && (
+                            <td className="num">
+                              {canReversePayment(payment) ? (
+                                <button
+                                  type="button"
+                                  className="btn-ghost"
+                                  style={{ padding: "4px 8px", fontSize: "12px" }}
+                                  onClick={() => {
+                                    setReversalOperationKey(operationKey("repair-payment-reversal"));
+                                    setPaymentToReverse(payment);
+                                  }}
+                                >
+                                  Revertir cobro
+                                </button>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
             <ConfirmDialog
               isOpen={paymentToReverse !== null}

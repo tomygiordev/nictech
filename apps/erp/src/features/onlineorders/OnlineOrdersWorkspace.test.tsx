@@ -143,8 +143,9 @@ describe("OnlineOrdersWorkspace", () => {
     await screen.findByText("AAAAAAAA");
     fireEvent.click(screen.getByRole("button", { name: "Abrir pedido AAAAAAAA" }));
 
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name: "Pedido Web: AAAAAAAA" });
     const text = dialog.textContent ?? "";
+    expect(text).not.toContain("ORD-");
 
     expect(text).not.toMatch(/order_state/i);
     expect(text).not.toMatch(/\bfulfilled\b/i);
@@ -238,7 +239,8 @@ describe("OnlineOrdersWorkspace", () => {
     await screen.findByText("44444444");
     fireEvent.click(screen.getByRole("button", { name: "Despachar" }));
 
-    const fulfillDialog = await screen.findByRole("dialog");
+    const fulfillDialog = await screen.findByRole("dialog", { name: "Despachar pedido 44444444" });
+    expect(fulfillDialog).not.toHaveTextContent("ORD-");
     fireEvent.change(within(fulfillDialog).getByLabelText(/Referencia de pago/i), {
       target: { value: "MP-999" },
     });
@@ -258,7 +260,9 @@ describe("OnlineOrdersWorkspace", () => {
     const detailDialog = await screen.findByRole("dialog");
     fireEvent.click(within(detailDialog).getByRole("button", { name: "Preparar pedido" }));
 
-    const lifecycleDialog = await screen.findByRole("dialog");
+    const lifecycleDialog = await screen.findByRole("dialog", { name: "Preparar pedido" });
+    expect(lifecycleDialog).toHaveTextContent("Pedido 55555555 • operación auditable");
+    expect(lifecycleDialog).not.toHaveTextContent("ORD-");
     fireEvent.change(within(lifecycleDialog).getByLabelText(/Motivo de la operación/i), {
       target: { value: "Preparando en mostrador" },
     });

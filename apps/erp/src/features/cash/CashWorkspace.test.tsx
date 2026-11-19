@@ -110,6 +110,7 @@ describe("arqueo ciego de caja", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Historial de arqueos (1)" }));
     expect(screen.getAllByRole("cell", { name: formatPosCurrency(1490) })).toHaveLength(2);
+    expect(screen.getByText(`Cuadrada (${moneyText(0)})`)).toBeInTheDocument();
   });
 
   it("valida el conteo vacío antes de revelar un resultado que ya no se puede editar", async () => {
@@ -153,6 +154,7 @@ describe("arqueo ciego de caja", () => {
     expect(mock.rpc).not.toHaveBeenCalled();
 
     fireEvent.change(reason, { target: { value: "  Se entregó cambio de más.  " } });
+    expect(result.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(result.getByRole("button", { name: "Cerrar turno" }));
     const confirmation = within(screen.getByRole("dialog", { name: `Cerrar turno con faltante de ${formatPosCurrency(200)}` }));
     expect(mock.rpc).not.toHaveBeenCalled();

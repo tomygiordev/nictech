@@ -159,7 +159,8 @@ test('equipos usados: recepción por serie, tasación, pago de venta y reversió
   await detail.getByRole('button', { name: 'Aprobar procedencia' }).click();
   await expect(detail.getByText('Procedencia aprobada.', { exact: true })).toBeVisible();
   await detail.getByLabel('Respaldo manual').selectOption('not_required');
-  await detail.getByLabel('Documentación (JSON no vacío)').fill('{"motivo":"Notebook identificada solamente por serie"}');
+  await detail.getByLabel('DNI del vendedor verificado').check();
+  await detail.getByLabel('Observaciones').fill('Notebook identificada solamente por serie');
   await detail.getByRole('button', { name: 'Registrar respaldo manual' }).click();
   await expect(detail.getByText('Respaldo manual de IMEI registrado.', { exact: true })).toBeVisible();
 
@@ -174,14 +175,14 @@ test('equipos usados: recepción por serie, tasación, pago de venta y reversió
   await expect(detail.getByText('Tasación del equipo registrada.', { exact: true })).toBeVisible();
   await detail.getByRole('button', { name: 'Aprobar tasación' }).click();
   await expect(detail.getByText('Tasación aprobada.', { exact: true })).toBeVisible();
-  await detail.getByLabel('Depósito destino').fill(depotId);
+  await detail.getByLabel('Depósito destino').selectOption(depotId);
   await detail.getByRole('button', { name: 'Liberar a stock' }).click();
   await expect(detail.getByText('Equipo liberado a stock.', { exact: true })).toBeVisible();
   const apply = detail.getByRole('button', { name: 'Aplicar pago' });
   await apply.click();
   await expect(detail.getByRole('alert').filter({ hasText: /venta/i })).toBeVisible();
   await capture(page, 'canjes-aplicar-pago-validacion');
-  await detail.getByLabel('Venta destino').fill(sale.sale_id);
+  await detail.getByLabel('Venta destino').selectOption(sale.sale_id);
   await detail.getByLabel('Monto', { exact: false }).fill('800');
   await apply.click();
   await expect(detail.getByText('Equipo aplicado como pago de la venta.', { exact: true })).toBeVisible();

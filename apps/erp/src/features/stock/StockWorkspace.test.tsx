@@ -153,6 +153,8 @@ describe("existencias", () => {
     const modal = await screen.findByRole("dialog");
     expect(modal).toHaveTextContent("Registrar movimiento de stock");
     expect(modal).toHaveTextContent("El stock se actualiza al confirmar.");
+    expect(within(modal).getByLabelText("Variante / ubicación a ajustar (obligatorio)")).toBeInTheDocument();
+    expect(within(modal).getByLabelText("Cantidad (unidades) (obligatorio)")).toBeInTheDocument();
     expect(modal).not.toHaveTextContent(/ledger|stock_balances/i);
   });
 
@@ -244,8 +246,8 @@ describe("existencias", () => {
     fireEvent.click(screen.getByRole("button", { name: /Ajustar Stock/i }));
     const adjDialog = await screen.findByRole("dialog");
     fireEvent.change(within(adjDialog).getByLabelText(/Costo unitario de ingreso/i), { target: { value: "1000" } });
-    fireEvent.change(within(adjDialog).getByLabelText(/Motivo de Auditoría/i), { target: { value: "Conteo mensual" } });
-    fireEvent.click(within(adjDialog).getByRole("button", { name: /Confirmar Movimiento/i }));
+    fireEvent.change(within(adjDialog).getByLabelText(/Motivo de auditoría/i), { target: { value: "Conteo mensual" } });
+    fireEvent.click(within(adjDialog).getByRole("button", { name: /Confirmar movimiento/i }));
 
     expect(await within(adjDialog).findByRole("alert")).toHaveTextContent("No tenés permiso para realizar esta acción.");
 

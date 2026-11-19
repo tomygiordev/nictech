@@ -109,6 +109,14 @@ const toComponentInputs = (drafts: PcBuildComponentFormInput[]): PcBuildComponen
     }));
 };
 
+// Etiquetas en español para los controles conocidos: la versión de plantilla es inmutable en la base.
+const PC_TEST_ITEM_LABELS: Record<string, string> = {
+  post: "POST completo",
+  memory: "Prueba de memoria",
+  storage: "Prueba de almacenamiento",
+  thermal: "Prueba térmica",
+};
+
 const parsePcTestTemplateDefinition = (value: Json): PcTestTemplateItem[] => {
   if (!Array.isArray(value)) return [];
   const items: PcTestTemplateItem[] = [];
@@ -118,7 +126,7 @@ const parsePcTestTemplateDefinition = (value: Json): PcTestTemplateItem[] => {
     if (typeof key !== "string" || key.trim() === "" || typeof label !== "string" || label.trim() === "") continue;
     items.push({
       key: key.trim(),
-      label: label.trim(),
+      label: PC_TEST_ITEM_LABELS[key.trim()] ?? label.trim(),
       required: typeof required === "boolean" ? required : true,
     });
   }

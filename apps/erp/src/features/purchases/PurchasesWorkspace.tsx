@@ -137,10 +137,7 @@ function purchaseOrderTotal(order: DbPurchaseOrder) {
 }
 
 function formatApprovalTotal(order: DbPurchaseOrder) {
-  const total = purchaseOrderTotal(order);
-  return order.currency_code === "ARS"
-    ? new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 4 }).format(total)
-    : formatCurrency(total, order.currency_code);
+  return formatCurrency(purchaseOrderTotal(order), order.currency_code);
 }
 
 const receiptSchema = z.object({
@@ -1086,7 +1083,13 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {purchases.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
+                      Cargando órdenes de compra…
+                    </td>
+                  </tr>
+                ) : purchases.length === 0 ? (
                   <tr>
                     <td colSpan={8} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
                       No hay órdenes de compra registradas en el ERP.
@@ -1137,7 +1140,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                                   • {l.products?.internal_name || "Artículo"}
                                   {l.product_variants?.name ? ` (${l.product_variants.name})` : ""}
                                   {" — "}
-                                  <strong>{l.ordered_quantity} u.</strong>
+                                  <strong className="nowrap">{l.ordered_quantity} u.</strong>
                                 </span>
                               ))}
                             </div>
@@ -1285,7 +1288,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                         <td className="num">
                           {sup.balanceArs > 0
                             ? <span className="amount-val">{formatCurrency(sup.balanceArs, "ARS")}</span>
-                            : <span className="flow-status-pill completed">Al día ($0)</span>}
+                            : <span className="flow-status-pill completed">Al día ({formatCurrency(0, "ARS")})</span>}
                         </td>
                         <td><span style={{ fontSize: "12px" }}>{sup.contact}</span></td>
                         <td className="text-right">
@@ -1733,7 +1736,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
             <div style={{ padding: "12px", background: "var(--bg-card-subtle)", borderRadius: "8px", border: "1px solid var(--border-line)" }}>
               <span className="stat-label">Saldo Pendiente en Cuenta Corriente:</span>
               <strong style={{ fontSize: "16px", color: selectedSupplierInfo.balanceArs > 0 ? "var(--amber-accent)" : "var(--emerald-success)", display: "block" }}>
-                {selectedSupplierInfo.balanceArs > 0 ? formatCurrency(selectedSupplierInfo.balanceArs, "ARS") : "Sin deuda pendiente ($0 ARS)"}
+                {selectedSupplierInfo.balanceArs > 0 ? formatCurrency(selectedSupplierInfo.balanceArs, "ARS") : `Sin deuda pendiente (${formatCurrency(0, "ARS")})`}
               </strong>
             </div>
 

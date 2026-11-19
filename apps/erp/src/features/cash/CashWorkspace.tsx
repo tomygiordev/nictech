@@ -590,8 +590,8 @@ export const CashWorkspace: React.FC = () => {
             message="Los turnos cerrados con su conciliación física aparecerán aquí."
           />
         ) : (
-          <div className="flow-card" style={{ padding: 0 }}>
-            <div className="flow-table-container">
+          <div className="flow-card">
+            <div className="flow-table-wrapper">
               <table className="flow-table flow-table--actions flow-table--compact">
                 <thead>
                   <tr>
@@ -625,7 +625,7 @@ export const CashWorkspace: React.FC = () => {
                         <td className="num">
                           <span className={`flow-status-pill ${diff === 0 ? "completed" : diff > 0 ? "pending" : "cancelled"}`}>
                             {diff === 0
-                              ? "Cuadrada ($0)"
+                              ? `Cuadrada (${formatCurrency(0, "ARS")})`
                               : diff > 0
                               ? `+${formatPosCurrency(diff)}`
                               : formatPosCurrency(diff)}
@@ -792,7 +792,10 @@ export const CashWorkspace: React.FC = () => {
                       type="text"
                       required={closeReview.difference !== 0}
                       value={closeReasonInput}
-                      onChange={(e) => setCloseReasonInput(e.target.value)}
+                      onChange={(e) => {
+                        setCloseReasonInput(e.target.value);
+                        if (closeError) setCloseError(null);
+                      }}
                       className="erp-form-input"
                     />
                   )}
@@ -808,7 +811,10 @@ export const CashWorkspace: React.FC = () => {
                     min="0"
                     step="any"
                     value={countedAmountInput}
-                    onChange={(e) => setCountedAmountInput(e.target.value)}
+                    onChange={(e) => {
+                      setCountedAmountInput(e.target.value);
+                      if (closeError) setCloseError(null);
+                    }}
                     className="erp-form-input"
                   />
                 )}

@@ -113,7 +113,7 @@ describe("DashboardOverview", () => {
 
     const kpis = within(screen.getByRole("region", { name: "Métricas principales" }));
     expect(await kpis.findByText(/^\$\s*28\.967$/)).toBeInTheDocument();
-    expect(kpis.getByText(/^POS \$\s*17\.967 · Web \$\s*6\.000 · Reparaciones \$\s*5\.000$/)).toBeInTheDocument();
+    expect(kpis.getByText(/^POS\s\$\s*17\.967 · Web\s\$\s*6\.000 · Reparaciones\s\$\s*5\.000$/)).toBeInTheDocument();
     expect(kpis.getByText("Ventas del período")).toBeInTheDocument();
     expect(kpis.getByText("Stock vendible a precio de venta")).toBeInTheDocument();
     expect(kpis.getByText(/^\$\s*231\.000$/)).toBeInTheDocument();

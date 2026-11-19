@@ -254,7 +254,7 @@ test('webhook aprobado local: pedido y venta, stock descontado una sola vez', as
   await expect(row).toContainText('Pagado');
   await expect(row).toContainText('Despachado');
   await row.click();
-  const detail = page.getByRole('dialog', { name: `Pedido Web: ORD-${short}` });
+  const detail = page.getByRole('dialog', { name: `Pedido Web: ${short}` });
   await expect(detail).toContainText('Movimiento de stock');
   await expect(detail).toContainText('Pago: Pagado');
   await expect(detail).toContainText('Entrega: Despachado');

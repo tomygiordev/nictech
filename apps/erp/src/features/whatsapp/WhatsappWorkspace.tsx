@@ -246,7 +246,7 @@ export const WhatsappWorkspace = ({
     setFeedback(null);
     try {
       const id = await fn();
-      setFeedback({ type: "success", message: `${successPrefix} Referencia: ${id}` });
+      setFeedback({ type: "success", message: `${successPrefix} Referencia: ${id.slice(0, 8).toUpperCase()}` });
     } catch (err) {
       setFeedback({ type: "error", message: toUserMessage(err, "La operación no pudo completarse.") });
     } finally {
@@ -331,7 +331,7 @@ export const WhatsappWorkspace = ({
       setEvents(await listMessageEvents(msgs.map((m) => m.id)));
       setQueueReason("");
       return id;
-    }, "Mensaje encolado en estado queued. El envío lo procesa el worker de integración.");
+    }, "Mensaje en cola. Se enviará cuando la integración con WhatsApp esté activa.");
   };
 
   const handleAssign = () => {

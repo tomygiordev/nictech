@@ -321,7 +321,7 @@ describe("PcBuildsWorkspace", () => {
       }),
     );
     fireEvent.click(
-      within(within(dialog).getByRole("group", { name: "Resultado de Prueba termica" })).getByRole("button", {
+      within(within(dialog).getByRole("group", { name: "Resultado de Prueba térmica" })).getByRole("button", {
         name: "Aprobado",
       }),
     );

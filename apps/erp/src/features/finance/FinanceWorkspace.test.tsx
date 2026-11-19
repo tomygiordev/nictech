@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountsWorkspace } from "./AccountsWorkspace";
 import { AccountingWorkspace } from "./AccountingWorkspace";
 import { listCustomers, listFinancingContracts, listIvaCompras, listIvaVentas, listTrialBalance, parseRpcId, postErpSourceEvent } from "./api";
-import { receivablePaymentSchema } from "./schemas";
+import { financingSchema, receivablePaymentSchema } from "./schemas";
 import { parseErpContext } from "../../auth/ErpContextValidation";
 import type { FinancingContract, IvaComprasRow } from "./types";
 
@@ -227,13 +227,58 @@ describe("finance workspaces", () => {
     expect(screen.getByText("No tenés permiso para ver cuentas corrientes.")).toBeInTheDocument();
   });
 
-  it("renders the required currency and interest fields for financing", async () => {
+  it("renders the required currency and interest fields for financing without prefilled sample amounts", async () => {
     renderWorkspace(<AccountsWorkspace />);
 
     expect(await screen.findByPlaceholderText("Moneda (ARS/USD)"))
       .toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Interés mensual"))
-      .toBeInTheDocument();
+    expect(screen.getByLabelText("Monto principal ($)")).toHaveDisplayValue("");
+    expect(screen.getByLabelText("Anticipo ($)")).toHaveDisplayValue("");
+    expect(screen.getByLabelText("Interés mensual")).toHaveDisplayValue("");
+    expect(screen.getByLabelText("Importe a cobrar ($)")).toHaveDisplayValue("");
+
+    fireEvent.click(screen.getByRole("button", { name: "Crear financiación" }));
+    expect(await screen.findByText("Ingresá un importe válido")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Registrar cobro" }));
+    await vi.waitFor(() => {
+      expect(screen.getAllByText("Ingresá un importe válido")).toHaveLength(2);
+    });
+
+    const emptyFinancing = financingSchema.safeParse({
+      branchId: "550e8400-e29b-41d4-a716-446655440000",
+      customerId: "550e8400-e29b-41d4-a716-446655440001",
+      currency: "ARS",
+      principal: "",
+      downPayment: "",
+      interestRate: "",
+      installmentsCount: 3,
+      firstDue: "2026-12-18",
+      operationKey: "fin-test",
+      reason: "Prueba",
+    });
+    expect(emptyFinancing.success).toBe(false);
+    if (!emptyFinancing.success) {
+      expect(emptyFinancing.error.issues.map((i) => i.message)).toEqual([
+        "Ingresá un importe válido",
+        "Ingresá un valor válido",
+        "Ingresá un valor válido",
+      ]);
+    }
+
+    const emptyPayment = receivablePaymentSchema.safeParse({
+      branchId: "550e8400-e29b-41d4-a716-446655440000",
+      contractId: "550e8400-e29b-41d4-a716-446655440001",
+      paymentMethodId: "550e8400-e29b-41d4-a716-446655440002",
+      cashSessionId: "",
+      amount: "",
+      paymentReference: "",
+      operationKey: "pay-test",
+      reason: "Prueba",
+    });
+    expect(emptyPayment.success).toBe(false);
+    if (!emptyPayment.success) {
+      expect(emptyPayment.error.issues.map((i) => i.message)).toEqual(["Ingresá un importe válido"]);
+    }
   });
 
   it("requires an explicit payment method for receivable settlements", async () => {
