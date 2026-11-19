@@ -6,15 +6,22 @@ import { ErpAuthContext } from "../../auth/ErpAuthContext";
 import type { DashboardMetrics } from "./dashboardApi";
 import { DashboardOverview } from "./DashboardOverview";
 
-const { rpcMock, fromMock, orderMock, limitMock, chartDataMock } = vi.hoisted(() => {
+const { rpcMock, fromMock, orderMock, limitMock, chartDataMock, signals, withSignal } = vi.hoisted(() => {
+  const signals: AbortSignal[] = [];
+  const withSignal = (result: unknown) => ({
+    abortSignal: (signal: AbortSignal) => {
+      signals.push(signal);
+      return result;
+    },
+  });
   const limitMock = vi.fn();
-  const orderMock = vi.fn(() => ({ limit: limitMock }));
+  const orderMock = vi.fn(() => ({ limit: (count: number) => withSignal(limitMock(count)) }));
   const fromMock = vi.fn(() => ({ select: () => ({ order: orderMock }) }));
-  return { rpcMock: vi.fn(), fromMock, orderMock, limitMock, chartDataMock: vi.fn() };
+  return { rpcMock: vi.fn(), fromMock, orderMock, limitMock, chartDataMock: vi.fn(), signals, withSignal };
 });
 
 vi.mock("../../lib/supabase", () => ({
-  supabase: { from: fromMock, rpc: rpcMock },
+  supabase: { from: fromMock, rpc: (method: string, args: unknown) => withSignal(rpcMock(method, args)) },
 }));
 
 vi.mock("recharts", async (importOriginal) => ({
@@ -83,6 +90,7 @@ const renderDashboard = (branchIds: string[] = ["branch-1", "branch-2"]) => {
 describe("DashboardOverview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    signals.length = 0;
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-01T01:30:00Z"));
     rpcMock.mockReset().mockResolvedValue({ data: metrics, error: null });
@@ -91,6 +99,13 @@ describe("DashboardOverview", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("cancela las dos consultas cuando se desmonta el Centro operativo", () => {
+    const { unmount } = renderDashboard();
+    expect(signals.map((signal) => signal.aborted)).toEqual([false, false]);
+    unmount();
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
   });
 
   it("muestra el total de la RPC, el desglose de los tres canales y los demás KPI", async () => {

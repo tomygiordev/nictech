@@ -98,7 +98,7 @@ describe("pcBuildRevisionSchema y pcBuildReserveSchema", () => {
         ruleSetVersionId: VALID_UUID,
         components: [
           {
-            slot_code: "ram",
+            slot_code: "memory",
             product_id: VALID_UUID_2,
             variant_id: "",
             inventory_unit_id: "",
@@ -114,7 +114,7 @@ describe("pcBuildRevisionSchema y pcBuildReserveSchema", () => {
         ruleSetVersionId: "",
         components: [
           {
-            slot_code: "ram",
+            slot_code: "memory",
             product_id: VALID_UUID_2,
             variant_id: "",
             inventory_unit_id: "",
@@ -126,9 +126,10 @@ describe("pcBuildRevisionSchema y pcBuildReserveSchema", () => {
   });
 
   it("valida fecha de vencimiento de reserva", () => {
-    expect(pcBuildReserveSchema.safeParse({ expiresAt: "2026-12-01T10:00" }).success).toBe(true);
-    expect(pcBuildReserveSchema.safeParse({ expiresAt: "" }).success).toBe(false);
-    expect(pcBuildReserveSchema.safeParse({ expiresAt: "no-es-fecha" }).success).toBe(false);
+    expect(pcBuildReserveSchema.safeParse({ expiresAt: "2026-12-01T10:00", locationId: VALID_UUID }).success).toBe(true);
+    expect(pcBuildReserveSchema.safeParse({ expiresAt: "", locationId: VALID_UUID }).success).toBe(false);
+    expect(pcBuildReserveSchema.safeParse({ expiresAt: "no-es-fecha", locationId: VALID_UUID }).success).toBe(false);
+    expect(pcBuildReserveSchema.safeParse({ expiresAt: "2026-12-01T10:00", locationId: "" }).success).toBe(false);
   });
 });
 

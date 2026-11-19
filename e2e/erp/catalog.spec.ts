@@ -9,7 +9,7 @@ test('ficha celular con colores, stock y foto, edición, código y proyección w
   const own = `QA Blanco ${tag()}`;
   const product = await createSheet(page, name, 'celular', [
     { name: inherited, qty: 5 }, { name: own, qty: 7, own: 1500 },
-  ]);
+  ], true);
   expect(product).toMatchObject({
     sheet_template: 'celular', internal_description: `Uso interno ${name}`,
     public_description: `Descripción pública ${name}`, web_status: 'draft',

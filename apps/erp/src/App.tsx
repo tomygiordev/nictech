@@ -1,4 +1,5 @@
 import React, { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   type ErpArea,
   type ErpModuleDefinition,
@@ -197,6 +198,7 @@ export const App = () => {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Global Keyboard Shortcuts (F2 / Ctrl+K / Cmd+K / Esc)
   useEffect(() => {
@@ -235,7 +237,8 @@ export const App = () => {
       : `${branchIds.length} sucursales asignadas`;
 
   const filteredGroups = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const searchable = (text: string) => text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+    const query = searchable(searchQuery.trim());
     const result: Partial<Record<ErpArea, ErpWorkspaceDefinition[]>> = {};
 
     for (const [area, workspaces] of Object.entries(groupedWorkspaces)) {
@@ -248,10 +251,10 @@ export const App = () => {
         const label = moduleIds.length === 1 && ws.moduleIds.some((id) => !visibleModules.includes(id))
           ? getErpModuleById(moduleIds[0])?.label ?? ws.label
           : ws.label;
-        const matchWorkspace = label.toLowerCase().includes(query);
+        const matchWorkspace = searchable(label).includes(query);
         const matchModule = moduleIds.some((id) => {
           const mod = getErpModuleById(id);
-          return mod && (mod.label.toLowerCase().includes(query) || mod.description.toLowerCase().includes(query));
+          return mod && (searchable(mod.label).includes(query) || searchable(mod.description).includes(query));
         });
         if (query && !matchWorkspace && !matchModule) return [];
         return [{ ...ws, label, moduleIds }];
@@ -285,6 +288,8 @@ export const App = () => {
   };
 
   const handleLogout = async () => {
+    if (isSigningOut) return;
+    flushSync(() => setIsSigningOut(true));
     try {
       await supabase?.auth.signOut();
     } catch (e) {
@@ -569,11 +574,12 @@ export const App = () => {
           variant="danger"
           onConfirm={handleLogout}
           onCancel={() => setIsLogoutConfirmOpen(false)}
+          isPending={isSigningOut}
         />
 
         {/* Module Content */}
         <main id="erp-main-content" className="workspace-content" tabIndex={-1}>
-          <ModuleContent moduleId={activeModuleId} onSelectModule={selectModule} />
+          {!isSigningOut && <ModuleContent moduleId={activeModuleId} onSelectModule={selectModule} />}
         </main>
       </div>
     </div>

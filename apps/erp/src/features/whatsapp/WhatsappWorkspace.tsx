@@ -44,6 +44,13 @@ const STATUS_LABEL: Record<CommunicationStatus, string> = {
 
 const digitsOnly = (value: string | null | undefined): string => (value ?? "").replace(/[^0-9]/g, "");
 
+const displayedMessage = (message: ConversationMessage): string => {
+  if (message.direction !== "outbound" || !message.template_version_id) return message.body_snapshot;
+  return message.body_snapshot.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (placeholder, key: string) =>
+    Object.prototype.hasOwnProperty.call(message.variables_snapshot, key) ? message.variables_snapshot[key] : placeholder,
+  );
+};
+
 const latestStatusOf = (events: MessageEvent[]): CommunicationStatus | null => {
   if (events.length === 0) return null;
   let latest = events[0];
@@ -528,7 +535,7 @@ export const WhatsappWorkspace = ({
                       <span style={{ display: "block", fontSize: "10px", fontWeight: 700, color: "var(--brand-primary)", textTransform: "uppercase", marginBottom: "2px" }}>
                         {isOutbound ? "Saliente" : "Entrante"}
                       </span>
-                      <p style={{ margin: 0, fontSize: "13px", color: "var(--text-main)", lineHeight: "1.4" }}>{m.body_snapshot}</p>
+                      <p style={{ margin: 0, fontSize: "13px", color: "var(--text-main)", lineHeight: "1.4" }}>{displayedMessage(m)}</p>
                       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "4px", marginTop: "4px" }}>
                         <span style={{ fontSize: "10px", color: "var(--text-light)" }}>{formatDateTime(m.created_at)}</span>
                         {status && (

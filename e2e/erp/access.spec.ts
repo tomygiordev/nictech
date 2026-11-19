@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { ERP_WORKSPACES } from '@nictech/domain';
-import { test, expect, button, owner, nav, main, submitLogin, workspace } from './fixtures';
+import { test, expect, button, capture, owner, nav, main, screenName, submitLogin, workspace } from './fixtures';
 import { account, literal, localClient, sqlRows } from './local';
 
 async function profile(page: Page, mode: 'salida' | 'completo') {
@@ -12,13 +12,15 @@ async function profile(page: Page, mode: 'salida' | 'completo') {
 
 async function settings(page: Page) {
   await workspace(page, 'Configuración y accesos');
-  await page.getByRole('tab', { name: 'Configuracion', exact: true }).click();
+  await page.getByRole('tab', { name: 'Configuración', exact: true }).click();
 }
 
-test('credenciales inválidas, usuario sin rol, owner y cierre de sesión', async ({ page }) => {
+test('credenciales inválidas, usuario sin rol, owner y cierre de sesión', async ({ page, expectHttpError }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await capture(page, 'acceso-login');
+  expectHttpError({ method: 'POST', path: '/auth/v1/token', status: 400, reason: 'Contraseña incorrecta ingresada deliberadamente.' });
   await submitLogin(page, account('OWNER').email, 'contraseña-incorrecta');
-  await expect(page.getByText(/invalid login credentials/i)).toBeVisible();
+  await expect(page.getByText('Correo o contraseña incorrectos.')).toBeVisible();
 
   await submitLogin(page, account('NOROLE').email, account('NOROLE').password);
   await expect(page.getByText(/Permiso Requerido|No se pudo habilitar el acceso al ERP/)).toBeVisible();
@@ -30,6 +32,7 @@ test('credenciales inválidas, usuario sin rol, owner y cierre de sesión', asyn
   await expect(page.getByRole('heading', { name: 'Ingreso NicTech ERP' })).toBeVisible();
   await submitLogin(page, account('OWNER').email, account('OWNER').password);
   await expect(page.getByRole('heading', { name: 'Centro Operativo', exact: true, level: 1 })).toBeVisible();
+  await expect(nav(page).getByRole('button', { name: 'Configuración y accesos' })).toBeVisible();
   await button(page, 'Cerrar Sesión').click();
   await page.getByRole('dialog', { name: 'Cerrar Sesión del ERP' }).getByRole('button', { name: 'Cerrar Sesión' }).click();
   await expect(page.getByRole('heading', { name: 'Ingreso NicTech ERP' })).toBeVisible();
@@ -57,12 +60,7 @@ test('configuración: tarjeta web y perfiles Salida/Completo persistidos', async
 });
 
 test('navegación completa: módulos, submódulos y búsqueda por F2', async ({ page }) => {
-  test.setTimeout(150_000);
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(`${message.text()} (${message.location().url})`);
-  });
+  test.setTimeout(210_000);
 
   await owner(page);
   await settings(page);
@@ -74,7 +72,12 @@ test('navegación completa: módulos, submódulos y búsqueda por F2', async ({ 
     await expect(main(page)).not.toContainText('Cargando módulo…');
     await expect(main(page).getByRole('alert').filter({ hasText: /no se pud|error|permiso requerido/i })).toHaveCount(0);
   }
-  async function internalTabs() {
+  async function captureWorkspace(name: string) {
+    await page.waitForLoadState('networkidle');
+    await opened();
+    await capture(page, name, { workspaceTop: true });
+  }
+  async function internalTabs(prefix: string) {
     const localTabs = main(page).getByRole('tablist', { name: /^((?!Submódulos del área).)*$/ });
     for (const list of await localTabs.all()) {
       const tabs = list.getByRole('tab');
@@ -82,23 +85,25 @@ test('navegación completa: módulos, submódulos y búsqueda por F2', async ({ 
         const tab = list.getByRole('tab', { name: name.trim(), exact: true });
         await tab.click();
         await expect(tab).toHaveAttribute('aria-selected', 'true');
-        await opened();
+        await captureWorkspace(`${prefix}-${screenName(name)}`);
       }
     }
   }
   for (const { label } of ERP_WORKSPACES) {
     await test.step(label, async () => {
       await workspace(page, label);
-      await opened();
+      const prefix = screenName(label);
+      await captureWorkspace(`${prefix}-inicio`);
       const modules = main(page).getByRole('tablist', { name: 'Submódulos del área' });
       const tabNames = await modules.getByRole('tab').allTextContents();
-      if (!tabNames.length) await internalTabs();
+      if (!tabNames.length) await internalTabs(prefix);
       for (const name of tabNames) {
         const tab = modules.getByRole('tab', { name: name.trim(), exact: true });
         await tab.click();
         await expect(tab).toHaveAttribute('aria-selected', 'true');
-        await opened();
-        await internalTabs();
+        const submodule = `${prefix}-${screenName(name)}`;
+        await captureWorkspace(submodule);
+        await internalTabs(submodule);
       }
     });
   }
@@ -112,7 +117,6 @@ test('navegación completa: módulos, submódulos y búsqueda por F2', async ({ 
   await page.keyboard.press('Escape');
   await expect(search).toHaveValue('');
   await expect(nav(page).getByRole('button')).toHaveCount(ERP_WORKSPACES.length);
-  expect(errors).toEqual([]);
 });
 
 test('el owner asigna técnico; el ERP y el servidor limitan permisos', async ({ page }) => {
@@ -123,7 +127,7 @@ test('el owner asigna técnico; el ERP y el servidor limitan permisos', async ({
   await expect(roles.getByRole('listitem').filter({ hasText: 'QA ERP Sin Rol' })).toContainText('Sin rol');
   await roles.getByLabel('Operador').selectOption({ label: 'QA ERP Sin Rol' });
   const role = roles.getByLabel('Rol', { exact: true });
-  await role.selectOption(await role.getByRole('option', { name: /\(technician\)$/ }).getAttribute('value') ?? '');
+  await role.selectOption({ label: 'Tecnico' });
   await roles.getByRole('button', { name: 'Asignar rol' }).click();
   await expect(roles.getByRole('listitem').filter({ hasText: 'QA ERP Sin Rol' })).not.toContainText('Sin rol —');
   const { id, email, password } = account('NOROLE');

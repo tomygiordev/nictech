@@ -209,6 +209,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
       setError(null);
       const data = await listRepairOrders();
       setRepairs(data);
+      return data;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Error al consultar reparaciones";
       setError(msg);
@@ -367,6 +368,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const handleQcSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!qcTargetTicket || !activeTemplate) return;
+    const requestId = detailRequest.current;
     setQcError(null);
 
     const requiredItems = activeTemplate.definition.filter((item) => item.required !== false);
@@ -396,16 +398,15 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           ? `¡Control de calidad aprobado para ${qcTargetTicket.order_code}!`
           : `Control de calidad registrado con fallas para ${qcTargetTicket.order_code}. Se requiere corrección técnica.`,
       });
-      setIsQcModalOpen(false);
-      await fetchRepairsData();
-      if (selectedTicket?.id === qcTargetTicket.id) {
-        const updatedList = await listRepairOrders();
-        const updated = updatedList.find((r) => r.id === selectedTicket.id);
+      const updatedList = await fetchRepairsData();
+      if (selectedTicket?.id === qcTargetTicket.id && requestId === detailRequest.current) {
+        const updated = updatedList?.find((r) => r.id === qcTargetTicket.id);
         if (updated) {
           setSelectedTicket(updated);
           void loadTicketDetails(updated);
         }
       }
+      setIsQcModalOpen(false);
     } catch (err) {
       setQcError(toUserMessage(err, "No se pudo registrar el control de calidad. Reintentá."));
     } finally {
@@ -475,16 +476,16 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
   const handleDelivered = async (recipientName: string, warrantyDays: number) => {
     if (!selectedTicket) return;
     const ticketId = selectedTicket.id;
+    const requestId = detailRequest.current;
     setFeedback({
       type: "success",
       message: warrantyDays > 0
         ? `¡Equipo entregado formalmente a ${recipientName}! Se emitió póliza de garantía por ${warrantyDays} días.`
         : `¡Equipo entregado formalmente a ${recipientName}!`,
     });
-    await fetchRepairsData();
-    const updatedList = await listRepairOrders();
-    const updated = updatedList.find((r) => r.id === ticketId);
-    if (updated) {
+    const updatedList = await fetchRepairsData();
+    const updated = updatedList?.find((r) => r.id === ticketId);
+    if (updated && requestId === detailRequest.current) {
       setSelectedTicket(updated);
       void loadTicketDetails(updated);
     }

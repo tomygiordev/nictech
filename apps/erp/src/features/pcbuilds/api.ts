@@ -49,6 +49,7 @@ export interface PcBuildFormOptions {
   branches: Array<{ id: string; code: string; name: string }>;
   customers: Array<{ id: string; code: string; display_name: string }>;
   products: Array<{ id: string; internal_code: string; internal_name: string }>;
+  locations: Array<{ id: string; branch_id: string; name: string }>;
 }
 
 export interface PcBuildComponentInput {
@@ -91,6 +92,7 @@ export interface ReservePcBuildInput {
   revisionId: string;
   expiresAt: string;
   lines: Array<{
+    location_id: string;
     product_id: string;
     variant_id: string | null;
     inventory_unit_id: string | null;
@@ -238,20 +240,31 @@ export const listLatestPcBuildCompatibilityResults = async (
 };
 
 export const listPcBuildFormOptions = async (): Promise<PcBuildFormOptions> => {
-  const [branchesResult, customersResult, productsResult] = await Promise.all([
+  const [branchesResult, customersResult, productsResult, locationsResult] = await Promise.all([
     client().from("branches").select("id,code,name").order("name"),
     client().from("customers").select("id,code,display_name").order("display_name"),
     client().from("products").select("id,internal_code,internal_name").eq("is_active", true).order("internal_name"),
+    client().from("locations").select("id,branch_id,name").eq("is_active", true).order("name"),
   ]);
 
-  const error = branchesResult.error ?? customersResult.error ?? productsResult.error;
+  const error = branchesResult.error ?? customersResult.error ?? productsResult.error ?? locationsResult.error;
   if (error) throw error;
 
   return {
     branches: branchesResult.data ?? [],
     customers: customersResult.data ?? [],
     products: productsResult.data ?? [],
+    locations: locationsResult.data ?? [],
   };
+};
+
+export const listPcBuildRevisionComponents = async (revisionId: string) => {
+  const { data, error } = await client().from("pc_build_components")
+    .select("product_id,variant_id,inventory_unit_id,quantity")
+    .eq("revision_id", revisionId)
+    .order("line_number");
+  if (error) throw error;
+  return data ?? [];
 };
 
 export const createPcBuildAtomic = async (

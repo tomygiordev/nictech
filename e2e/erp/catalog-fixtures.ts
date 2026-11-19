@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, workspace, button, tag } from './fixtures';
+import { expect, workspace, button, tag, capture } from './fixtures';
 import { literal, sqlRows } from './local';
 
 export const depotId = '30000000-0000-0000-0000-000000000001';
@@ -33,24 +33,30 @@ export async function findProduct(page: Page, name: string) {
   return row;
 }
 
-export async function createSheet(page: Page, name: string, template: 'celular' | 'accesorio', colors: { name: string; qty: number; own?: number }[]) {
+export async function createSheet(page: Page, name: string, template: 'celular' | 'accesorio', colors: { name: string; qty: number; own?: number }[], checkValidation = false) {
   await catalog(page);
   await button(page, 'Nuevo Producto').click();
   const sheet = page.getByRole('dialog', { name: 'Nuevo producto' });
-  await sheet.getByLabel('Tipo *', { exact: true }).selectOption(template);
-  await sheet.getByLabel('Categoría *').selectOption(template === 'celular' ? phoneCategory : accessoryCategory);
-  await sheet.getByLabel('Marca *').selectOption(brandId);
+  const save = sheet.getByRole('button', { name: 'Guardar ficha' });
+  if (checkValidation) {
+    await save.click();
+    await expect(sheet.getByRole('alert').filter({ hasText: 'Elegí una categoría.' })).toBeVisible();
+    await capture(page, 'catalogo-alta-validacion');
+  }
+  await sheet.getByLabel(/^Tipo \(/).selectOption(template);
+  await sheet.getByLabel('Categoría').selectOption(template === 'celular' ? phoneCategory : accessoryCategory);
+  await sheet.getByLabel('Marca').selectOption(brandId);
   if (template === 'celular') {
-    await sheet.getByLabel('Modelo *').selectOption(modelId);
+    await sheet.getByLabel(/^Modelo \(/).selectOption(modelId);
     await sheet.getByLabel('Capacidad').fill('128 GB');
     await sheet.getByLabel('Condición').selectOption('nuevo');
   }
-  await sheet.getByLabel('Nombre *', { exact: true }).fill(name);
-  await sheet.getByLabel('Costo estimado ARS *').fill('400');
-  await sheet.getByLabel('Precio final ARS con IVA incluido *').fill('1210');
+  await sheet.getByLabel(/^Nombre \(/).fill(name);
+  await sheet.getByLabel('Costo estimado ARS').fill('400');
+  await sheet.getByLabel('Precio final ARS con IVA incluido').fill('1210');
   await sheet.getByLabel('Descripción interna (no se publica)').fill(`Uso interno ${name}`);
   await sheet.getByLabel('Descripción web').fill(`Descripción pública ${name}`);
-  for (const [index, color] of colors.entries()) {
+  for (const color of colors) {
     await sheet.getByLabel('Crear color nuevo').fill(color.name);
     await sheet.getByRole('button', { name: 'Crear color', exact: true }).click();
     await expect(sheet.getByLabel('Crear color nuevo')).toHaveValue('');
@@ -62,12 +68,12 @@ export async function createSheet(page: Page, name: string, template: 'celular' 
     await sheet.getByLabel(`Ubicación inicial ${color.name}`).selectOption(depotId);
     await sheet.getByLabel(`Costo unitario inicial ${color.name}`).fill('400');
     if (color.own) {
-      await sheet.getByLabel('Precio', { exact: true }).nth(index).selectOption('own');
+      await sheet.getByLabel(`Precio ${color.name}`, { exact: true }).selectOption('own');
       await sheet.getByLabel(`Precio propio ${color.name}`).fill(String(color.own));
     }
   }
   await sheet.getByLabel('Agregar fotos').setInputFiles({ name: 'qa.png', mimeType: 'image/png', buffer: photo });
-  await sheet.getByRole('button', { name: 'Guardar ficha' }).click();
+  await save.click();
   await expect(sheet).toBeHidden();
   await expect(await findProduct(page, name)).toContainText('Borrador');
   const product = productInDb(name);

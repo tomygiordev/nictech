@@ -47,7 +47,7 @@ export default async function globalSetup() {
       o.amount + coalesce((select sum(m.amount) from erp.cash_movements m
         where m.cash_session_id=s.id and m.currency_code=o.currency_code), 0))) as counts
     from erp.cash_sessions s join erp.cash_session_opening_counts o on o.cash_session_id=s.id
-    where s.opened_by=${literal(account('OWNER').id)} and s.reason ~ '^Caja QA [0-9A-F]{8}$'
+    where s.opened_by=${literal(account('OWNER').id)} and s.reason ~ '^Caja QA (Diferencia )?[0-9A-F]{8}$'
       and not exists (select 1 from erp.cash_closures c where c.cash_session_id=s.id)
     group by s.id`);
   for (const { id, counts } of openQaCash) {

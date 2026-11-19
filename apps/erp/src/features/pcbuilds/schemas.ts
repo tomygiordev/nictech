@@ -3,10 +3,10 @@ import { z } from "zod";
 export const PC_BUILD_SLOT_OPTIONS = [
   { code: "cpu", label: "CPU" },
   { code: "gpu", label: "GPU" },
-  { code: "ram", label: "RAM" },
+  { code: "memory", label: "RAM" },
   { code: "storage", label: "Almacenamiento" },
   { code: "motherboard", label: "Placa madre" },
-  { code: "psu", label: "Fuente (PSU)" },
+  { code: "power_supply", label: "Fuente (PSU)" },
 ] as const;
 
 export const PC_BUILD_SLOT_CODES: ReadonlySet<string> = new Set(
@@ -21,6 +21,11 @@ export const pcBuildComponentSchema = z.object({
   product_id: z.string().uuid("Elegí un producto."),
   variant_id: z.string().trim(),
   inventory_unit_id: z.string().trim(),
+  socket: z.string().trim().max(60).optional(),
+  memoryType: z.string().trim().max(60).optional(),
+  watts: z.string().trim().refine((value) =>
+    !value || (/^\d+$/.test(value) && Number(value) > 0 && Number(value) <= 100000),
+  "Ingresá la potencia en watts como un entero positivo.").optional(),
   quantity: z.string().trim()
     .min(1, "Ingresá la cantidad.")
     .refine((value) => {
@@ -62,6 +67,7 @@ export const pcBuildRevisionSchema = z.object({
 export type PcBuildRevisionFormInput = z.infer<typeof pcBuildRevisionSchema>;
 
 export const pcBuildReserveSchema = z.object({
+  locationId: z.string().uuid("Elegí una ubicación para reservar los componentes."),
   expiresAt: z.string().trim()
     .min(1, "Ingresá el vencimiento de la reserva.")
     .refine((value) => !Number.isNaN(new Date(value).getTime()), "Ingresá una fecha de vencimiento válida."),

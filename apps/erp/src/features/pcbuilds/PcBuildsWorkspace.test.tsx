@@ -21,6 +21,7 @@ const mock = vi.hoisted(() => ({
     branches: [],
     customers: [],
     products: [],
+    locations: [],
   } as PcBuildFormOptions,
   templateRows: [] as Array<{
     id: string;
@@ -52,6 +53,7 @@ vi.mock("./api", () => ({
   recordPcCompatibilityRun: (revisionId: string, reason?: string) =>
     mock.recordPcCompatibilityRun(revisionId, reason),
   reservePcBuildComponents: (input: unknown) => mock.reservePcBuildComponents(input),
+  listPcBuildRevisionComponents: vi.fn(),
   recordPcTestRun: (input: unknown) => mock.recordPcTestRun(input),
   completePcBuild: (input: unknown) => mock.completePcBuild(input),
   getPcBuildCosts: (completionId: string) => mock.getPcBuildCosts(completionId),
@@ -140,6 +142,7 @@ beforeEach(() => {
     branches: [{ id: BRANCH_1, code: "SUC1", name: "Casa Central" }],
     customers: [{ id: CUSTOMER_1, code: "CLI-001", display_name: "Ana Pérez" }],
     products: [{ id: PRODUCT_1, internal_code: "CPU-01", internal_name: "Ryzen 5 5600" }],
+    locations: [],
   };
   mock.templateRows = [
     {

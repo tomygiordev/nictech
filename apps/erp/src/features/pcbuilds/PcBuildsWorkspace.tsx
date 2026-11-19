@@ -31,6 +31,7 @@ import {
   completePcBuild,
   getPcBuildCosts,
   listPcBuildFormOptions,
+  listPcBuildRevisionComponents,
   type PcBuildProjectOverview,
   type PcBuildCompatibilityResult,
   type PcBuildFormOptions,
@@ -83,7 +84,7 @@ const emptyDraft = (): PcBuildComponentFormInput => ({
   quantity: "1",
 });
 
-const emptyFormOptions = (): PcBuildFormOptions => ({ branches: [], customers: [], products: [] });
+const emptyFormOptions = (): PcBuildFormOptions => ({ branches: [], customers: [], products: [], locations: [] });
 
 const defaultReserveExpires = (): string =>
   toDateTimeInputAR(new Date(Date.now() + 48 * 60 * 60 * 1000));
@@ -97,7 +98,12 @@ const toComponentInputs = (drafts: PcBuildComponentFormInput[]): PcBuildComponen
       variant_id: d.variant_id.trim() ? d.variant_id.trim() : null,
       inventory_unit_id: d.inventory_unit_id.trim() ? d.inventory_unit_id.trim() : null,
       quantity: d.quantity.trim() ? d.quantity.trim() : "1",
-      specifications: {},
+      specifications: {
+        ...((d.slot_code === "cpu" || d.slot_code === "motherboard") && d.socket ? { socket: d.socket } : {}),
+        ...((d.slot_code === "motherboard" || d.slot_code === "memory") && d.memoryType ? { memory_type: d.memoryType } : {}),
+        ...(d.slot_code === "cpu" && d.watts ? { recommended_psu_watts: Number(d.watts) } : {}),
+        ...(d.slot_code === "power_supply" && d.watts ? { watts: Number(d.watts) } : {}),
+      },
       warranty: {},
     }));
 };
@@ -181,7 +187,8 @@ interface ComponentRowsProps {
   fields: Array<{ id: string }>;
   products: PcBuildFormOptions["products"];
   getRowError: (index: number) => FieldErrors<PcBuildComponentFormInput> | undefined;
-  getFieldProps: (index: number, field: "slot_code" | "product_id" | "quantity") => UseFormRegisterReturn;
+  getFieldProps: (index: number, field: "slot_code" | "product_id" | "quantity" | "socket" | "memoryType" | "watts") => UseFormRegisterReturn;
+  getSlot: (index: number) => string;
   onRemove: (index: number) => void;
   onAdd: () => void;
   addLabel: string;
@@ -193,6 +200,7 @@ const ComponentRowsFieldArray = ({
   products,
   getRowError,
   getFieldProps,
+  getSlot,
   onRemove,
   onAdd,
   addLabel,
@@ -201,6 +209,7 @@ const ComponentRowsFieldArray = ({
   <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
     {fields.map((field, index) => {
       const rowErrors = getRowError(index);
+      const slot = getSlot(index);
       return (
         <div
           key={field.id}
@@ -264,6 +273,25 @@ const ComponentRowsFieldArray = ({
           >
             ✕
           </button>
+          {slot !== "storage" && slot !== "gpu" && (
+            <div className="erp-form-row" style={{ gridColumn: "1 / -1" }}>
+              {(slot === "cpu" || slot === "motherboard") && (
+                <Field label="Socket" error={rowErrors?.socket?.message}>
+                  {(a11y) => <input {...a11y} {...getFieldProps(index, "socket")} className="erp-form-input" disabled={disabled} />}
+                </Field>
+              )}
+              {(slot === "motherboard" || slot === "memory") && (
+                <Field label="Tipo de memoria" error={rowErrors?.memoryType?.message}>
+                  {(a11y) => <input {...a11y} {...getFieldProps(index, "memoryType")} className="erp-form-input" disabled={disabled} />}
+                </Field>
+              )}
+              {(slot === "cpu" || slot === "power_supply") && (
+                <Field label={slot === "cpu" ? "Potencia de fuente recomendada (W)" : "Potencia nominal de la fuente (W)"} error={rowErrors?.watts?.message}>
+                  {(a11y) => <input {...a11y} {...getFieldProps(index, "watts")} className="erp-form-input" inputMode="numeric" disabled={disabled} />}
+                </Field>
+              )}
+            </div>
+          )}
         </div>
       );
     })}
@@ -339,6 +367,7 @@ export const PcBuildsWorkspace = () => {
     resolver: zodResolver(pcBuildReserveSchema),
     defaultValues: {
       expiresAt: defaultReserveExpires(),
+      locationId: "",
     },
   });
 
@@ -533,6 +562,7 @@ export const PcBuildsWorkspace = () => {
     setTestChecks({});
     setTestNotes("");
     setTestFieldErrors({});
+    reserveForm.reset({ expiresAt: defaultReserveExpires(), locationId: "" });
     completeForm.reset({
       serial: "",
       warrantyDays: "",
@@ -657,20 +687,15 @@ export const PcBuildsWorkspace = () => {
     }
     const projectId = selected.id;
     const revisionId = selected.latest_revision_id;
-    const lines = toComponentInputs(revForm.getValues("components"))
-      .map((c) => ({
-        product_id: c.product_id,
-        variant_id: c.variant_id ?? null,
-        inventory_unit_id: c.inventory_unit_id ?? null,
-        quantity: Number(c.quantity),
-      }))
-      .filter((l) => Number.isFinite(l.quantity) && l.quantity > 0);
-    if (lines.length === 0) {
-      setDetailError("La reserva debe coincidir con los componentes de la revisión: completá el constructor.");
+    if (!selected.latest_compatibility_outcome || selected.latest_compatibility_outcome === "fail") {
+      setDetailError("Registrá una revisión compatible antes de reservar los componentes.");
       return;
     }
 
     void runDetailAction("reserva", async () => {
+      const components = await listPcBuildRevisionComponents(revisionId);
+      if (components.length === 0) throw new Error("La revisión no tiene componentes para reservar.");
+      const lines = components.map((component) => ({ ...component, location_id: values.locationId }));
       const batchId = await reservePcBuildComponents({
         projectId,
         revisionId,
@@ -1181,6 +1206,7 @@ export const PcBuildsWorkspace = () => {
                   products={formOptions.products}
                   getRowError={(index) => revForm.formState.errors.components?.[index]}
                   getFieldProps={(index, fieldName) => revForm.register(`components.${index}.${fieldName}`)}
+                  getSlot={(index) => revForm.watch(`components.${index}.slot_code`)}
                   onRemove={(index) => {
                     if (revComponents.fields.length > 1) revComponents.remove(index);
                   }}
@@ -1205,9 +1231,18 @@ export const PcBuildsWorkspace = () => {
               <div id="pc-build-panel-3" role="tabpanel" aria-labelledby="pc-build-step-3" style={{ padding: "12px", border: "1px solid var(--border-line)", borderRadius: "10px" }}>
                 <strong style={{ fontSize: "13px" }}>3. Reserva de componentes</strong>
                 <p style={{ margin: "4px 0 8px", fontSize: "12px", color: "var(--text-muted)" }}>
-                  Cargá los componentes exactos en “Nueva revisión”, guardala y volvé acá para reservar
-                  su stock. Las líneas deben coincidir exactamente con esa revisión.
+                  Se reservan los componentes de la última revisión guardada.
                 </p>
+                <Field label="Ubicación de stock" required error={reserveForm.formState.errors.locationId?.message}>
+                  {(a11y) => (
+                    <select {...a11y} {...reserveForm.register("locationId")} className="erp-form-input" disabled={!canManage}>
+                      <option value="">Elegí una ubicación…</option>
+                      {formOptions.locations.filter((location) => location.branch_id === selected.branch_id).map((location) => (
+                        <option key={location.id} value={location.id}>{location.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
                 <Field
                   label="Vencimiento de reserva"
                   required
@@ -1664,6 +1699,7 @@ export const PcBuildsWorkspace = () => {
               products={formOptions.products}
               getRowError={(index) => createForm.formState.errors.components?.[index]}
               getFieldProps={(index, fieldName) => createForm.register(`components.${index}.${fieldName}`)}
+              getSlot={(index) => createForm.watch(`components.${index}.slot_code`)}
               onRemove={(index) => {
                 if (createComponents.fields.length > 1) createComponents.remove(index);
               }}

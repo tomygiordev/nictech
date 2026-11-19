@@ -147,12 +147,13 @@ const quoteSummary = z.object({
   currency_code: z.string().regex(/^[A-Z]{3}$/),
 });
 
-async function fetchRecentRepairs() {
+async function fetchRecentRepairs(signal: AbortSignal) {
   const { data, error } = await supabase
     .from("repair_orders_overview")
     .select("id, order_code, customer_name, brand_snapshot, model_snapshot, status_code, status_name, status_is_terminal, delivery_id, latest_quote")
     .order("opened_at", { ascending: false })
-    .limit(5);
+    .limit(5)
+    .abortSignal(signal);
   if (error) throw error;
 
   return (data ?? []).flatMap((repair) => {
@@ -192,45 +193,47 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({ onSelectMo
       : `${branchIds.length} asignadas`;
 
   useEffect(() => {
-    let ignore = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     async function fetchDashboardData() {
       try {
         const range = getDashboardRange(selectedPeriod);
         let data: DashboardMetrics;
         try {
-          data = await fetchDashboardMetrics(range);
+          data = await fetchDashboardMetrics(range, undefined, signal);
         } catch (error) {
           const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-          if (code !== "42501" || branchIds.length !== 1) throw error;
-          data = await fetchDashboardMetrics(range, branchIds[0]);
+          if (signal.aborted || code !== "42501" || branchIds.length !== 1) throw error;
+          data = await fetchDashboardMetrics(range, branchIds[0], signal);
         }
-        if (!ignore) setDashboard({ status: "success", data });
+        if (!signal.aborted) setDashboard({ status: "success", data });
       } catch (error) {
-        if (!ignore) {
+        if (!signal.aborted) {
           const message = toUserMessage(error, "No se pudieron consultar los datos del Centro operativo.");
           setDashboard({ status: "error", message });
         }
       }
     }
     void fetchDashboardData();
-    return () => { ignore = true; };
+    return () => { controller.abort(); };
   }, [selectedPeriod, refresh, branchIds]);
 
   useEffect(() => {
-    let ignore = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     async function loadRecentRepairs() {
       try {
-        const data = await fetchRecentRepairs();
-        if (!ignore) setRecent({ status: "success", data });
+        const data = await fetchRecentRepairs(signal);
+        if (!signal.aborted) setRecent({ status: "success", data });
       } catch (error) {
-        if (!ignore) {
+        if (!signal.aborted) {
           const message = toUserMessage(error, "No se pudieron consultar las reparaciones recientes.");
           setRecent({ status: "error", message });
         }
       }
     }
     void loadRecentRepairs();
-    return () => { ignore = true; };
+    return () => { controller.abort(); };
   }, []);
 
   const metrics = dashboard.status === "success" ? dashboard.data : null;

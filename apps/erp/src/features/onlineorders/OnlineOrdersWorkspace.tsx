@@ -868,7 +868,7 @@ export const OnlineOrdersWorkspace = () => {
                 type="button"
                 className="pag-btn"
                 onClick={handleLifecycleAction}
-                disabled={lifecycleBusy || lifecycleReason.trim().length < 3 || (lifecycleAction.kind === "refund" && !physicalReturnConfirmed)}
+                disabled={lifecycleBusy}
                 style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
                 {lifecycleBusy && <Loader2 size={14} className="animate-spin" />}

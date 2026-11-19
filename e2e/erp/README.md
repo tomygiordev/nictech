@@ -10,6 +10,9 @@ node e2e/erp/prepare-stack.mjs
 $env:ERP_E2E_SUPABASE_WORKDIR = 'test-results/erp-supabase'
 npx supabase start --workdir $env:ERP_E2E_SUPABASE_WORKDIR --ignore-health-check --exclude vector,logflare,edge-runtime,studio,postgres-meta,imgproxy,mailpit,realtime
 try {
+  # start puede restaurar un respaldo E2E anterior sin las migraciones nuevas.
+  npx supabase migration up --local --workdir $env:ERP_E2E_SUPABASE_WORKDIR
+  if ($LASTEXITCODE -ne 0) { throw "No se pudieron aplicar las migraciones al stack E2E." }
   $env:ERP_E2E_RUN_LABEL = 'run-1'
   npm run test:e2e:erp
   $env:ERP_E2E_RUN_LABEL = 'run-2'
@@ -24,3 +27,7 @@ El proyecto descartable toma migraciones y seed de `supabase/`, normalizados a L
 `storefront-fixture.sql` cubre las tablas legacy que el stack ERP no crea. Activa el puente real y configura el bucket local para que las verificaciones de catálogo, promociones y pago se apoyen en proyecciones reales. El webhook se prueba en su RPC transaccional: no se conecta a Mercado Pago ni ejecuta la Edge Function. Las fotos son sintéticas.
 
 Sin etiqueta, la salida JSON se escribe en `test-results/erp.json`, con traces y capturas en `test-results/erp-artifacts/`. Con etiqueta, cada corrida conserva su JSON y sus artefactos separados. Estos archivos pueden contener credenciales locales de prueba; no los versionés.
+
+Las capturas de revisión se guardan en `test-results/erp-screens/`: `<módulo>-<pantalla>.png` a 1366×768 y `<módulo>-<pantalla>-1024.png` a 1024×768. La segunda corrida reemplaza las capturas homónimas. Ambas resoluciones se capturan en la misma sesión, sin repetir mutaciones.
+
+Cada test adjunta un diagnóstico de excepciones JS, errores de consola y respuestas HTTP de error del navegador. La credencial incorrecta acepta un único `POST /auth/v1/token` con HTTP 400 y su mensaje de recurso de Chromium. El caso de permisos verifica aparte el rechazo SQLSTATE `42501` por el cliente Supabase de Node. Un 4xx/5xx distinto no se ignora.

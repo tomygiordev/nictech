@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
-import { test, expect, owner, workspace, tag, button, setProfile } from './fixtures';
+import { test, expect, owner, workspace, tag, button, setProfile, capture } from './fixtures';
 import { balancesOf, catalog, depotId, stockedAccessory, type Product } from './catalog-fixtures';
 import { literal, sqlRows } from './local';
 import { addPromotion } from './promotion-fixtures';
@@ -20,13 +20,67 @@ async function sell(page: Page, product: Product, method: 'Efectivo' | 'Tarjeta'
   await button(page, method).click();
   await button(page, 'Cobrar y Emitir Comprobante').click();
   await expect.poll(() => balancesOf(product.id)[0]?.qty).toBe(remaining);
-  await expect(page.getByText(/Venta completada.*Comprobante no fiscal/)).toBeVisible();
+  await expect(page.getByText(/Comprobante no fiscal:/)).toBeVisible();
   await expect(button(page, 'Imprimir comprobante')).toBeEnabled();
 }
 
 const paymentsFor = (productId: string) => sqlRows(`select pm.code,p.amount from erp.payments p
     join erp.payment_methods pm on pm.id=p.payment_method_id
     join erp.sale_lines sl on sl.sale_id=p.sale_id where sl.product_id=${literal(productId)} order by pm.code`);
+
+async function openTill(page: Page, reason: string, amount: number, checkValidation: boolean) {
+  await workspace(page, 'Caja');
+  await button(page, 'Abrir nueva caja').click();
+  const opening = page.getByRole('dialog', { name: 'Abrir turno de caja' });
+  const fund = opening.getByLabel('Fondo inicial en efectivo (ARS)');
+  const submit = opening.getByRole('button', { name: 'Abrir turno' });
+  if (checkValidation) {
+    await fund.clear();
+    await submit.click();
+    await expect(opening.getByRole('alert')).toContainText('Ingresá el fondo inicial.');
+    await capture(page, 'caja-apertura-validacion');
+  }
+  await expect(opening.getByLabel('Operador')).not.toBeEditable();
+  await fund.fill(String(amount));
+  await opening.getByLabel('Observaciones del turno').fill(reason);
+  await submit.click();
+  await expect(opening).toBeHidden();
+  const [{ id }] = sqlRows<{ id: string }>(`select id from erp.cash_sessions where reason=${literal(reason)}`);
+  await expect(page.getByText(`#${id.slice(0, 8).toUpperCase()}`, { exact: true })).toBeVisible();
+  return id;
+}
+
+async function countTill(page: Page, sessionId: string, counted: number, difference: number) {
+  const row = page.getByRole('row').filter({ hasText: sessionId.slice(0, 8).toUpperCase() });
+  await expect(row).toContainText('Se revela al cerrar');
+  await row.getByRole('button', { name: 'Arqueo y cierre' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Arqueo y cierre de caja' });
+  const count = dialog.getByLabel('Efectivo contado (ARS)');
+  const review = dialog.getByRole('button', { name: 'Ver resultado' });
+  await expect(dialog.getByText('Total teórico esperado')).toHaveCount(0);
+  await review.click();
+  await expect(dialog.getByRole('alert')).toContainText('Ingresá el efectivo contado.');
+  if (difference === 0) await capture(page, 'caja-arqueo-ciego-validacion');
+  await count.fill(String(counted));
+  await review.click();
+  await expect(dialog.getByText('Total teórico esperado')).toBeVisible();
+  await expect(dialog.getByText(difference === 0 ? 'Sin diferencia' : /Faltante de/)).toBeVisible();
+  const close = dialog.getByRole('button', { name: 'Cerrar turno' });
+  if (difference !== 0) {
+    await close.click();
+    await expect(dialog.getByRole('alert')).toContainText(/diferencia/i);
+    await dialog.getByLabel('Motivo del cierre').fill('Diferencia detectada durante el conteo.');
+  }
+  await capture(page, difference === 0 ? 'caja-arqueo-sin-diferencia' : 'caja-arqueo-con-diferencia');
+  await close.click();
+  const confirm = page.getByRole('dialog', { name: /^Cerrar turno/ });
+  await confirm.getByRole('button', { name: 'Confirmar cierre' }).click();
+  await expect(confirm).toBeHidden();
+  await expect(row).toHaveCount(0);
+  expect(sqlRows(`select c.expected_amount,c.counted_amount,c.difference_amount from erp.cash_close_counts c
+    join erp.cash_closures cl on cl.id=c.cash_closure_id where cl.cash_session_id=${literal(sessionId)} and c.currency_code='ARS'`))
+    .toEqual([{ expected_amount: counted - difference, counted_amount: counted, difference_amount: difference }]);
+}
 
 test('compra aprobada y recepcionada: saldo físico y costo en el ledger', async ({ page }) => {
   await owner(page);
@@ -35,33 +89,46 @@ test('compra aprobada y recepcionada: saldo físico y costo en el ledger', async
   const supplier = `Proveedor QA ${tag()}`;
   await workspace(page, 'Compras y proveedores');
   await page.getByRole('tab', { name: 'Proveedores', exact: true }).click();
-  await button(page, 'Nuevo Proveedor').click();
-  const supplierForm = page.getByRole('dialog', { name: 'Registrar Nuevo Proveedor' });
-  await supplierForm.getByLabel(/Razón Social/).fill(supplier);
+  await button(page, 'Nuevo proveedor').click();
+  const supplierForm = page.getByRole('dialog', { name: 'Registrar proveedor' });
+  await supplierForm.locator('button[type=submit]').click();
+  await expect(supplierForm.getByRole('alert')).toHaveText('Ingresá al menos 2 caracteres.');
+  await capture(page, 'compras-proveedor-validacion');
+  await supplierForm.getByLabel('Razón social o nombre').fill(supplier);
   await supplierForm.locator('button[type=submit]').click();
   await expect(supplierForm).toBeHidden();
   await expect(page.getByRole('row').filter({ hasText: supplier })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Compras', exact: true }).click();
-  await button(page, 'Nueva Orden (PO)').click();
-  const order = page.getByRole('dialog', { name: 'Emitir Orden de Compra Estructurada (PO)' });
-  const suppliers = order.getByLabel('Proveedor *');
+  await button(page, 'Nueva orden de compra').click();
+  const order = page.getByRole('dialog', { name: 'Nueva orden de compra' });
+  const emit = order.getByRole('button', { name: 'Emitir orden de compra' });
+  await emit.click();
+  await expect(order.getByRole('alert').filter({ hasText: /proveedor/i })).toBeVisible();
+  await capture(page, 'compras-orden-validacion');
+  const suppliers = order.getByLabel('Proveedor');
   await suppliers.selectOption(await suppliers.getByRole('option', { name: new RegExp(`^${supplier} \\(`) }).getAttribute('value') ?? '');
-  await order.getByLabel(/Motivo.*Compra/).fill(`Compra E2E ${tag()}`);
-  const pick = order.getByRole('combobox').filter({ has: page.locator(`option[value="${product.id}"]`) });
-  await pick.selectOption(product.id);
-  await order.getByPlaceholder('Cant.').fill('3');
-  await order.getByPlaceholder('Costo u.').fill('650');
-  await order.getByRole('button', { name: 'Emitir Orden de Compra' }).click();
+  await order.getByLabel('Sucursal').selectOption('20000000-0000-0000-0000-000000000001');
+  await order.getByLabel('Motivo de la compra').fill(`Compra E2E ${tag()}`);
+  await order.getByLabel('Producto').selectOption(product.id);
+  const variant = balancesOf(product.id)[0].variant_id;
+  if (!variant) throw new Error('Falta la variante del producto de compras.');
+  await order.getByLabel('Variante').selectOption(variant);
+  await order.getByLabel('Cantidad').fill('3');
+  await order.getByLabel('Costo unitario ($)').fill('650');
+  await emit.click();
   await expect(order).toBeHidden();
   const row = page.getByRole('row').filter({ hasText: supplier });
   await row.getByRole('button', { name: 'Aprobar' }).click();
+  const approval = page.getByRole('dialog', { name: 'Aprobar orden de compra' });
+  await capture(page, 'compras-aprobar-orden');
+  await approval.getByRole('button', { name: 'Aprobar orden' }).click();
   await row.getByRole('button', { name: 'Recepcionar' }).click();
-  const receipt = page.getByRole('dialog', { name: /Recepcionar Mercadería/ });
-  await receipt.getByLabel(/Ubicación.*Destino/).selectOption(depotId);
-  await receipt.getByLabel(/Nº de Remito/).fill(`REM-QA-${tag()}`);
+  const receipt = page.getByRole('dialog', { name: /Recibir mercadería/i });
+  await receipt.getByLabel('Ubicación de destino').selectOption(depotId);
+  await receipt.getByLabel('Remito o factura del proveedor').fill(`REM-QA-${tag()}`);
   await receipt.getByRole('spinbutton').fill('3');
-  await receipt.getByRole('button', { name: 'Confirmar Recepción' }).click();
+  await receipt.getByRole('button', { name: 'Confirmar recepción' }).click();
   await expect(receipt).toBeHidden();
   await expect(row.getByRole('button', { name: 'Recepcionar' })).toHaveCount(0);
   expect(balancesOf(product.id)).toMatchObject([{ location_id: depotId, qty: 5 }]);
@@ -73,22 +140,18 @@ test('compra aprobada y recepcionada: saldo físico y costo en el ledger', async
 test('POS efectivo y tarjeta: comprobantes, stock y arqueo de caja', async ({ page }) => {
   await owner(page);
   const product = await stockedAccessory(page, 'POS', 10);
-  await workspace(page, 'Caja');
-  await button(page, 'Abrir Nueva Caja').click();
-  const opening = page.getByRole('dialog', { name: 'Apertura de Turno de Caja' });
-  const reason = `Caja QA ${tag()}`;
-  await opening.getByRole('textbox').nth(0).fill('QA ERP Owner');
-  await opening.getByRole('spinbutton').fill('5000');
-  await opening.getByRole('textbox').nth(1).fill(reason);
-  await opening.getByRole('button', { name: 'Abrir Turno' }).click();
-  await expect(opening).toBeHidden();
-  const [{ id: sessionId }] = sqlRows<{ id: string }>(`select id from erp.cash_sessions where reason=${literal(reason)}`);
+  const sessionId = await openTill(page, `Caja QA ${tag()}`, 5000, true);
 
-  await button(page, 'Ingreso / Egreso').click();
+  await button(page, 'Ingreso o egreso').click();
   const movement = page.getByRole('dialog', { name: 'Registrar ingreso o egreso manual' });
-  await movement.getByPlaceholder('0,00').fill('50');
-  await movement.getByPlaceholder('Detallá el origen o destino del efectivo').fill(`Aporte QA ${tag()}`);
-  await movement.getByRole('button', { name: 'Registrar movimiento' }).click();
+  const postMovement = movement.getByRole('button', { name: 'Registrar movimiento' });
+  await movement.getByLabel('Importe').clear();
+  await postMovement.click();
+  await expect(movement.getByRole('alert')).toContainText(/importe/i);
+  await capture(page, 'caja-movimiento-validacion');
+  await movement.getByLabel('Importe').fill('50');
+  await movement.getByLabel('Motivo o comprobante').fill(`Aporte QA ${tag()}`);
+  await postMovement.click();
   await expect(movement).toBeHidden();
   expect(sqlRows(`select kind,amount from erp.cash_movements where cash_session_id=${literal(sessionId)} and amount=50`))
     .toEqual([{ kind: 'contribution', amount: 50 }]);
@@ -99,19 +162,37 @@ test('POS efectivo y tarjeta: comprobantes, stock y arqueo de caja', async ({ pa
   expect(paymentsFor(product.id)).toEqual([{ code: 'CARD', amount: 1210 }, { code: 'CASH', amount: 1210 }]);
 
   await workspace(page, 'Caja');
-  await button(page, 'Arqueo & Cierre').click();
-  const closing = page.getByRole('dialog', { name: 'Arqueo y Cierre de Turno de Caja' });
-  const counted = closing.getByPlaceholder('0', { exact: true });
-  await counted.click();
-  await counted.press('Control+A');
-  await counted.pressSequentially('6260');
-  await expect(counted).toHaveValue('6260');
-  await closing.getByRole('button', { name: 'Confirmar Arqueo y Cerrar' }).click();
-  await expect(closing).toBeHidden();
-  await expect(page.getByText(/Arqueo y cierre completado/)).toBeVisible();
-  expect(sqlRows(`select c.expected_amount,c.counted_amount,c.difference_amount from erp.cash_close_counts c
-    join erp.cash_closures cl on cl.id=c.cash_closure_id where cl.cash_session_id=${literal(sessionId)} and c.currency_code='ARS'`))
-    .toEqual([{ expected_amount: 6260, counted_amount: 6260, difference_amount: 0 }]);
+  await countTill(page, sessionId, 6260, 0);
+
+  const documents = sqlRows<{ document_number: string }>(`select d.document_number from erp.documents d
+    join erp.sale_lines sl on sl.sale_id=d.owner_id where d.owner_type='sale' and sl.product_id=${literal(product.id)}
+    order by d.issued_at desc`);
+  expect(documents).toHaveLength(2);
+  const [{ document_number: documentNumber }] = documents;
+  await workspace(page, 'Documentos y facturas');
+  await page.getByPlaceholder('Buscar por nro, cliente o CUIT…').fill(documentNumber);
+  await button(page, `Abrir documento ${documentNumber}`).click();
+  const document = page.getByRole('dialog', { name: documentNumber });
+  await expect(document).toContainText('Comprobante no fiscal');
+  await expect(document).toContainText('Pagado');
+  await expect(document.getByRole('button', { name: 'Reimprimir comprobante' })).toBeEnabled();
+  await capture(page, 'documentos-comprobante-pos');
+  await document.getByRole('button', { name: 'Cerrar modal' }).click();
+  await button(page, 'Registrar documento').click();
+  const register = page.getByRole('dialog', { name: 'Registrar documento' });
+  await register.getByRole('button', { name: 'Registrar documento' }).click();
+  await expect(register.getByRole('alert')).toHaveText('El nombre del cliente es obligatorio.');
+  await capture(page, 'documentos-registro-validacion');
+  await register.getByRole('button', { name: 'Cancelar' }).click();
+});
+
+test('caja: arqueo ciego con faltante, motivo obligatorio y cierre trazable', async ({ page }) => {
+  await owner(page);
+  const id = await openTill(page, `Caja QA Diferencia ${tag()}`, 3000, false);
+  await countTill(page, id, 2980, -20);
+  await button(page, /^Historial de arqueos/).click();
+  await expect(page.getByRole('row').filter({ hasText: id.slice(0, 8).toUpperCase() })).toBeVisible();
+  await capture(page, 'caja-historial-arqueos');
 });
 
 test('POS cobra el descuento del 10 % cuando la promoción está vigente', async ({ page }) => {

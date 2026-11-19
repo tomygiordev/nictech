@@ -41,11 +41,12 @@ export type DashboardMetrics = z.infer<typeof dashboardMetrics>;
 type RpcArgs = Database["erp"]["Functions"]["get_dashboard_metrics"]["Args"];
 export type DashboardRange = Omit<RpcArgs, "target_branch_id">;
 
-export async function fetchDashboardMetrics(range: DashboardRange, branchId?: string): Promise<DashboardMetrics> {
-  const { data, error } = await supabase.rpc(
+export async function fetchDashboardMetrics(range: DashboardRange, branchId?: string, signal?: AbortSignal): Promise<DashboardMetrics> {
+  const request = supabase.rpc(
     "get_dashboard_metrics",
     branchId ? { ...range, target_branch_id: branchId } : range,
   );
+  const { data, error } = await (signal ? request.abortSignal(signal) : request);
   if (error) throw error;
   return dashboardMetrics.parse(data);
 }

@@ -33,6 +33,7 @@ export interface CustomerRecord {
   internalCode: string;
   email: string;
   phone: string;
+  contactPhone?: string;
   totalSpentArs: number;
   ordersCount: number;
   activeRepairs: number;
@@ -80,6 +81,8 @@ const customerFormSchema = z
   });
 
 type CustomerFormValues = z.infer<typeof customerFormSchema>;
+const customerContactSchema = customerFormSchema.innerType().pick({ name: true, email: true, phone: true });
+type CustomerContact = z.infer<typeof customerContactSchema>;
 
 const createCustomerWithPrivateDetails = async (input: {
   kind: "person" | "business";
@@ -116,6 +119,7 @@ export const CustomersWorkspace = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState<boolean>(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [customerToEdit, setCustomerToEdit] = useState<CustomerRecord | null>(null);
   const [customerToDeactivate, setCustomerToDeactivate] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<CustomerFeedback | null>(null);
   const [privateDetails, setPrivateDetails] = useState<CustomerPrivateDetails | null>(null);
@@ -133,6 +137,20 @@ export const CustomersWorkspace = () => {
       notes: "",
     },
   });
+  const editForm = useForm<CustomerContact>({
+    resolver: zodResolver(customerContactSchema),
+    defaultValues: { name: "", email: "", phone: "" },
+  });
+
+  const openEdit = (customer: CustomerRecord) => {
+    editForm.reset({
+      name: customer.name,
+      email: customer.email === "—" ? "" : customer.email,
+      phone: customer.contactPhone ?? "",
+    });
+    setSelectedCustomer(null);
+    setCustomerToEdit(customer);
+  };
 
   const openNewCustomerModal = () => {
     setCreateError(null);
@@ -210,6 +228,7 @@ export const CustomersWorkspace = () => {
           internalCode: c.code,
           email: c.email || "—",
           phone: c.phone || c.whatsapp_phone || "—",
+          contactPhone: c.phone ?? "",
           totalSpentArs: cSales.totalArs,
           ordersCount: cSales.count,
           activeRepairs: activeRepairsCount,
@@ -300,6 +319,27 @@ export const CustomersWorkspace = () => {
       await fetchCustomers();
     } catch (err) {
       setFeedback({ type: "error", message: toUserMessage(err, "No se pudo dar de baja al cliente.") });
+    }
+  };
+
+  const handleEditCustomer = async (values: CustomerContact) => {
+    if (!customerToEdit || !organizationId || !hasPermission("customers.manage")) return;
+    editForm.clearErrors("root.server");
+    try {
+      const { data, error: updateError } = await supabase.from("customers")
+        .update({ display_name: values.name, email: values.email || null, phone: values.phone || null })
+        .eq("id", customerToEdit.id)
+        .eq("organization_id", organizationId)
+        .eq("is_active", true)
+        .select("id")
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!data) throw new Error("El cliente ya no está disponible para edición.");
+      setCustomerToEdit(null);
+      setFeedback({ type: "success", message: "Datos de contacto actualizados." });
+      await fetchCustomers();
+    } catch (err) {
+      editForm.setError("root.server", { message: toUserMessage(err, "No se pudieron guardar los cambios.") });
     }
   };
 
@@ -596,6 +636,11 @@ export const CustomersWorkspace = () => {
                 </a>
               )}
               {hasPermission("customers.manage") && (
+                <button type="button" className="pag-btn" onClick={() => openEdit(selectedCustomer)}>
+                  Editar datos de contacto
+                </button>
+              )}
+              {hasPermission("customers.manage") && (
                 <button
                   type="button"
                   className="pag-btn"
@@ -609,6 +654,25 @@ export const CustomersWorkspace = () => {
           </div>
         </Modal>
       )}
+
+      <Modal isOpen={Boolean(customerToEdit)} onClose={() => setCustomerToEdit(null)} title="Editar datos de contacto" icon={Users} maxWidth="520px">
+        <form className="erp-form" onSubmit={editForm.handleSubmit(handleEditCustomer)} noValidate>
+          <FormError message={editForm.formState.errors.root?.server?.message ?? null} />
+          <Field label="Nombre visible" required error={editForm.formState.errors.name?.message}>
+            {(a11y) => <input {...a11y} className="erp-form-input" {...editForm.register("name")} />}
+          </Field>
+          <Field label="Email" error={editForm.formState.errors.email?.message}>
+            {(a11y) => <input {...a11y} className="erp-form-input" type="email" {...editForm.register("email")} />}
+          </Field>
+          <Field label="Teléfono" error={editForm.formState.errors.phone?.message}>
+            {(a11y) => <input {...a11y} className="erp-form-input" type="tel" {...editForm.register("phone")} />}
+          </Field>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "12px" }}>
+            <button type="button" className="pag-btn" onClick={() => setCustomerToEdit(null)}>Cancelar</button>
+            <button type="submit" className="btn-primary" disabled={editForm.formState.isSubmitting}>Guardar cambios</button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Modal: New Customer */}
       <Modal

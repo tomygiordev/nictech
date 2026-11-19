@@ -1420,7 +1420,7 @@ export const TradeInsWorkspace = () => {
                   <button
                     type="button"
                     className="pag-btn"
-                    disabled={!canReversePayment || actionBusy}
+                    disabled={!canReversePayment || actionBusy || !selectedItem.payment_id}
                     title={!canReversePayment ? NO_REVERSE_PAYMENT_PERMISSION : undefined}
                     onClick={handleReversePayment}
                   >
