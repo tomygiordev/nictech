@@ -56,7 +56,7 @@ function RepairWarrantyClaimForm({
   };
 
   return (
-    <Modal isOpen onClose={requestClose} title="Apertura de reclamo de garantía" maxWidth="560px" scrollBody>
+    <Modal isOpen onClose={requestClose} title="Apertura de reclamo de garantía" icon={ShieldAlert} maxWidth="560px" scrollBody>
       <form onSubmit={submit} noValidate>
         <fieldset disabled={isSubmitting} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
           <Field
@@ -92,8 +92,8 @@ function RepairWarrantyClaimForm({
 
           <FormError message={errors.root?.server?.message ?? null} />
 
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "10px", marginTop: "4px" }}>
-            <button type="button" className="btn-ghost" onClick={requestClose}>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={requestClose}>
               Cancelar
             </button>
             <button type="submit" className="btn-primary" disabled={isSubmitting}>

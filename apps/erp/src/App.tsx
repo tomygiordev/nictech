@@ -16,10 +16,18 @@ import {
   LayoutDashboard,
   Receipt,
   ShoppingCart,
+  ShoppingBag,
   Boxes,
+  Tag,
+  Warehouse,
+  Truck,
   Wrench,
+  Cpu,
+  Smartphone,
   CircleDollarSign,
   Users,
+  Wallet,
+  FileText,
   Settings,
   HelpCircle,
   LogOut,
@@ -31,8 +39,8 @@ import {
   ChevronLeft,
   Store,
   Layers,
-  Sparkles,
   Link2,
+  ShieldCheck,
 } from "lucide-react";
 import { ErpAccessGate } from "./auth/ErpAccessGate";
 import { useErpAuth } from "./auth/ErpAuthContext";
@@ -149,22 +157,22 @@ const WORKSPACE_CUSTOM_ICONS: Record<ErpWorkspaceId, LucideIcon> = {
   dashboard: LayoutDashboard,
   pos: Store,
   cash: CircleDollarSign,
-  "online-orders": ShoppingCart,
-  catalog: Boxes,
-  stock: Boxes,
-  purchases: ShoppingCart,
+  "online-orders": ShoppingBag,
+  catalog: Tag,
+  stock: Warehouse,
+  purchases: Truck,
   customers: Users,
   quotes: Receipt,
   repairs: Wrench,
-  "pc-builds": Sparkles,
-  "trade-ins": Wrench,
-  accounts: Users,
+  "pc-builds": Cpu,
+  "trade-ins": Smartphone,
+  accounts: Wallet,
   accounting: Layers,
-  documents: Receipt,
+  documents: FileText,
   whatsapp: MessageSquare,
   "integration-health": Link2,
   system: Settings,
-  audit: Sparkles,
+  audit: ShieldCheck,
 };
 
 const groupedWorkspaces = ERP_WORKSPACES.reduce<Record<ErpArea, ErpWorkspaceDefinition[]>>(
@@ -298,6 +306,17 @@ export const App = () => {
     setIsLogoutConfirmOpen(false);
     window.location.reload();
   };
+
+  if (!session) {
+    return (
+      <div className="erp-auth-screen">
+        <div className="erp-auth-screen__brand">
+          <NicTechBrand />
+        </div>
+        <ErpAccessGate>{null}</ErpAccessGate>
+      </div>
+    );
+  }
 
   return (
     <NavigationVisibilityContext.Provider value={visibleModules}>

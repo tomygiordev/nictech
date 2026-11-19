@@ -93,6 +93,7 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
             : "Consultá los operadores, sus sucursales y los roles que tienen asignados."
         }
         badge={roleBadge}
+        badgeTone="neutral"
       />
 
       {onSelectModule && (
@@ -149,7 +150,7 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
                       <td><span style={{ fontSize: "12px", color: "var(--text-muted)" }}>{u.phone ?? "—"}</span></td>
                       <td><span style={{ fontSize: "12px", fontWeight: 600 }}>{u.branch_name ?? "Sin sucursal"}</span></td>
                       <td>
-                        <span className={`flow-status-pill ${u.is_active ? "completed" : "pending"}`}>
+                        <span className={`flow-status-pill ${u.is_active ? "completed" : "neutral"}`}>
                           {u.is_active ? "Activo" : "Inactivo"}
                         </span>
                       </td>
@@ -179,7 +180,7 @@ export const SystemWorkspace: React.FC<SystemWorkspaceProps> = ({
                   <div className="flow-kpi-card__icon-box green">
                     <Building2 size={20} />
                   </div>
-                  <span className={`flow-status-pill ${b.is_active ? "completed" : "pending"}`}>
+                  <span className={`flow-status-pill ${b.is_active ? "completed" : "neutral"}`}>
                     {b.is_active ? "Activa" : "Inactiva"}
                   </span>
                 </div>

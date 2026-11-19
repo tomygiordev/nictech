@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Loader2 } from "lucide-react";
+import { Check, ClipboardPlus, Loader2 } from "lucide-react";
 import { Field, FormError } from "../../components/erp/FormFeedback";
 import { Modal } from "../../components/erp/WorkspaceUi";
 import { toUserMessage } from "../../lib/errors";
@@ -193,7 +193,7 @@ function RepairIntakeForm({
   };
 
   return (
-    <Modal isOpen onClose={requestClose} title="Ingreso de Reparación a Taller" maxWidth="720px">
+    <Modal isOpen onClose={requestClose} title="Ingreso de Reparación a Taller" icon={ClipboardPlus} maxWidth="720px">
       <form onSubmit={submit} noValidate>
         <fieldset disabled={isSubmitting} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <Field label="Sucursal" required error={errors.branchId?.message}>
@@ -292,8 +292,8 @@ function RepairIntakeForm({
           </div>
 
           <FormError message={errors.root?.server?.message ?? null} />
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
-            <button type="button" className="btn-ghost" onClick={requestClose}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={requestClose}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 aria-hidden="true" className="animate-spin" size={16} /> : <Check aria-hidden="true" size={16} />}
               {isSubmitting ? "Ingresando la orden…" : "Ingresar al taller"}

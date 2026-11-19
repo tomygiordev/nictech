@@ -13,6 +13,7 @@ import {
   Info,
   CheckCircle2,
 } from "lucide-react";
+import { StatePanel } from "../../components/erp/WorkspaceUi";
 import {
   ERP_TUTORIALS,
   KEYBOARD_SHORTCUTS,
@@ -386,11 +387,11 @@ export const ModuleTutorialModal: React.FC<ModuleTutorialModalProps> = ({
                 {currentStep.limitations && (
                   <div
                     style={{
-                      background: "#fffbeb",
-                      border: "1px solid #fde68a",
+                      background: "var(--amber-soft)",
+                      border: "1px solid var(--amber-border)",
                       borderRadius: "10px",
                       padding: "10px 12px",
-                      color: "#92400e",
+                      color: "var(--amber-text)",
                       fontSize: "12px",
                       lineHeight: "1.4",
                     }}
@@ -427,7 +428,7 @@ export const ModuleTutorialModal: React.FC<ModuleTutorialModalProps> = ({
                   }}
                 >
                   <Info size={13} />
-                  <span>Pantalla interactiva simulada (Podés hacer clic y probarla):</span>
+                  <span>{currentStep.mockComponent ? "Pantalla interactiva simulada (Podés hacer clic y probarla):" : "Vista del módulo"}</span>
                 </div>
                 <div
                   style={{
@@ -442,7 +443,9 @@ export const ModuleTutorialModal: React.FC<ModuleTutorialModalProps> = ({
                     flexDirection: "column",
                   }}
                 >
-                  {currentStep.mockComponent}
+                  {currentStep.mockComponent ?? (
+                    <StatePanel type="info" title="Sin simulación para este módulo" message="Usá «Abrir módulo real» para verlo en funcionamiento." />
+                  )}
                 </div>
               </div>
             </div>

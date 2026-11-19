@@ -7,6 +7,7 @@ import {
   Search,
   Eye,
   Plus,
+  UserPlus,
   Phone,
   Trash2,
   DollarSign,
@@ -18,6 +19,7 @@ import {
   ConfirmDialog,
   FeedbackAlert,
   KpiCard,
+  StatePanel,
 } from "../../components/erp/WorkspaceUi";
 import { Field, FormError } from "../../components/erp/FormFeedback";
 import { formatCurrency } from "../../lib/formatters";
@@ -365,7 +367,8 @@ export const CustomersWorkspace = () => {
       <WorkspaceHeader
         title="Gestión de Clientes & CRM"
         description="Ficha unificada de clientes, historial de compras y reparaciones activas en taller."
-        badge={customers.length === 1 ? "1 cliente registrado" : `${customers.length} clientes registrados`}
+        badge={loading ? undefined : (customers.length === 1 ? "1 cliente registrado" : `${customers.length} clientes registrados`)}
+        badgeTone="neutral"
       />
 
       {feedback && (
@@ -444,7 +447,7 @@ export const CustomersWorkspace = () => {
                 <th>Código interno</th>
                 <th>Nombre / Razón Social</th>
                 <th>Contacto</th>
-                <th>Compras</th>
+                <th className="num">Compras</th>
                 <th>Taller</th>
                 <th className="text-right">Acción</th>
               </tr>
@@ -452,8 +455,14 @@ export const CustomersWorkspace = () => {
             <tbody>
               {filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "36px", color: "var(--text-muted)" }}>
-                    {loading ? "Cargando clientes desde la base de datos…" : error ? error : "No hay clientes registrados en el sistema."}
+                  <td colSpan={6} style={{ padding: 0 }}>
+                    {loading ? (
+                      <StatePanel type="loading" message="Cargando clientes desde la base de datos…" />
+                    ) : error ? (
+                      <StatePanel type="error" message={error} />
+                    ) : (
+                      <StatePanel type="empty" message="No hay clientes registrados en el sistema." />
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -487,7 +496,7 @@ export const CustomersWorkspace = () => {
                       <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>{c.phone}</span>
                     </div>
                   </td>
-                  <td>
+                  <td className="num">
                     <span className="type-badge green">
                       {c.ordersCount === 1 ? "1 pedido" : `${c.ordersCount} pedidos`}
                     </span>
@@ -623,28 +632,27 @@ export const CustomersWorkspace = () => {
               </div>
             )}
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
+            <div className="erp-modal-footer">
               {selectedCustomer.phone && selectedCustomer.phone !== "—" && (
                 <a
                   href={`https://wa.me/${selectedCustomer.phone.replace(/[^0-9]/g, "")}?text=Hola%20${encodeURIComponent(selectedCustomer.name)},%20te%20escribimos%20desde%20NicTech.`}
                   target="_blank"
                   rel="noreferrer"
-                  className="pag-btn"
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--brand-primary)", textDecoration: "none" }}
+                  className="btn-secondary"
+                  style={{ textDecoration: "none" }}
                 >
                   <Phone size={14} /> WhatsApp
                 </a>
               )}
               {hasPermission("customers.manage") && (
-                <button type="button" className="pag-btn" onClick={() => openEdit(selectedCustomer)}>
+                <button type="button" className="btn-primary" onClick={() => openEdit(selectedCustomer)}>
                   Editar datos de contacto
                 </button>
               )}
               {hasPermission("customers.manage") && (
                 <button
                   type="button"
-                  className="pag-btn"
-                  style={{ color: "var(--rose-accent)", marginLeft: "auto" }}
+                  className="btn-danger"
                   onClick={() => setCustomerToDeactivate(selectedCustomer.id)}
                 >
                   <Trash2 size={14} /> Dar de baja
@@ -656,7 +664,7 @@ export const CustomersWorkspace = () => {
       )}
 
       <Modal isOpen={Boolean(customerToEdit)} onClose={() => setCustomerToEdit(null)} title="Editar datos de contacto" icon={Users} maxWidth="520px">
-        <form className="erp-form" onSubmit={editForm.handleSubmit(handleEditCustomer)} noValidate>
+        <form style={{ display: "flex", flexDirection: "column" }} onSubmit={editForm.handleSubmit(handleEditCustomer)} noValidate>
           <FormError message={editForm.formState.errors.root?.server?.message ?? null} />
           <Field label="Nombre visible" required error={editForm.formState.errors.name?.message}>
             {(a11y) => <input {...a11y} className="erp-form-input" {...editForm.register("name")} />}
@@ -667,8 +675,8 @@ export const CustomersWorkspace = () => {
           <Field label="Teléfono" error={editForm.formState.errors.phone?.message}>
             {(a11y) => <input {...a11y} className="erp-form-input" type="tel" {...editForm.register("phone")} />}
           </Field>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "12px" }}>
-            <button type="button" className="pag-btn" onClick={() => setCustomerToEdit(null)}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => setCustomerToEdit(null)}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={editForm.formState.isSubmitting}>Guardar cambios</button>
           </div>
         </form>
@@ -680,7 +688,7 @@ export const CustomersWorkspace = () => {
         onClose={closeNewCustomerModal}
         title="Nuevo cliente"
         subtitle="Agregá un cliente particular o corporativo al padrón del ERP"
-        icon={Plus}
+        icon={UserPlus}
         maxWidth="520px"
       >
         <form onSubmit={form.handleSubmit(handleCreateCustomer)} style={{ display: "flex", flexDirection: "column", gap: "12px" }} noValidate>
@@ -784,8 +792,8 @@ export const CustomersWorkspace = () => {
             </Field>
           )}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={closeNewCustomerModal}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={closeNewCustomerModal}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={form.formState.isSubmitting}>
               {form.formState.isSubmitting ? "Guardando…" : "Guardar cliente"}
             </button>

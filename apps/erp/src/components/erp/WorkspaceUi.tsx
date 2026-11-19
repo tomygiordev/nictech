@@ -13,20 +13,28 @@ export interface WorkspaceHeaderProps {
   title: string;
   description: string;
   badge?: string;
+  badgeTone?: "info" | "warning" | "neutral";
   actions?: React.ReactNode;
 }
+
+const HEADER_BADGE_CLASS: Record<NonNullable<WorkspaceHeaderProps["badgeTone"]>, string> = {
+  info: "status-pill status-pill--mint",
+  warning: "status-pill status-pill--amber",
+  neutral: "status-pill status-pill--navy",
+};
 
 export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
   title,
   description,
   badge,
+  badgeTone = "info",
   actions,
 }) => (
   <div className="workspace-header">
     <div>
       <div className="workspace-header__title-row">
         <h2>{title}</h2>
-        {badge && <span className="status-pill status-pill--mint">{badge}</span>}
+        {badge && <span className={HEADER_BADGE_CLASS[badgeTone]}>{badge}</span>}
       </div>
       <p className="workspace-header__desc">{description}</p>
     </div>
@@ -143,7 +151,11 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       <div className="flow-kpi-card__content">
         <span className="flow-kpi-card__label">{label}</span>
         <div className="flow-kpi-card__val-row">
-          <strong className="flow-kpi-card__val">{value}</strong>
+          <strong
+            className={`flow-kpi-card__val${typeof value === "string" && !/\d/.test(value) ? " flow-kpi-card__val--text" : ""}`}
+          >
+            {value}
+          </strong>
           {trend && (
             <span className={`flow-trend-tag ${trend.positive !== false ? "positive" : "negative"}`}>
               {TrendIcon && <TrendIcon size={12} />}
@@ -172,6 +184,11 @@ export const FeedbackAlert: React.FC<FeedbackAlertProps> = ({
   onClose,
   action,
 }) => {
+  const alertRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    alertRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [message, type]);
+
   const Icon =
     type === "success"
       ? CheckCircle2
@@ -181,53 +198,47 @@ export const FeedbackAlert: React.FC<FeedbackAlertProps> = ({
       ? AlertTriangle
       : Info;
 
-  const colorVar =
-    type === "success"
-      ? "var(--emerald-success)"
-      : type === "error"
-      ? "var(--rose-accent)"
-      : type === "warning"
-      ? "var(--amber-accent)"
-      : "var(--brand-primary)";
-
-  const bgVar =
-    type === "success"
-      ? "var(--emerald-soft)"
-      : type === "error"
-      ? "var(--rose-soft)"
-      : type === "warning"
-      ? "var(--amber-soft)"
-      : "var(--brand-soft)";
+  const tone = {
+    success: { text: "var(--emerald-text)", bg: "var(--emerald-soft)", border: "var(--emerald-border)" },
+    error: { text: "var(--rose-text)", bg: "var(--rose-soft)", border: "var(--rose-border)" },
+    warning: { text: "var(--amber-text)", bg: "var(--amber-soft)", border: "var(--amber-border)" },
+    info: { text: "var(--brand-primary)", bg: "var(--brand-soft)", border: "var(--brand-border)" },
+  }[type];
 
   return (
     <div
-      className="state-panel"
+      ref={alertRef}
+      className="state-panel state-panel--alert"
       style={{
-        borderColor: colorVar,
-        background: bgVar,
-        marginBottom: "16px",
+        alignItems: "center",
+        gap: "12px",
+        marginTop: 0,
+        marginBottom: "12px",
+        padding: "12px 16px",
+        borderColor: tone.border,
+        background: tone.bg,
+        boxShadow: "none",
       }}
       role={type === "error" ? "alert" : "status"}
     >
-      <div className="state-panel__icon" style={{ color: colorVar }}>
-        <Icon size={22} />
+      <div className="state-panel__icon" style={{ color: tone.text, display: "grid" }}>
+        <Icon size={20} />
       </div>
-      <div className="state-panel__content" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-        <div>
-          <strong style={{ color: colorVar, fontSize: "14px", display: "block" }}>{message}</strong>
-          {submessage && <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted)" }}>{submessage}</p>}
+      <div className="state-panel__content" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", width: "100%", minWidth: 0 }}>
+        <div style={{ minWidth: 0 }}>
+          <strong style={{ color: tone.text, fontSize: "13.5px", display: "block" }}>{message}</strong>
+          {submessage && <p style={{ margin: "2px 0 0", fontSize: "12.5px", color: "var(--text-muted)" }}>{submessage}</p>}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
           {action}
           {onClose && (
             <button
               type="button"
-              className="pag-btn"
+              className="erp-modal-close-btn"
               onClick={onClose}
               aria-label="Cerrar notificación"
-              style={{ background: "#ffffff", padding: "4px 8px", fontSize: "12px" }}
             >
-              ✕ Cerrar
+              <X size={16} />
             </button>
           )}
         </div>
@@ -245,6 +256,7 @@ export interface ModalProps {
   maxWidth?: string;
   footer?: React.ReactNode;
   icon?: LucideIcon;
+  /** @deprecated El cuerpo del modal siempre scrollea; se mantiene por compatibilidad. */
   scrollBody?: boolean;
 }
 
@@ -257,7 +269,6 @@ export const Modal: React.FC<ModalProps> = ({
   maxWidth = "520px",
   footer,
   icon: Icon,
-  scrollBody = false,
 }) => {
   const titleId = useId();
   const subtitleId = useId();
@@ -358,10 +369,7 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         ref={dialogRef}
         className="erp-modal-content flow-card"
-        style={{
-          maxWidth,
-          ...(scrollBody ? { maxHeight: "90dvh", overflow: "hidden" } : {}),
-        }}
+        style={{ maxWidth }}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -397,12 +405,7 @@ export const Modal: React.FC<ModalProps> = ({
           </button>
         </div>
 
-        <div
-          className="erp-modal-body"
-          style={scrollBody ? { minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" } : undefined}
-        >
-          {children}
-        </div>
+        <div className="erp-modal-body">{children}</div>
 
         {footer && <div className="erp-modal-footer">{footer}</div>}
       </div>
@@ -445,13 +448,13 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       maxWidth="440px"
       icon={Icon}
     >
-      <p style={{ margin: "0 0 20px", fontSize: "14px", color: "var(--text-muted)", lineHeight: 1.5 }}>
+      <p style={{ margin: "0 0 4px", fontSize: "14px", color: "var(--text-muted)", lineHeight: 1.5 }}>
         {message}
       </p>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+      <div className="erp-modal-footer">
         <button
           type="button"
-          className="pag-btn"
+          className="btn-secondary"
           data-autofocus
           onClick={onCancel}
           disabled={isPending}

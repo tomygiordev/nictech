@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Hammer } from "lucide-react";
 import { Field, FormError } from "../../components/erp/FormFeedback";
 import { Modal } from "../../components/erp/WorkspaceUi";
 import { recordRepairLabor } from "./api";
@@ -66,7 +67,7 @@ function RepairLaborForm({
   };
 
   return (
-    <Modal isOpen onClose={requestClose} title="Registrar mano de obra" scrollBody>
+    <Modal isOpen onClose={requestClose} title="Registrar mano de obra" icon={Hammer} scrollBody>
       <form onSubmit={submit} noValidate>
         <fieldset disabled={isSubmitting} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
           <Field label="Trabajo realizado" required error={errors.description?.message}>
@@ -97,8 +98,8 @@ function RepairLaborForm({
             </Field>
           )}
           <FormError message={errors.root?.server?.message ?? null} />
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
-            <button type="button" className="btn-ghost" onClick={requestClose}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={requestClose}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={isSubmitting}>
               {isSubmitting ? "Registrando trabajo…" : "Registrar trabajo"}
             </button>

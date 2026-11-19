@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { AlertCircle, X } from "lucide-react";
 
 export function FormError({
@@ -8,11 +8,17 @@ export function FormError({
   message: string | null;
   onDismiss?: () => void;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (message) ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [message]);
+
   if (!message) return null;
 
   return (
     <div
-      className="state-panel"
+      ref={ref}
+      className="state-panel state-panel--alert"
       role="alert"
       aria-live="assertive"
       style={{
@@ -20,10 +26,11 @@ export function FormError({
         gap: "8px",
         marginTop: 0,
         padding: "10px 14px",
-        borderRadius: "6px",
-        borderColor: "var(--rose-accent)",
+        borderRadius: "10px",
+        borderColor: "var(--rose-border)",
         background: "var(--rose-soft)",
-        color: "var(--rose-accent)",
+        color: "var(--rose-text)",
+        boxShadow: "none",
       }}
     >
       <AlertCircle aria-hidden="true" size={18} style={{ flexShrink: 0 }} />
@@ -47,7 +54,7 @@ export function FormError({
 
 export function FieldError({ id, message }: { id: string; message: string }) {
   return (
-    <span id={id} role="alert" style={{ color: "var(--rose-accent)", fontSize: "12px" }}>
+    <span id={id} role="alert" style={{ color: "var(--rose-text)", fontSize: "12px" }}>
       {message}
     </span>
   );

@@ -151,6 +151,7 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
           listStyle: "none",
           padding: 0,
           margin: "12px 0 16px",
+          fontSize: "13.5px",
           display: "flex",
           flexDirection: "column",
           gap: "8px",
@@ -170,13 +171,13 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
                 gap: "8px",
               }}
             >
-              <span>{user.display_name}:{" "}</span>
+              <strong style={{ fontWeight: 650 }}>{user.display_name}:{" "}</strong>
               {pendingRole ? (
                 <span className="status-pill status-pill--amber">
                   Sin rol — pendiente de asignación
                 </span>
               ) : (
-                <span>{userRoles.join(", ") || "Sin rol"}</span>
+                <span className="status-pill status-pill--navy">{userRoles.join(", ") || "Sin rol"}</span>
               )}
             </li>
           );
@@ -184,10 +185,10 @@ export const RoleAssignment = ({ users }: { users: SystemUser[] }) => {
       </ul>
 
         <form onSubmit={(event) => void submit(event)}>
-          <p>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)", margin: "0 0 12px" }}>
             El cambio reemplaza las asignaciones vigentes por un rol global. No podés cambiar tu propio rol.
           </p>
-          {disabledReason && <p id="role-assignment-restriction">{disabledReason}</p>}
+          {disabledReason && <p id="role-assignment-restriction" style={{ fontSize: "13px", color: "var(--text-muted)", margin: "0 0 12px" }}>{disabledReason}</p>}
 
           <div className="erp-form-row">
             <div className="erp-form-group">

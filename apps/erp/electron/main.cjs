@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require("electron");
+app.commandLine.appendSwitch("lang", "es-AR");
 const path = require("path");
 const fs = require("fs");
 const { pathToFileURL } = require("url");

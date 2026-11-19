@@ -57,6 +57,32 @@ interface RepairOrderOption {
   status: string;
 }
 
+const QUOTE_STATUS = {
+  approved: { tone: "completed", label: "Aprobado", detail: "Aprobado por el cliente", icon: Check },
+  rejected: { tone: "cancelled", label: "Rechazado", detail: "Rechazado por el cliente", icon: XCircle },
+  expired: { tone: "cancelled", label: "Vencido", detail: "Vencido", icon: Clock },
+  issued: { tone: "confirmed", label: "Emitido / Pendiente", detail: "Emitido (Esperando respuesta)", icon: Clock },
+  draft: { tone: "neutral", label: "Borrador", detail: "Borrador inicial", icon: FileText },
+} as const;
+
+const quoteStatus = (quote: QuoteOverview, isExpired: boolean) => {
+  if (quote.decision === "approved" || quote.decision === "rejected") return QUOTE_STATUS[quote.decision];
+  if (isExpired) return QUOTE_STATUS.expired;
+  return quote.issued_at ? QUOTE_STATUS.issued : QUOTE_STATUS.draft;
+};
+
+const isQuoteExpired = (quote: QuoteOverview) => !!quote.expires_at && new Date(quote.expires_at) < new Date();
+
+const QuoteStatusBadge = ({ quote, detail = false }: { quote: QuoteOverview; detail?: boolean }) => {
+  const { tone, label, detail: detailLabel, icon: Icon } = quoteStatus(quote, isQuoteExpired(quote));
+  return (
+    <span className={`flow-status-pill ${tone}`}>
+      {!detail && <Icon size={11} aria-hidden="true" />}
+      {detail ? detailLabel : label}
+    </span>
+  );
+};
+
 export const QuotesWorkspace = () => {
   const { hasPermission } = useErpAuth();
   const canManageQuotes = hasPermission("quotes.manage");
@@ -352,6 +378,7 @@ export const QuotesWorkspace = () => {
         title="Presupuestos comerciales"
         description="Presupuestos técnicos versionados vinculados a órdenes de servicio, líneas detalladas de repuestos y mano de obra, emisión trazable y registro formal de respuesta del cliente."
         badge={`${quotes.length} Presupuestos registrados`}
+        badgeTone="neutral"
       />
 
       {feedback && (
@@ -440,14 +467,14 @@ export const QuotesWorkspace = () => {
         </div>
 
         <div className="flow-table-wrapper">
-          <table className="flow-table">
+          <table className="flow-table flow-table--compact">
             <thead>
               <tr>
                 <th>Nro / Orden</th>
                 <th>Cliente & Contacto</th>
                 <th>Conceptos / Líneas</th>
                 <th>Validez</th>
-                <th>Total</th>
+                <th className="num">Total</th>
                 <th>Estado comercial</th>
                 <th className="text-right">Acciones</th>
               </tr>
@@ -467,11 +494,11 @@ export const QuotesWorkspace = () => {
                 </tr>
               ) : (
                 filteredQuotes.map((q) => {
-                  const isExpired = q.expires_at ? new Date(q.expires_at) < new Date() : false;
+                  const isExpired = isQuoteExpired(q);
                   const cannotIssueDraft = !q.issued_at && !canManageQuotes;
                   return (
                     <tr key={q.id}>
-                      <td>
+                      <td className="nowrap">
                         <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                           <span className="type-badge green" style={{ fontFamily: "monospace", width: "fit-content" }}>
                             {q.order_code} (v{q.version})
@@ -500,41 +527,21 @@ export const QuotesWorkspace = () => {
                           )}
                         </span>
                       </td>
-                      <td>
-                        <span style={{ fontSize: "12px", color: isExpired ? "var(--rose-accent)" : "var(--text-muted)" }}>
+                      <td className="nowrap">
+                        <span style={{ fontSize: "12px", color: isExpired ? "var(--rose-text)" : "var(--text-muted)" }}>
                           {q.expires_at ? formatDate(q.expires_at) : "Sin vencimiento"}
                         </span>
                       </td>
-                      <td>
-                        <strong style={{ color: "var(--brand-primary)" }}>
+                      <td className="num">
+                        <span className="amount-val">
                           {formatCurrency(q.total_amount, q.currency_code as "ARS" | "USD")}
-                        </strong>
+                        </span>
                       </td>
                       <td>
-                        {q.decision === "approved" ? (
-                          <span className="flow-status-pill completed" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <Check size={11} aria-hidden="true" /> Aprobado
-                          </span>
-                        ) : q.decision === "rejected" ? (
-                          <span className="flow-status-pill failed" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <XCircle size={11} aria-hidden="true" /> Rechazado
-                          </span>
-                        ) : isExpired ? (
-                          <span className="flow-status-pill cancelled" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <Clock size={11} aria-hidden="true" /> Vencido
-                          </span>
-                        ) : q.issued_at ? (
-                          <span className="flow-status-pill confirmed" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <Clock size={11} aria-hidden="true" /> Emitido / Pendiente
-                          </span>
-                        ) : (
-                          <span className="flow-status-pill pending" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                            <FileText size={11} aria-hidden="true" /> Borrador
-                          </span>
-                        )}
+                        <QuoteStatusBadge quote={q} />
                       </td>
                       <td className="text-right">
-                        <div style={{ display: "inline-flex", gap: "6px" }}>
+                        <div className="quote-row-actions">
                           <button
                             type="button"
                             className="pag-btn"
@@ -614,24 +621,16 @@ export const QuotesWorkspace = () => {
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {/* Status overview bar */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--surface-subtle)", padding: "12px 16px", borderRadius: "8px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", justifyContent: "space-between", alignItems: "center", background: "var(--surface-subtle)", padding: "12px 16px", borderRadius: "8px" }}>
               <div>
                 <span className="stat-label">Estado de decisión</span>
                 <div style={{ marginTop: "4px" }}>
-                  {selectedQuote.decision === "approved" ? (
-                    <span className="flow-status-pill completed">Aprobado por el cliente</span>
-                  ) : selectedQuote.decision === "rejected" ? (
-                    <span className="flow-status-pill failed">Rechazado por el cliente</span>
-                  ) : selectedQuote.issued_at ? (
-                    <span className="flow-status-pill confirmed">Emitido (Esperando respuesta)</span>
-                  ) : (
-                    <span className="flow-status-pill pending">Borrador inicial</span>
-                  )}
+                  <QuoteStatusBadge quote={selectedQuote} detail />
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
                 <span className="stat-label">Total presupuestado</span>
-                <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--brand-primary)", marginTop: "2px" }}>
+                <div className="num amount-val" style={{ fontSize: "18px", marginTop: "2px" }}>
                   {formatCurrency(selectedQuote.total_amount, selectedQuote.currency_code as "ARS" | "USD")}
                 </div>
               </div>
@@ -647,10 +646,10 @@ export const QuotesWorkspace = () => {
                       <th>#</th>
                       <th>Tipo</th>
                       <th>Descripción</th>
-                      <th>Cant.</th>
-                      <th>Precio unit.</th>
-                      <th>IVA</th>
-                      <th className="text-right">Total</th>
+                      <th className="num">Cant.</th>
+                      <th className="num">Precio unit.</th>
+                      <th className="num">IVA</th>
+                      <th className="num">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -663,11 +662,11 @@ export const QuotesWorkspace = () => {
                           </span>
                         </td>
                         <td>{l.description}</td>
-                        <td>{l.quantity}</td>
-                        <td>{formatCurrency(l.unit_price, selectedQuote.currency_code as "ARS" | "USD")}</td>
-                        <td>{l.tax_rate_percent}%</td>
-                        <td className="text-right">
-                          <strong>{formatCurrency(l.line_total, selectedQuote.currency_code as "ARS" | "USD")}</strong>
+                        <td className="num">{l.quantity}</td>
+                        <td className="num">{formatCurrency(l.unit_price, selectedQuote.currency_code as "ARS" | "USD")}</td>
+                        <td className="num">{l.tax_rate_percent}%</td>
+                        <td className="num">
+                          <span className="amount-val">{formatCurrency(l.line_total, selectedQuote.currency_code as "ARS" | "USD")}</span>
                         </td>
                       </tr>
                     ))}
@@ -675,16 +674,16 @@ export const QuotesWorkspace = () => {
                   <tfoot>
                     <tr>
                       <td colSpan={6} style={{ textAlign: "right", fontWeight: 600 }}>Subtotal:</td>
-                      <td className="text-right">{formatCurrency(selectedQuote.subtotal_amount, selectedQuote.currency_code as "ARS" | "USD")}</td>
+                      <td className="num">{formatCurrency(selectedQuote.subtotal_amount, selectedQuote.currency_code as "ARS" | "USD")}</td>
                     </tr>
                     <tr>
                       <td colSpan={6} style={{ textAlign: "right", fontWeight: 600 }}>IVA / Impuestos:</td>
-                      <td className="text-right">{formatCurrency(selectedQuote.tax_amount, selectedQuote.currency_code as "ARS" | "USD")}</td>
+                      <td className="num">{formatCurrency(selectedQuote.tax_amount, selectedQuote.currency_code as "ARS" | "USD")}</td>
                     </tr>
                     <tr>
                       <td colSpan={6} style={{ textAlign: "right", fontWeight: 700, fontSize: "14px" }}>Total general:</td>
-                      <td className="text-right" style={{ fontWeight: 700, fontSize: "14px", color: "var(--brand-primary)" }}>
-                        {formatCurrency(selectedQuote.total_amount, selectedQuote.currency_code as "ARS" | "USD")}
+                      <td className="num">
+                        <span className="amount-val">{formatCurrency(selectedQuote.total_amount, selectedQuote.currency_code as "ARS" | "USD")}</span>
                       </td>
                     </tr>
                   </tfoot>
@@ -693,8 +692,8 @@ export const QuotesWorkspace = () => {
             </div>
 
             {/* Modal Actions */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
-              <div style={{ display: "flex", gap: "8px" }}>
+            <div className="erp-modal-footer">
+              <div style={{ marginRight: "auto", display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 <button
                   type="button"
                   className="pag-btn"
@@ -728,7 +727,7 @@ export const QuotesWorkspace = () => {
                 )}
               </div>
 
-              <button type="button" className="pag-btn" onClick={() => setSelectedQuote(null)}>
+              <button type="button" className="btn-secondary" onClick={() => setSelectedQuote(null)}>
                 Cerrar
               </button>
             </div>
@@ -826,10 +825,10 @@ export const QuotesWorkspace = () => {
                 )}
               </Field>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
+              <div className="erp-modal-footer">
                 <button
                   type="button"
-                  className="pag-btn"
+                  className="btn-secondary"
                   onClick={closeDecisionModal}
                   disabled={submittingDecision}
                 >
@@ -1175,10 +1174,10 @@ export const QuotesWorkspace = () => {
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border-line)", paddingTop: "12px" }}>
+            <div className="erp-modal-footer">
               <button
                 type="button"
-                className="pag-btn"
+                className="btn-secondary"
                 onClick={closeNewQuoteModal}
                 disabled={submittingQuote}
               >

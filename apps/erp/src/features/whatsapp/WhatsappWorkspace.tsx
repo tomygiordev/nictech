@@ -357,6 +357,7 @@ export const WhatsappWorkspace = ({
           title="WhatsApp Business & Comunicaciones"
           description="Conversaciones, consentimiento y solicitudes de mensajes registradas."
           badge="Conexión pendiente"
+          badgeTone="warning"
         />
         <StatePanel type="loading" title="Cargando bandeja" message="Consultando conversaciones en Supabase…" />
       </div>
@@ -370,6 +371,7 @@ export const WhatsappWorkspace = ({
           title="WhatsApp Business & Comunicaciones"
           description="Conversaciones, consentimiento y solicitudes de mensajes registradas."
           badge="Conexión pendiente"
+          badgeTone="warning"
         />
         <StatePanel
           type="error"
@@ -393,6 +395,7 @@ export const WhatsappWorkspace = ({
         title="WhatsApp Business & Comunicaciones"
         description="Conversaciones, consentimientos y plantillas. La conexión con Meta WhatsApp Cloud API aún no está configurada: el ERP registra solicitudes, pero no envía mensajes."
         badge="Conexión pendiente"
+        badgeTone="warning"
       />
 
       {feedback && (

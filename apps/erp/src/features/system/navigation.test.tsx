@@ -21,7 +21,20 @@ vi.mock("./api", async (importOriginal) => {
   };
 });
 const auth: ErpAuthContextValue = {
-  session: null, organizationId: "org", branchIds: [], permissions: [], loading: false, error: null, hasPermission: () => true,
+  session: {
+    access_token: "test-token",
+    token_type: "bearer",
+    expires_in: 3600,
+    refresh_token: "test-refresh",
+    user: {
+      id: "test-user",
+      app_metadata: {},
+      user_metadata: {},
+      aud: "authenticated",
+      created_at: "2026-11-19T00:00:00Z",
+    },
+  },
+  organizationId: "org", branchIds: [], permissions: [], loading: false, error: null, hasPermission: () => true,
 };
 const wrap = (component: React.ReactNode) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

@@ -11,6 +11,7 @@ import {
   Building,
   DollarSign,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   PackageCheck,
   RefreshCw,
@@ -959,6 +960,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
             : "Emisión y seguimiento de órdenes de compra y recepción de mercadería."
         }
         badge={isSuppliersMode ? `${suppliers.length} Proveedores` : `${purchases.length} Órdenes ERP`}
+        badgeTone="neutral"
       />
 
       {onSelectModule && (
@@ -1077,8 +1079,8 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                   <th>Proveedor</th>
                   <th>Líneas / Variantes</th>
                   <th>Fecha</th>
-                  <th>Total Orden</th>
-                  <th>Recepción Física</th>
+                  <th className="num">Total Orden</th>
+                  <th className="num">Recepción Física</th>
                   <th>Estado</th>
                   <th className="text-right">Acciones</th>
                 </tr>
@@ -1140,17 +1142,15 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                               ))}
                             </div>
                           </td>
-                          <td>
+                          <td className="nowrap">
                             <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
                               {formatDate(po.ordered_at || todayIsoAR())}
                             </span>
                           </td>
-                          <td>
-                            <strong style={{ color: "var(--brand-primary)" }}>
-                              {formatCurrency(totalOrderArs, "ARS")}
-                            </strong>
+                          <td className="num">
+                            <span className="amount-val">{formatCurrency(totalOrderArs, "ARS")}</span>
                           </td>
-                          <td>
+                          <td className="num">
                             <span
                               style={{
                                 fontSize: "12px",
@@ -1193,16 +1193,13 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                               ) : !isFullyReceived ? (
                                 <button
                                   type="button"
-                                  className="btn-primary"
-                                  style={{ fontSize: "12px", padding: "4px 10px" }}
+                                  className="pag-btn"
                                   onClick={() => openReceiptModal(po)}
                                 >
                                   <PackageCheck size={13} /> Recepcionar
                                 </button>
                               ) : (
-                                <span style={{ fontSize: "12px", color: "var(--emerald-success)", fontWeight: 600 }}>
-                                  ✓ Concluido
-                                </span>
+                                <span className="flow-status-pill completed">Concluido</span>
                               )}
                             </div>
                           </td>
@@ -1258,7 +1255,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                   <th>CUIT / ID Fiscal</th>
                   <th>Rubro Principal</th>
                   <th>Condición Comercial</th>
-                  <th>Saldo Adeudado (ARS)</th>
+                  <th className="num">Saldo Adeudado (ARS)</th>
                   <th>Contacto</th>
                   <th className="text-right">Acción</th>
                 </tr>
@@ -1285,12 +1282,12 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                         <td><span style={{ fontFamily: "monospace", fontSize: "12px", color: "var(--text-muted)" }}>{sup.cuit}</span></td>
                         <td><span className="module-state-badge">{sup.category}</span></td>
                         <td><span style={{ fontSize: "12px", fontWeight: 600 }}>{sup.terms}</span></td>
-                        <td>
-                          <strong style={{ color: sup.balanceArs > 0 ? "var(--amber-accent)" : "var(--emerald-success)" }}>
-                            {sup.balanceArs > 0 ? formatCurrency(sup.balanceArs, "ARS") : "Al día ($0)"}
-                          </strong>
+                        <td className="num">
+                          {sup.balanceArs > 0
+                            ? <span className="amount-val">{formatCurrency(sup.balanceArs, "ARS")}</span>
+                            : <span className="flow-status-pill completed">Al día ($0)</span>}
                         </td>
-                        <td><span style={{ fontSize: "12px", color: "var(--brand-primary)" }}>{sup.contact}</span></td>
+                        <td><span style={{ fontSize: "12px" }}>{sup.contact}</span></td>
                         <td className="text-right">
                           <button
                             type="button"
@@ -1459,8 +1456,8 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
             })}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={closePoModal} disabled={submittingPo}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={closePoModal} disabled={submittingPo}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={submittingPo}>
               {submittingPo ? "Emitiendo…" : "Emitir orden de compra"}
             </button>
@@ -1473,11 +1470,12 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
           isOpen
           onClose={closeApproval}
           title="No se pudo aprobar la orden de compra"
+          icon={AlertTriangle}
           maxWidth="440px"
         >
           {renderModalError("approval")}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "12px" }}>
-            <button type="button" className="pag-btn" onClick={closeApproval}>Cerrar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={closeApproval}>Cerrar</button>
             <button type="button" className="btn-primary" onClick={() => setModalError("approval", null)}>Volver a intentar</button>
           </div>
         </Modal>
@@ -1595,10 +1593,10 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
+            <div className="erp-modal-footer">
               <button
                 type="button"
-                className="pag-btn"
+                className="btn-secondary"
                 onClick={closeReceipt}
                 disabled={submittingReceipt}
               >
@@ -1681,8 +1679,8 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
             )}
           </Field>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => setIsSupModalOpen(false)} disabled={savingSupplier}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => setIsSupModalOpen(false)} disabled={savingSupplier}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={savingSupplier}>
               {savingSupplier ? "Guardando…" : "Guardar proveedor"}
             </button>
@@ -1769,7 +1767,7 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                         {payment.payment_methods?.name || "Medio de pago"} · {formatDate(payment.occurred_at)}
                         {payment.reference ? ` · ${payment.reference}` : ""}
                       </span>
-                      {reversed && <span className="flow-status-pill canceled">Revertido</span>}
+                      {reversed && <span className="flow-status-pill cancelled">Revertido</span>}
                     </div>
                     {!reversed
                       && hasPermission("purchases.manage")
@@ -1787,8 +1785,8 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
               })}
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
-              <button type="button" className="pag-btn" onClick={() => setSelectedSupplierInfo(null)}>
+            <div className="erp-modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => setSelectedSupplierInfo(null)}>
                 Cerrar
               </button>
               {selectedSupplierInfo.balanceArs > 0
@@ -1940,10 +1938,10 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
               </>
             )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
+            <div className="erp-modal-footer">
               <button
                 type="button"
-                className="pag-btn"
+                className="btn-secondary"
                 disabled={submittingSupplierPayment}
                 onClick={() => {
                   setSupplierPaymentTarget(null);
@@ -2005,10 +2003,10 @@ export const PurchasesWorkspace: React.FC<PurchasesWorkspaceProps> = ({
                 />
               )}
             </Field>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
+            <div className="erp-modal-footer">
               <button
                 type="button"
-                className="pag-btn"
+                className="btn-secondary"
                 disabled={submittingSupplierPaymentReversal}
                 onClick={() => setSupplierPaymentReversalTarget(null)}
               >

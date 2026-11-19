@@ -18,6 +18,7 @@ import { useErpAuth } from "../../auth/ErpAuthContext";
 import { toDateTimeInputAR } from "../../lib/dates";
 import { toUserMessage } from "../../lib/errors";
 import { formatCurrency, formatDateTime } from "../../lib/formatters";
+import { RESERVATION_STATUS_LABELS, labelOf } from "../../lib/labels";
 import { supabase } from "../../lib/supabase";
 import type { Json } from "../../types/supabase";
 import {
@@ -133,7 +134,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_PILL: Record<string, string> = {
-  draft: "flow-status-pill processing",
+  draft: "flow-status-pill neutral",
   reserved: "flow-status-pill confirmed",
   tested: "flow-status-pill confirmed",
   completed: "flow-status-pill completed",
@@ -213,7 +214,7 @@ const ComponentRowsFieldArray = ({
       return (
         <div
           key={field.id}
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px 36px", gap: "8px", alignItems: "start" }}
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr 132px 44px", gap: "8px", alignItems: "start" }}
         >
           <Field label="Slot" required error={rowErrors?.slot_code?.message}>
             {(a11y) => (
@@ -266,7 +267,7 @@ const ComponentRowsFieldArray = ({
           <button
             type="button"
             className="pag-btn"
-            style={{ marginTop: "24px" }}
+            style={{ marginTop: "24px", minHeight: "40px" }}
             onClick={() => onRemove(index)}
             disabled={disabled || fields.length <= 1}
             aria-label={`Quitar componente ${index + 1}`}
@@ -822,6 +823,7 @@ export const PcBuildsWorkspace = () => {
         title="Armados de PC"
         description="Proyectos de armado a medida: revisiones, compatibilidad, reserva, testeo y completitud."
         badge={`${projects.length} Armados`}
+        badgeTone="neutral"
       />
 
       {feedback && (
@@ -888,7 +890,7 @@ export const PcBuildsWorkspace = () => {
                   <th>ID</th>
                   <th>Cliente</th>
                   <th>Título</th>
-                  <th>Costo</th>
+                  <th className="num">Costo</th>
                   <th>Estado</th>
                   <th>Compatibilidad</th>
                   <th className="text-right">Acción</th>
@@ -919,12 +921,9 @@ export const PcBuildsWorkspace = () => {
                       }}
                     >
                       <td>
-                        <code
-                          style={{ display: "block", maxWidth: "150px", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.4, overflowWrap: "anywhere", whiteSpace: "normal", color: "var(--text-muted)" }}
-                          aria-label={`ID completo: ${p.id}`}
-                        >
-                          {p.id}
-                        </code>
+                        <span className="type-badge purple" style={{ fontFamily: "monospace" }} title={p.id} aria-label={`ID completo: ${p.id}`}>
+                          {shortId(p.id)}
+                        </span>
                       </td>
                       <td>
                         <strong style={{ display: "block", lineHeight: 1.35, overflowWrap: "anywhere" }}>{p.customer_name}</strong>
@@ -937,10 +936,10 @@ export const PcBuildsWorkspace = () => {
                       <td>
                         <span style={{ fontSize: "13px", fontWeight: 650 }}>{p.title}</span>
                       </td>
-                      <td>
-                        <strong style={{ color: "var(--brand-primary)" }}>
+                      <td className="num">
+                        <span className="amount-val">
                           {formatCurrency(p.total_components_cost, "ARS")}
-                        </strong>
+                        </span>
                         <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>
                           {p.components_count} comp.
                         </span>
@@ -1064,7 +1063,7 @@ export const PcBuildsWorkspace = () => {
                 <span className="stat-label">Reserva</span>
                 <span style={{ display: "block", fontSize: "12px", marginTop: "2px", fontWeight: 600 }}>
                   {selected.reservation_batch_id
-                    ? `${shortId(selected.reservation_batch_id)} • ${selected.reservation_status ?? "—"}`
+                    ? `${shortId(selected.reservation_batch_id)} • ${selected.reservation_status ? labelOf(RESERVATION_STATUS_LABELS, selected.reservation_status, selected.reservation_status) : "—"}`
                     : "Sin reserva"}
                 </span>
                 {selected.reservation_expires_at && (
@@ -1352,9 +1351,9 @@ export const PcBuildsWorkspace = () => {
                                   fontSize: "12px",
                                   fontWeight: 600,
                                   cursor: canManage ? "pointer" : "not-allowed",
-                                  border: "1px solid #10b981",
-                                  background: testChecks[item.key] === "pass" ? "#10b981" : "transparent",
-                                  color: testChecks[item.key] === "pass" ? "#fff" : "#10b981",
+                                  border: "1px solid var(--emerald-text)",
+                                  background: testChecks[item.key] === "pass" ? "var(--emerald-text)" : "transparent",
+                                  color: testChecks[item.key] === "pass" ? "var(--surface-white)" : "var(--emerald-text)",
                                 }}
                               >
                                 Aprobado
@@ -1373,9 +1372,9 @@ export const PcBuildsWorkspace = () => {
                                   fontSize: "12px",
                                   fontWeight: 600,
                                   cursor: canManage ? "pointer" : "not-allowed",
-                                  border: "1px solid #ef4444",
-                                  background: testChecks[item.key] === "fail" ? "#ef4444" : "transparent",
-                                  color: testChecks[item.key] === "fail" ? "#fff" : "#ef4444",
+                                  border: "1px solid var(--rose-text)",
+                                  background: testChecks[item.key] === "fail" ? "var(--rose-text)" : "transparent",
+                                  color: testChecks[item.key] === "fail" ? "var(--surface-white)" : "var(--rose-text)",
                                 }}
                               >
                                 Falla
@@ -1494,118 +1493,95 @@ export const PcBuildsWorkspace = () => {
               </div>
             )}
 
-            <div
-              style={{
-                position: "sticky",
-                bottom: 0,
-                zIndex: 2,
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-                padding: "12px 0 4px",
-                borderTop: "1px solid var(--border-line)",
-                background: "var(--surface-card)",
-              }}
-            >
-              <FormError message={detailError} onDismiss={() => setDetailError(null)} />
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "8px",
-                }}
+            <FormError message={detailError} onDismiss={() => setDetailError(null)} />
+            <div className="erp-modal-footer">
+              <button
+                type="button"
+                className="pag-btn"
+                style={{ marginRight: "auto" }}
+                onClick={() => setActiveDetailStep((step) => Math.max(1, step - 1))}
+                disabled={activeDetailStep === 1 || detailPending !== null}
               >
+                <ChevronLeft size={15} /> Anterior
+              </button>
+              {activeDetailStep === 1 && (
                 <button
                   type="button"
-                  className="pag-btn"
-                  onClick={() => setActiveDetailStep((step) => Math.max(1, step - 1))}
-                  disabled={activeDetailStep === 1 || detailPending !== null}
+                  className="btn-primary"
+                  onClick={() => void revForm.handleSubmit(handleCreateRevision)()}
+                  disabled={!canManage || detailPending !== null}
+                  title={!canManage ? NO_MANAGE_PERMISSION : undefined}
                 >
-                  <ChevronLeft size={15} /> Anterior
+                  {detailPending === "revision" ? "Creando…" : "Crear revisión"}
                 </button>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", flexWrap: "wrap" }}>
-                  {activeDetailStep === 1 && (
+              )}
+              {activeDetailStep === 2 && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleCompatibility}
+                  disabled={!canManage || detailPending !== null || !selected.latest_revision_id}
+                  title={!canManage ? NO_MANAGE_PERMISSION : undefined}
+                >
+                  {detailPending === "compatibilidad" ? "Registrando…" : "Registrar compatibilidad"}
+                </button>
+              )}
+              {activeDetailStep === 3 && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void reserveForm.handleSubmit(handleReserve)()}
+                  disabled={!canManage || detailPending !== null || !selected.latest_revision_id}
+                  title={!canManage ? NO_MANAGE_PERMISSION : undefined}
+                >
+                  {detailPending === "reserva" ? "Reservando…" : "Reservar componentes"}
+                </button>
+              )}
+              {activeDetailStep === 4 && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleTest}
+                  disabled={!canManage || detailPending !== null || !selected.latest_revision_id}
+                  title={!canManage ? NO_MANAGE_PERMISSION : undefined}
+                >
+                  {detailPending === "test" ? "Registrando…" : "Registrar testeo"}
+                </button>
+              )}
+              {activeDetailStep === 5 && (
+                <>
+                  {selected.completion_id && (
+                    <button
+                      type="button"
+                      className="pag-btn"
+                      onClick={handleLoadCosts}
+                      disabled={!canViewCosts || detailPending !== null}
+                      title={!canViewCosts ? NO_COSTS_PERMISSION : undefined}
+                    >
+                      {detailPending === "costos" ? "Cargando…" : "Ver costos"}
+                    </button>
+                  )}
+                  {!selected.completion_id && (
                     <button
                       type="button"
                       className="btn-primary"
-                      onClick={() => void revForm.handleSubmit(handleCreateRevision)()}
+                      onClick={() => void completeForm.handleSubmit(handleComplete)()}
                       disabled={!canManage || detailPending !== null}
                       title={!canManage ? NO_MANAGE_PERMISSION : undefined}
                     >
-                      {detailPending === "revision" ? "Creando…" : "Crear revisión"}
+                      {detailPending === "complete" ? "Completando…" : "Completar armado"}
                     </button>
                   )}
-                  {activeDetailStep === 2 && (
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      onClick={handleCompatibility}
-                      disabled={!canManage || detailPending !== null || !selected.latest_revision_id}
-                      title={!canManage ? NO_MANAGE_PERMISSION : undefined}
-                    >
-                      {detailPending === "compatibilidad" ? "Registrando…" : "Registrar compatibilidad"}
-                    </button>
-                  )}
-                  {activeDetailStep === 3 && (
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      onClick={() => void reserveForm.handleSubmit(handleReserve)()}
-                      disabled={!canManage || detailPending !== null || !selected.latest_revision_id}
-                      title={!canManage ? NO_MANAGE_PERMISSION : undefined}
-                    >
-                      {detailPending === "reserva" ? "Reservando…" : "Reservar componentes"}
-                    </button>
-                  )}
-                  {activeDetailStep === 4 && (
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      onClick={handleTest}
-                      disabled={!canManage || detailPending !== null || !selected.latest_revision_id}
-                      title={!canManage ? NO_MANAGE_PERMISSION : undefined}
-                    >
-                      {detailPending === "test" ? "Registrando…" : "Registrar testeo"}
-                    </button>
-                  )}
-                  {activeDetailStep === 5 && (
-                    <>
-                      {selected.completion_id && (
-                        <button
-                          type="button"
-                          className="pag-btn"
-                          onClick={handleLoadCosts}
-                          disabled={!canViewCosts || detailPending !== null}
-                          title={!canViewCosts ? NO_COSTS_PERMISSION : undefined}
-                        >
-                          {detailPending === "costos" ? "Cargando…" : "Ver costos"}
-                        </button>
-                      )}
-                      {!selected.completion_id && (
-                        <button
-                          type="button"
-                          className="btn-primary"
-                          onClick={() => void completeForm.handleSubmit(handleComplete)()}
-                          disabled={!canManage || detailPending !== null}
-                          title={!canManage ? NO_MANAGE_PERMISSION : undefined}
-                        >
-                          {detailPending === "complete" ? "Completando…" : "Completar armado"}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    className="pag-btn"
-                    onClick={() => setActiveDetailStep((step) => Math.min(BUILD_STEPS.length, step + 1))}
-                    disabled={activeDetailStep === BUILD_STEPS.length || detailPending !== null}
-                  >
-                    Siguiente <ChevronRight size={15} />
-                  </button>
-                </div>
-              </div>
+                </>
+              )}
+              <button
+                type="button"
+                className="pag-btn"
+                onClick={() => setActiveDetailStep((step) => Math.min(BUILD_STEPS.length, step + 1))}
+                disabled={activeDetailStep === BUILD_STEPS.length || detailPending !== null}
+              >
+                Siguiente <ChevronRight size={15} />
+              </button>
             </div>
           </div>
         </Modal>
@@ -1733,23 +1709,10 @@ export const PcBuildsWorkspace = () => {
             )}
           </Field>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "10px",
-              marginTop: "8px",
-              paddingTop: "12px",
-              borderTop: "1px solid var(--border-line)",
-              position: "sticky",
-              bottom: 0,
-              zIndex: 2,
-              background: "var(--surface-card)",
-            }}
-          >
+          <div className="erp-modal-footer">
             <button
               type="button"
-              className="pag-btn"
+              className="btn-secondary"
               onClick={closeCreateModal}
               disabled={createForm.formState.isSubmitting}
             >

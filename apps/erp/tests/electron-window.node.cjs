@@ -58,6 +58,7 @@ async function bootMain({ development = false, platform = "win32", autoUpdater }
     loadFile(file) { this.loadedFile = file; return Promise.resolve(); }
   }
   const app = Object.assign(new EventEmitter(), {
+    commandLine: { appendSwitch() {} },
     isPackaged: !development,
     getPath: () => "C:/Users/test/AppData/Roaming",
     setPath: () => {},

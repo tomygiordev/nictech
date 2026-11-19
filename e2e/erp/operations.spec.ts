@@ -50,7 +50,7 @@ test('reparación: ingreso, DNI, notas, mano de obra, repuesto, cobro, entrega y
   await expect(stock).toBeHidden();
   const { order, name, dni } = await intakeRepair(page, 'Taller', true);
   expect(order.public_tracking_code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
-  const search = page.getByPlaceholder(/Buscar seguimiento, DNI/);
+  const search = page.getByRole('textbox', { name: 'Buscar reparaciones' });
   await search.fill(dni);
   const row = page.getByRole('button', { name: new RegExp(`Abrir reparación ${order.order_code}`) });
   await expect(row).toContainText(order.public_tracking_code);

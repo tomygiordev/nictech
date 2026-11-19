@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, PackageCheck } from "lucide-react";
 import { Field, FormError } from "../../components/erp/FormFeedback";
 import { Modal } from "../../components/erp/WorkspaceUi";
 import { toUserMessage } from "../../lib/errors";
@@ -104,11 +104,11 @@ function RepairDeliveryForm({
   };
 
   return (
-    <Modal isOpen onClose={requestClose} title={`Entrega formal de equipo: ${order.order_code}`} maxWidth="560px" scrollBody>
+    <Modal isOpen onClose={requestClose} title={`Entrega formal de equipo: ${order.order_code}`} icon={PackageCheck} maxWidth="560px" scrollBody>
       <form onSubmit={submit} noValidate>
         <fieldset disabled={isSubmitting} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ padding: "12px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "8px", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
-            <div style={{ fontWeight: 600, color: "#10b981", fontSize: "13px" }}>Acreditación de retiro</div>
+            <div style={{ fontWeight: 600, color: "var(--emerald-text)", fontSize: "13px" }}>Acreditación de retiro</div>
             <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
               Dispositivo: <strong>{order.brand_snapshot} {order.model_snapshot}</strong> · Titular: <strong>{order.customer_name}</strong>
             </div>
@@ -191,14 +191,13 @@ function RepairDeliveryForm({
 
           <FormError message={errors.root?.server?.message ?? null} />
 
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "10px", marginTop: "4px" }}>
-            <button type="button" className="btn-ghost" onClick={requestClose}>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={requestClose}>
               Cancelar
             </button>
             <button
               type="submit"
               className="btn-primary"
-              style={{ background: "#10b981", borderColor: "#10b981" }}
               disabled={isSubmitting}
             >
               <CheckCircle size={16} />

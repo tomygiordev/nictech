@@ -66,11 +66,16 @@ export const createQuoteSchema = z.object({
 });
 
 export const quoteDecisionSchema = z.object({
-  decision: z.string().pipe(
-    z.enum(["approved", "rejected"], {
-      message: "Elegí si el cliente aprobó o rechazó el presupuesto.",
-    }),
-  ),
+  decision: z
+    .string({
+      required_error: "Elegí si el cliente aprobó o rechazó el presupuesto.",
+      invalid_type_error: "Elegí si el cliente aprobó o rechazó el presupuesto.",
+    })
+    .pipe(
+      z.enum(["approved", "rejected"], {
+        message: "Elegí si el cliente aprobó o rechazó el presupuesto.",
+      }),
+    ),
   notes: z.string().trim().max(1000, "Las notas no pueden superar los 1000 caracteres."),
 });
 

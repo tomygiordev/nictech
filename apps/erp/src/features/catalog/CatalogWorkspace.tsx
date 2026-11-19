@@ -6,7 +6,6 @@ import {
   Tag,
   AlertTriangle,
   DollarSign,
-  Loader2,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
@@ -51,7 +50,7 @@ const MASTER_LOAD_ERROR = "No se pudieron cargar las categorías, marcas, modelo
 const WEB_STATUS = {
   published: { label: "Publicado", className: "completed" },
   paused: { label: "Pausado", className: "processing" },
-  draft: { label: "Borrador", className: "pending" },
+  draft: { label: "Borrador", className: "neutral" },
 } as const;
 
 function isCatalogSchemaMissing(error: unknown) {
@@ -253,7 +252,8 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
             ? "Configuración de precios de venta en ARS/USD, márgenes de comercialización y actualización de cotizaciones."
             : "Gestión oficial de productos, fundas con variantes de color, códigos de barras y existencias por combinación."
         }
-        badge={`${totalCount} Artículos en ERP`}
+        badge={loading ? undefined : `${totalCount} artículos`}
+        badgeTone="neutral"
       />
 
       {onSelectModule && (
@@ -337,7 +337,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
 
       {/* Main Table */}
       <div className="flow-card">
-        <div className="flow-card__header" style={{ flexWrap: "wrap", gap: "12px" }}>
+        <div className="flow-card__header">
           <div>
             <h2 className="flow-card__title">Catálogo Oficial ERP</h2>
             <p className="flow-card__subtitle">
@@ -345,7 +345,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
             </p>
           </div>
 
-          <div className="flow-card__tools" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", minWidth: 0, gap: "10px" }}>
+          <div className="flow-card__tools">
             <button
               type="button"
               className="pag-btn"
@@ -356,7 +356,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             </button>
 
-            <div className="flow-search-pill" style={{ width: "260px", maxWidth: "100%" }}>
+            <div className="flow-search-pill">
               <Search size={15} />
               <input
                 type="text"
@@ -377,7 +377,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
           </div>
         </div>
 
-        <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer" }}>
+        <label className="filter-check" style={{ marginBottom: "10px" }}>
           <input type="checkbox" checked={showInactive} onChange={(e) => { setShowInactive(e.target.checked); setPage(0); }} />
           Ver inactivos
         </label>
@@ -402,10 +402,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
 
         {/* Table View */}
         {loading ? (
-          <div style={{ padding: "48px", textAlign: "center", color: "var(--text-muted)" }}>
-            <Loader2 size={32} className="animate-spin" style={{ margin: "0 auto 12px", color: "var(--brand-primary)" }} />
-            <p style={{ margin: 0, fontWeight: 600 }}>Cargando catálogo ERP…</p>
-          </div>
+          <StatePanel type="loading" message="Cargando catálogo ERP…" />
         ) : error ? (
           <StatePanel type="error" title="Error al cargar productos" message={error} />
         ) : products.length === 0 ? (
@@ -428,8 +425,8 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                   <th>Artículo / Modelo</th>
                   <th>Variantes y stock</th>
                   <th>Categoría</th>
-                  <th>Precio final</th>
-                  <th>Stock vendible</th>
+                  <th className="num">Precio final</th>
+                  <th className="num">Stock vendible</th>
                   <th>Estado</th>
                   {hasActions && <th className="catalog-actions">Acciones</th>}
                 </tr>
@@ -446,7 +443,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                   return (
                     <tr key={item.id}>
                       <td>
-                        <span className="type-badge blue" style={{ fontFamily: "monospace", fontSize: "11px" }}>
+                        <span className="type-badge blue catalog-code" style={{ fontFamily: "monospace", fontSize: "11px" }}>
                           {item.internal_code}
                         </span>
                       </td>
@@ -458,7 +455,7 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                             </button>
                           ) : <strong>{item.internal_name}</strong>}
                           {item.brands?.name && (
-                            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                            <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>
                               {item.brands.name} {item.product_models?.name ? `• ${item.product_models.name}` : ""}
                             </span>
                           )}
@@ -510,15 +507,15 @@ export const CatalogWorkspace: React.FC<CatalogWorkspaceProps> = ({
                           {item.product_categories?.name || "General"}
                         </span>
                       </td>
-                      <td>
-                        <strong style={{ color: "var(--brand-primary)", fontSize: "13px" }}>
+                      <td className="num">
+                        <span className="amount-val">
                           {formatCurrency(item.base_sale_price, "ARS")}
-                        </strong>
+                        </span>
                         <span style={{ fontSize: "10px", color: "var(--text-muted)", display: "block" }}>
                           IVA {typeof item.tax_rate_percent === "number" ? item.tax_rate_percent : 21}% inc.
                         </span>
                       </td>
-                      <td>
+                      <td className="num">
                         <strong
                           style={{
                             fontSize: "13px",

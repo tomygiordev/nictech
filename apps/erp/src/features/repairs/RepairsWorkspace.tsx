@@ -34,6 +34,7 @@ import {
   XCircle,
   Banknote,
   BriefcaseBusiness,
+  ArrowRightCircle,
 } from "lucide-react";
 import {
   WorkspaceHeader,
@@ -89,7 +90,7 @@ const STATUS_PILL_CLASSES: Record<string, string> = {
   diagnosis: "flow-status-pill processing",
   waiting_parts: "flow-status-pill processing",
   repair: "flow-status-pill processing",
-  ready: "flow-status-pill completed",
+  ready: "flow-status-pill confirmed",
   delivered: "flow-status-pill completed",
 };
 
@@ -561,7 +562,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
     requiredQcItems.length > 0 && completedQcItems === requiredQcItems.length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+    <div className="flow-dashboard">
       <WorkspaceHeader
         title="Taller & Servicio Técnico"
         description="Gestión integral de órdenes de reparación, controles de calidad obligatorios, consumo de repuestos y pólizas de garantía."
@@ -641,20 +642,22 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 </p>
               </div>
               <div className="flow-card__tools">
-                <div className="search-box">
+                <div className="flow-search-pill">
                   <Search size={16} />
                   <input
                     type="text"
-                    placeholder={hasPermission("customers.view_sensitive") ? "Buscar seguimiento, DNI, orden o cliente..." : "Buscar seguimiento, orden o cliente..."}
+                    aria-label="Buscar reparaciones"
+                    placeholder={hasPermission("customers.view_sensitive") ? "Código, DNI, orden o cliente" : "Código, orden o cliente"}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
                 <button
                   type="button"
-                  className="btn-ghost"
+                  className="pag-btn"
                   onClick={fetchRepairsData}
                   title="Actualizar listado"
+                  aria-label="Actualizar listado"
                 >
                   <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
                 </button>
@@ -685,29 +688,21 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
             {/* Table */}
             {loading ? (
-              <div style={{ padding: "40px", textAlign: "center" }}>
-                <Loader2 className="animate-spin" size={32} style={{ margin: "0 auto 12px" }} />
-                <p>Cargando órdenes de taller...</p>
-              </div>
+              <StatePanel type="loading" message="Cargando órdenes de taller..." />
             ) : filteredRepairs.length === 0 ? (
-              <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
-                <Wrench size={40} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
-                <p>No se encontraron reparaciones para los filtros seleccionados.</p>
-              </div>
+              <StatePanel type="empty" message="No se encontraron reparaciones para los filtros seleccionados." />
             ) : (
               <div className="flow-table-container">
-                <table className="flow-table flow-table--actions">
+                <table className="flow-table flow-table--actions flow-table--compact">
                   <thead>
                     <tr>
                       <th>Código</th>
-                      <th>Fecha</th>
                       <th>Cliente</th>
                       <th>Dispositivo</th>
                       <th>Falla Declarada</th>
                       <th>Estado</th>
                       <th>Control de calidad</th>
-                      <th>Presupuesto</th>
-                      <th>Repuestos</th>
+                      <th className="num">Presupuesto</th>
                       <th style={{ textAlign: "right" }}>Acción</th>
                     </tr>
                   </thead>
@@ -734,14 +729,14 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                             }
                           }}
                         >
-                          <td style={{ fontWeight: 700, color: "var(--accent-mint)" }}>
-                            <div>{r.order_code}</div>
+                          <td className="nowrap" style={{ fontWeight: 700 }}>
+                            <div style={{ color: "var(--brand-primary)" }}>{r.order_code}</div>
                             <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 500, fontFamily: "monospace" }}>
                               {r.public_tracking_code}
                             </div>
-                          </td>
-                          <td style={{ fontSize: "12px" }}>
-                            {formatDate(r.opened_at)}
+                            <div style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: 500 }}>
+                              {formatDate(r.opened_at)}
+                            </div>
                           </td>
                           <td>
                             <div style={{ fontWeight: 600 }}>{r.customer_name}</div>
@@ -755,7 +750,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                               <span style={{ fontWeight: 600 }}>{r.brand_snapshot} {r.model_snapshot}</span>
                             </div>
                           </td>
-                          <td style={{ maxWidth: "200px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "12px" }} title={r.reported_fault}>
+                          <td style={{ maxWidth: "200px", overflowWrap: "anywhere", fontSize: "12px" }}>
                             {r.reported_fault}
                           </td>
                           <td>
@@ -765,39 +760,36 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                           </td>
                           <td>
                             {r.qc_passed ? (
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "12px", background: "rgba(16, 185, 129, 0.15)", color: "#10b981", fontSize: "11px", fontWeight: 600 }}>
+                              <span className="flow-status-pill completed">
                                 <CheckCircle size={12} /> Aprobado
                               </span>
                             ) : (
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "12px", background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", fontSize: "11px", fontWeight: 600 }}>
+                              <span className="flow-status-pill pending">
                                 <Clock size={12} /> Pendiente
                               </span>
                             )}
                           </td>
-                          <td>
+                          <td className="num">
                             {r.latest_quote ? (
                               <div>
-                                <div style={{ fontWeight: 600, fontSize: "12px" }}>
+                                <span className="amount-val">
                                   {formatCurrency(r.latest_quote.total_amount, r.latest_quote.currency_code as "ARS" | "USD")}
-                                </div>
-                                <div style={{ fontSize: "10px", color: r.latest_quote.decision === "approved" ? "#10b981" : r.latest_quote.decision === "rejected" ? "#ef4444" : "var(--text-muted)" }}>
+                                </span>
+                                <div style={{ fontSize: "11px", color: r.latest_quote.decision === "approved" ? "var(--emerald-text)" : r.latest_quote.decision === "rejected" ? "var(--rose-text)" : "var(--text-muted)" }}>
                                   {r.latest_quote.decision === "approved" ? "✓ Aceptado" : r.latest_quote.decision === "rejected" ? "✕ Rechazado" : "Enviado"}
                                 </div>
                               </div>
                             ) : (
                               <span style={{ color: "var(--text-muted)", fontSize: "12px" }}>—</span>
                             )}
-                          </td>
-                          <td>
-                            <span style={{ fontSize: "12px", color: r.active_parts_count > 0 ? "var(--accent-mint)" : "var(--text-muted)" }}>
+                            <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
                               {r.active_parts_count} pieza{r.active_parts_count !== 1 ? "s" : ""}
-                            </span>
+                            </div>
                           </td>
                           <td style={{ textAlign: "right" }}>
                             <button
                               type="button"
-                              className="btn-ghost"
-                              style={{ padding: "4px 8px", fontSize: "12px" }}
+                              className="pag-btn"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectTicket(r);
@@ -828,10 +820,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           </div>
 
           {loadingTests ? (
-            <div style={{ padding: "40px", textAlign: "center" }}>
-              <Loader2 className="animate-spin" size={32} style={{ margin: "0 auto 12px" }} />
-              <p>Cargando controles de calidad…</p>
-            </div>
+            <StatePanel type="loading" message="Cargando controles de calidad…" />
           ) : testRuns.length === 0 ? (
             <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
               <ClipboardCheck size={40} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
@@ -865,11 +854,11 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                         <td style={{ fontSize: "12px" }}>{formatDateTime(tr.completed_at)}</td>
                         <td>
                           {allPassed ? (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "12px", background: "rgba(16, 185, 129, 0.2)", color: "#10b981", fontSize: "12px", fontWeight: 600 }}>
+                            <span className="flow-status-pill completed">
                               <CheckCircle size={14} /> 100% Conforme
                             </span>
                           ) : (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "12px", background: "rgba(239, 68, 68, 0.2)", color: "#ef4444", fontSize: "12px", fontWeight: 600 }}>
+                            <span className="flow-status-pill cancelled">
                               <XCircle size={14} /> Falla detectada
                             </span>
                           )}
@@ -904,10 +893,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             </div>
 
             {loadingWarranties ? (
-              <div style={{ padding: "40px", textAlign: "center" }}>
-                <Loader2 className="animate-spin" size={32} style={{ margin: "0 auto 12px" }} />
-                <p>Cargando pólizas de garantía...</p>
-              </div>
+              <StatePanel type="loading" message="Cargando pólizas de garantía..." />
             ) : warranties.length === 0 ? (
               <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
                 <ShieldCheck size={40} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
@@ -930,7 +916,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   <tbody>
                     {warranties.map((w) => (
                       <tr key={w.id}>
-                        <td style={{ fontWeight: 700, color: "var(--accent-mint)" }}>{w.order_code}</td>
+                        <td className="nowrap" style={{ fontWeight: 700, color: "var(--accent-mint)" }}>{w.order_code}</td>
                         <td>
                           <div style={{ fontWeight: 600 }}>{w.customer_name}</div>
                           <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{w.customer_phone || "—"}</div>
@@ -940,11 +926,11 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                         <td style={{ fontSize: "12px", fontWeight: 600 }}>{formatDate(w.ends_at)}</td>
                         <td>
                           {w.is_active ? (
-                            <span style={{ padding: "3px 10px", borderRadius: "12px", background: "rgba(16, 185, 129, 0.2)", color: "#10b981", fontSize: "11px", fontWeight: 600 }}>
+                            <span className="flow-status-pill completed">
                               Vigente
                             </span>
                           ) : (
-                            <span style={{ padding: "3px 10px", borderRadius: "12px", background: "rgba(239, 68, 68, 0.2)", color: "#ef4444", fontSize: "11px", fontWeight: 600 }}>
+                            <span className="flow-status-pill cancelled">
                               Vencida
                             </span>
                           )}
@@ -987,7 +973,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   <tbody>
                     {claims.map((c) => (
                       <tr key={c.id}>
-                        <td style={{ fontWeight: 700, color: "#f59e0b" }}>{c.claim_code}</td>
+                        <td style={{ fontWeight: 700, color: "var(--amber-text)" }}>{c.claim_code}</td>
                         <td style={{ color: "var(--accent-mint)" }}>{c.order_code || "—"}</td>
                         <td>{c.customer_name || "—"}</td>
                         <td style={{ fontSize: "12px" }}>{formatDate(c.opened_at)}</td>
@@ -1008,6 +994,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           isOpen={Boolean(selectedTicket)}
           onClose={() => { detailRequest.current++; setSelectedTicket(null); setTicketNotes([]); }}
           title={`Ficha de Reparación: ${selectedTicket.order_code}`}
+          icon={Wrench}
           maxWidth="780px"
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1038,7 +1025,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 </div>
                 <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
                   El cliente verá en <code style={{ fontSize: "11px" }}>/seguimiento</code>:{" "}
-                  <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "999px", background: "rgba(0, 168, 232, 0.14)", color: "#38bdf8", fontWeight: 600 }}>
+                  <span className={selectedTicket.status_public_stage ? (STATUS_PILL_CLASSES[selectedTicket.status_public_stage] ?? "flow-status-pill pending") : "flow-status-pill neutral"}>
                     {selectedTicket.status_public_stage
                       ? labelOf(REPAIR_STATUS_LABELS, selectedTicket.status_public_stage, selectedTicket.status_public_stage)
                       : "Sin etapa pública"}
@@ -1077,7 +1064,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   {ticketNotes.map((note) => (
                     <div key={note.id} style={{ padding: "8px 10px", borderRadius: "6px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-line)", fontSize: "12px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                        <span style={{ padding: "2px 8px", borderRadius: "999px", fontSize: "11px", fontWeight: 600, background: note.is_public ? "rgba(16, 185, 129, 0.16)" : "rgba(148, 163, 184, 0.16)", color: note.is_public ? "#10b981" : "var(--text-muted)" }}>
+                        <span className={note.is_public ? "flow-status-pill completed" : "flow-status-pill neutral"}>
                           {note.is_public ? "Pública · visible en /seguimiento" : "Interna · solo taller"}
                         </span>
                         <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{formatDateTime(note.created_at)}</span>
@@ -1104,7 +1091,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                   Nueva nota
                   <textarea className="erp-form-input" rows={2} placeholder="Escribí una observación técnica o para el cliente..." {...noteForm.register("content")} />
                 </label>
-                {noteForm.formState.errors.content && <p role="alert" style={{ margin: 0, fontSize: "12px", color: "#ef4444" }}>{noteForm.formState.errors.content.message}</p>}
+                {noteForm.formState.errors.content && <p role="alert" style={{ margin: 0, fontSize: "12px", color: "var(--rose-text)" }}>{noteForm.formState.errors.content.message}</p>}
                 <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer" }}>
                     <input type="checkbox" {...noteForm.register("isPublic")} /> El cliente la ve en la web
@@ -1141,7 +1128,6 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                       <button
                         type="button"
                         className="btn-primary"
-                        style={{ background: "#10b981", borderColor: "#10b981", color: "#fff", padding: "6px 14px", fontSize: "12px" }}
                         onClick={() => setIsDeliveryModalOpen(true)}
                       >
                         <CheckCircle size={14} /> Entregar al Cliente
@@ -1160,7 +1146,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
                 {/* QC Warning if not passed */}
                 {!selectedTicket.qc_passed && (
-                  <div style={{ marginTop: "10px", fontSize: "12px", color: "#f59e0b", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div style={{ marginTop: "10px", fontSize: "12px", color: "var(--amber-text)", display: "flex", alignItems: "center", gap: "6px" }}>
                     <AlertCircle size={14} />
                     <span>Control de Calidad: El equipo aún no tiene una prueba final aprobada para habilitar retiro.</span>
                   </div>
@@ -1230,7 +1216,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                 </div>
                 {selectedTicket.delivery_id && (
                   <div style={{ gridColumn: "span 2", padding: "12px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "6px", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
-                    <div style={{ fontWeight: 600, color: "#10b981" }}>Equipo Entregado Formalmente</div>
+                    <div style={{ fontWeight: 600, color: "var(--emerald-text)" }}>Equipo Entregado Formalmente</div>
                     <div style={{ fontSize: "12px", marginTop: "4px" }}>
                       Retirado por <strong>{selectedTicket.recipient_name}</strong> el {formatDateTime(selectedTicket.delivered_at || "")}.
                       {selectedTicket.warranty_id && (
@@ -1282,7 +1268,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                         {ticketParts.map((p) => (
                           <tr key={p.id}>
                             <td>
-                              <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "11px", background: p.action === "consumed" ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)", color: p.action === "consumed" ? "#10b981" : "#ef4444" }}>
+                              <span className={p.action === "consumed" ? "flow-status-pill completed" : "flow-status-pill cancelled"}>
                                 {p.action === "consumed" ? "Consumido" : "Revertido"}
                               </span>
                             </td>
@@ -1295,7 +1281,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                                 <button
                                   type="button"
                                   className="btn-ghost"
-                                  style={{ padding: "2px 6px", fontSize: "11px", color: "#ef4444" }}
+                                  style={{ padding: "2px 6px", fontSize: "11px", color: "var(--rose-text)" }}
                                   onClick={() => handleReversePart(p.stock_document_id!)}
                                 >
                                   <RotateCcw size={12} /> Revertir
@@ -1405,6 +1391,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           isOpen={isQcModalOpen}
           onClose={() => { if (!submittingQc) { setQcError(null); setIsQcModalOpen(false); } }}
           title={`Control de calidad: ${qcTargetTicket.order_code}`}
+          icon={ClipboardCheck}
           maxWidth="580px"
         >
           <form onSubmit={handleQcSubmit} noValidate style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1445,9 +1432,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                         fontSize: "12px",
                         fontWeight: 600,
                         cursor: "pointer",
-                        border: "1px solid #10b981",
-                        background: qcChecks[item.key] === "pass" ? "#10b981" : "transparent",
-                        color: qcChecks[item.key] === "pass" ? "#fff" : "#10b981",
+                        border: "1px solid var(--emerald-text)",
+                        background: qcChecks[item.key] === "pass" ? "var(--emerald-text)" : "transparent",
+                        color: qcChecks[item.key] === "pass" ? "var(--surface-white)" : "var(--emerald-text)",
                       }}
                     >
                       Aprobado
@@ -1462,9 +1449,9 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
                         fontSize: "12px",
                         fontWeight: 600,
                         cursor: "pointer",
-                        border: "1px solid #ef4444",
-                        background: qcChecks[item.key] === "fail" ? "#ef4444" : "transparent",
-                        color: qcChecks[item.key] === "fail" ? "#fff" : "#ef4444",
+                        border: "1px solid var(--rose-text)",
+                        background: qcChecks[item.key] === "fail" ? "var(--rose-text)" : "transparent",
+                        color: qcChecks[item.key] === "fail" ? "var(--surface-white)" : "var(--rose-text)",
                       }}
                     >
                       Falla
@@ -1475,7 +1462,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
             </div>
 
             <div>
-              <label htmlFor="repair-qc-notes" style={{ fontSize: "12px", color: "var(--text-muted)" }}>Notas de Inspección (opcional)</label>
+              <label htmlFor="repair-qc-notes" className="erp-form-label">Notas de Inspección (opcional)</label>
               <textarea
                 id="repair-qc-notes"
                 className="form-input"
@@ -1488,10 +1475,10 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
 
             <FormError message={qcError} />
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+            <div className="erp-modal-footer">
               <button
                 type="button"
-                className="btn-ghost"
+                className="btn-secondary"
                 onClick={() => { if (!submittingQc) { setQcError(null); setIsQcModalOpen(false); } }}
                 disabled={submittingQc}
               >
@@ -1542,6 +1529,7 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
           isOpen={Boolean(pendingTransition)}
           onClose={() => { if (!submittingTransition) { setTransitionError(null); setPendingTransition(null); } }}
           title={`Pasar a ${formatRepairStatus(pendingTransition.to_status_name, pendingTransition.to_status_code)}`}
+          icon={ArrowRightCircle}
           maxWidth="440px"
         >
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -1563,10 +1551,10 @@ export const RepairsWorkspace: React.FC<RepairsWorkspaceProps> = ({
               )}
             </Field>
             <FormError message={transitionError} />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            <div className="erp-modal-footer">
               <button
                 type="button"
-                className="pag-btn"
+                className="btn-secondary"
                 data-autofocus
                 onClick={() => { setTransitionError(null); setPendingTransition(null); }}
                 disabled={submittingTransition}

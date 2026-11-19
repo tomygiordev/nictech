@@ -474,6 +474,7 @@ export const CashWorkspace: React.FC = () => {
         title="Caja y arqueos de turno"
         description="Abrí turnos, registrá ingresos o retiros y revisá el historial de cierres."
         badge={openSessions.length === 1 ? "1 caja abierta" : `${openSessions.length} cajas abiertas`}
+        badgeTone="neutral"
       />
 
       {loadError && (
@@ -496,17 +497,19 @@ export const CashWorkspace: React.FC = () => {
 
       {/* View Tabs: Open Sessions vs Closure History */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div className="flow-tabs-nav flow-tabs-nav--switcher" aria-label="Vista de caja">
           <button
             type="button"
-            className={`flow-select-pill ${viewTab === "active" ? "active" : ""}`}
+            className={`flow-tab-btn ${viewTab === "active" ? "active" : ""}`}
+            aria-pressed={viewTab === "active"}
             onClick={() => setViewTab("active")}
           >
             Turnos activos ({openSessions.length})
           </button>
           <button
             type="button"
-            className={`flow-select-pill ${viewTab === "history" ? "active" : ""}`}
+            className={`flow-tab-btn ${viewTab === "history" ? "active" : ""}`}
+            aria-pressed={viewTab === "history"}
             onClick={() => setViewTab("history")}
           >
             Historial de arqueos ({closedSessions.length})
@@ -542,7 +545,7 @@ export const CashWorkspace: React.FC = () => {
                 <tr>
                   <th scope="col">Sesión / Caja</th>
                   <th scope="col">Apertura</th>
-                  <th scope="col">Esperado</th>
+                  <th scope="col" className="num">Esperado</th>
                   <th scope="col">Acciones</th>
                 </tr>
               </thead>
@@ -554,7 +557,7 @@ export const CashWorkspace: React.FC = () => {
                       <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{session.registerName}</div>
                     </td>
                     <td>{session.openedAt}</td>
-                    <td>Se revela al cerrar</td>
+                    <td className="num">Se revela al cerrar</td>
                     <td>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                         <button type="button" className="pag-btn" onClick={() => setMovementModalSession(session)}>
@@ -587,69 +590,65 @@ export const CashWorkspace: React.FC = () => {
             message="Los turnos cerrados con su conciliación física aparecerán aquí."
           />
         ) : (
-          <div className="flow-card" style={{ padding: 0, overflow: "hidden" }}>
-            <table className="flow-table">
-              <thead>
-                <tr>
-                  <th>Sesión / Caja</th>
-                  <th>Apertura</th>
-                  <th>Cierre & Arqueo</th>
-                  <th>Esperado</th>
-                  <th>Contado Físico</th>
-                  <th>Diferencia Conciliada</th>
-                  <th>Observaciones</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {closedSessions.map((session) => {
-                  const diff = session.closure?.differenceAmount ?? 0;
-                  return (
-                    <tr key={session.fullId}>
-                      <td>
-                        <strong>#{session.id}</strong>
-                        <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{session.registerName}</div>
-                      </td>
-                      <td style={{ fontSize: "12px" }}>{session.openedAt}</td>
-                      <td style={{ fontSize: "12px" }}>{session.closure?.closedAt || "—"}</td>
-                      <td style={{ fontWeight: 600 }}>
-                        {formatPosCurrency(session.closure?.expectedAmount)}
-                      </td>
-                      <td style={{ fontWeight: 700, color: "var(--brand-primary)" }}>
-                        {formatPosCurrency(session.closure?.countedAmount)}
-                      </td>
-                      <td>
-                        <span
-                          className={`flow-status-pill ${
-                            diff === 0 ? "completed" : diff > 0 ? "pending" : "cancelled"
-                          }`}
-                          style={{ fontSize: "11px" }}
-                        >
-                          {diff === 0
-                            ? "Cuadrada ($0)"
-                            : diff > 0
-                            ? `+${formatPosCurrency(diff)}`
-                            : formatPosCurrency(diff)}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: "11px", color: "var(--text-muted)", maxWidth: "180px" }}>
-                        {session.closure?.reason || session.notes}
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="pag-btn"
-                          style={{ fontSize: "11px" }}
-                          onClick={() => setMovementModalSession(session)}
-                        >
-                          <Receipt size={12} /> Movimientos
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="flow-card" style={{ padding: 0 }}>
+            <div className="flow-table-container">
+              <table className="flow-table flow-table--actions flow-table--compact">
+                <thead>
+                  <tr>
+                    <th>Sesión / Caja</th>
+                    <th>Apertura</th>
+                    <th>Cierre & Arqueo</th>
+                    <th className="num">Esperado</th>
+                    <th className="num">Contado Físico</th>
+                    <th className="num">Diferencia Conciliada</th>
+                    <th>Observaciones</th>
+                    <th>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {closedSessions.map((session) => {
+                    const diff = session.closure?.differenceAmount ?? 0;
+                    return (
+                      <tr key={session.fullId}>
+                        <td>
+                          <strong>#{session.id}</strong>
+                          <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{session.registerName}</div>
+                        </td>
+                        <td className="nowrap" style={{ fontSize: "12px" }}>{session.openedAt}</td>
+                        <td className="nowrap" style={{ fontSize: "12px" }}>{session.closure?.closedAt || "—"}</td>
+                        <td className="num">
+                          <span className="amount-val">{formatPosCurrency(session.closure?.expectedAmount)}</span>
+                        </td>
+                        <td className="num">
+                          <span className="amount-val">{formatPosCurrency(session.closure?.countedAmount)}</span>
+                        </td>
+                        <td className="num">
+                          <span className={`flow-status-pill ${diff === 0 ? "completed" : diff > 0 ? "pending" : "cancelled"}`}>
+                            {diff === 0
+                              ? "Cuadrada ($0)"
+                              : diff > 0
+                              ? `+${formatPosCurrency(diff)}`
+                              : formatPosCurrency(diff)}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: "11px", color: "var(--text-muted)", maxWidth: "180px" }}>
+                          {session.closure?.reason || session.notes}
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="pag-btn"
+                            onClick={() => setMovementModalSession(session)}
+                          >
+                            <Receipt size={12} /> Movimientos
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )
       )}
@@ -715,7 +714,7 @@ export const CashWorkspace: React.FC = () => {
           </Field>
 
           <div className="erp-modal-footer">
-            <button type="button" className="pag-btn" onClick={dismissOpeningModal} disabled={submittingOpen}>
+            <button type="button" className="btn-secondary" onClick={dismissOpeningModal} disabled={submittingOpen}>
               Cancelar
             </button>
             <button type="submit" className="btn-primary" disabled={submittingOpen}>
@@ -817,7 +816,7 @@ export const CashWorkspace: React.FC = () => {
             )}
 
             <div className="erp-modal-footer">
-              <button type="button" className="pag-btn" onClick={dismissArqueoModal} disabled={submittingClose}>
+              <button type="button" className="btn-secondary" onClick={dismissArqueoModal} disabled={submittingClose}>
                 Cancelar
               </button>
               <button type="submit" className="btn-primary" disabled={submittingClose}>
@@ -911,7 +910,7 @@ export const CashWorkspace: React.FC = () => {
               )}
             </Field>
             <div className="erp-modal-footer">
-              <button type="button" className="pag-btn" onClick={dismissMovementModal} disabled={submittingMovement}>
+              <button type="button" className="btn-secondary" onClick={dismissMovementModal} disabled={submittingMovement}>
                 Cancelar
               </button>
               <button type="submit" className="btn-primary" disabled={submittingMovement}>
@@ -950,7 +949,7 @@ export const CashWorkspace: React.FC = () => {
               )}
             </Field>
             <div className="erp-modal-footer">
-              <button type="button" className="pag-btn" onClick={dismissReversalModal} disabled={submittingReversal}>
+              <button type="button" className="btn-secondary" onClick={dismissReversalModal} disabled={submittingReversal}>
                 Cancelar
               </button>
               <button type="submit" className="btn-primary" disabled={submittingReversal}>
@@ -1007,7 +1006,7 @@ export const CashWorkspace: React.FC = () => {
                       <th>Tipo</th>
                       <th>Fecha/Hora</th>
                       <th>Concepto</th>
-                      <th>Importe</th>
+                      <th className="num">Importe</th>
                       <th>Acción</th>
                     </tr>
                   </thead>
@@ -1025,13 +1024,8 @@ export const CashWorkspace: React.FC = () => {
                         </td>
                         <td style={{ fontSize: "11px" }}>{mov.occurredAt}</td>
                         <td style={{ fontSize: "11px" }}>{mov.reason}</td>
-                        <td
-                          style={{
-                            fontWeight: 700,
-                            color: mov.amount >= 0 ? "var(--emerald-success)" : "var(--rose-accent)",
-                          }}
-                        >
-                          {formatCurrency(mov.amount, mov.currencyCode)}
+                        <td className="num">
+                          <span className="amount-val">{formatCurrency(mov.amount, mov.currencyCode)}</span>
                         </td>
                         <td>
                           {movementModalSession.status === "open"
@@ -1062,10 +1056,10 @@ export const CashWorkspace: React.FC = () => {
               </div>
             )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "14px" }}>
+            <div className="erp-modal-footer">
               <button
                 type="button"
-                className="pag-btn"
+                className="btn-secondary"
                 onClick={() => setMovementModalSession(null)}
               >
                 Cerrar

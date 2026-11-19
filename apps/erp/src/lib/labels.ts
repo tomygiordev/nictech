@@ -254,6 +254,21 @@ export const REPAIR_STATUS_LABELS: Record<string, string> = {
   Entregado: "Entregado",
 };
 
+export const ACCOUNT_TYPE_LABELS: Record<ErpEnums["account_type"], string> = {
+  asset: "Activo",
+  liability: "Pasivo",
+  equity: "Patrimonio",
+  income: "Ingreso",
+  expense: "Gasto",
+};
+
+export const RESERVATION_STATUS_LABELS: Record<ErpEnums["stock_reservation_status"], string> = {
+  active: "Activa",
+  released: "Liberada",
+  fulfilled: "Cumplida",
+  expired: "Vencida",
+};
+
 export function labelOf(map: Readonly<Record<string, string>>, raw: unknown, fallback = "Otro"): string {
   const key = typeof raw === "boolean" ? String(raw) : raw;
   if (typeof key !== "string" || !Object.prototype.hasOwnProperty.call(map, key)) return fallback;

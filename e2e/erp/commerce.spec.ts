@@ -8,7 +8,7 @@ import { addPromotion } from './promotion-fixtures';
 async function sell(page: Page, product: Product, method: 'Efectivo' | 'Tarjeta', remaining: number, promo?: { list: string; price: string }) {
   await workspace(page, 'Punto de venta');
   await page.getByLabel('Ubicación de salida').selectOption(depotId);
-  await page.getByPlaceholder(/Escanear código de barras/).fill(product.internal_name);
+  await page.getByRole('textbox', { name: 'Buscar productos por código de barras o nombre' }).fill(product.internal_name);
   const variantName = product.internal_name.replace(` ${tag()}`, ` Color ${tag()}`);
   await page.getByTitle(new RegExp(`Agregar variante ${variantName}`)).click();
   if (promo) {

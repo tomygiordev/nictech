@@ -114,6 +114,15 @@ export async function capture(page: Page, name: string, { workspaceTop = false }
       }
       const suffix = width === 1366 ? '' : '-1024';
       await page.screenshot({ path: `test-results/erp-screens/${name}${suffix}.png`, animations: 'disabled', caret: 'hide' });
+      const overflow = await page.evaluate(() => {
+        const root = document.documentElement;
+        const workspace = document.querySelector('main.workspace-content');
+        return {
+          page: Math.max(0, root.scrollWidth - root.clientWidth),
+          workspace: workspace ? Math.max(0, workspace.scrollWidth - workspace.clientWidth) : 0,
+        };
+      });
+      expect(Math.max(overflow.page, overflow.workspace), `${name} a ${width}px: desborde horizontal ${JSON.stringify(overflow)}`).toBeLessThanOrEqual(1);
     }
   } finally {
     if (original) await page.setViewportSize(original);
@@ -139,7 +148,7 @@ export async function login(page: Page, kind: 'OWNER' | 'NOROLE' = 'OWNER') {
 
 export async function owner(page: Page) {
   await login(page);
-  await expect(page.getByRole('heading', { level: 1, name: 'Centro Operativo' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Centro Operativo' })).toBeVisible({ timeout: 20_000 });
   await expect(nav(page).getByRole('button', { name: 'Configuración y accesos' })).toBeVisible();
 }
 

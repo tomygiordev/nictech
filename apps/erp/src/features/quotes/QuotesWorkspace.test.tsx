@@ -127,6 +127,25 @@ async function openNewQuoteModal() {
 }
 
 describe("QuotesWorkspace", () => {
+  it("usa el tono de rechazo en la tabla y la ficha, con totales alineados", async () => {
+    mock.listQuotes.mockResolvedValue([{
+      ...sampleDraftQuote,
+      issued_at: "2026-11-18T10:00:00Z",
+      decision: "rejected",
+      decision_at: "2026-11-18T11:00:00Z",
+    }]);
+    render(<QuotesWorkspace />);
+
+    expect(await screen.findByText("Rechazado")).toHaveClass("flow-status-pill", "cancelled");
+    fireEvent.click(screen.getByRole("button", { name: /Ver/ }));
+    const detail = within(screen.getByRole("dialog", { name: /Presupuesto: ORD-0042/ }));
+    expect(detail.getByText("Rechazado por el cliente")).toHaveClass("flow-status-pill", "cancelled");
+    for (const label of ["Subtotal:", "IVA / Impuestos:", "Total general:"]) {
+      const row = detail.getByRole("row", { name: new RegExp(label) });
+      expect(within(row).getAllByRole("cell")[1]).toHaveClass("num");
+    }
+  });
+
   it("no muestra la palabra Cotiz en la pantalla ni en los modales", async () => {
     render(<QuotesWorkspace />);
     await screen.findByText("ORD-0042 (v1)");

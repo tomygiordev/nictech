@@ -40,7 +40,7 @@ test('ingreso, ajuste y transferencia concilian el saldo por ubicación', async 
   await submitTransfer.click();
   await expect(transfer.getByRole('alert')).toContainText(/cantidad|motivo/i);
   await capture(page, 'existencias-transferencia-validacion');
-  const destination = transfer.getByLabel('Destino *');
+  const destination = transfer.getByLabel('Destino (obligatorio)');
   const toId = await destination.inputValue();
   expect(toId).toBeTruthy();
   expect(toId).not.toBe(depotId);

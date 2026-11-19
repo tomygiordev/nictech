@@ -640,6 +640,7 @@ export const TradeInsWorkspace = () => {
         title="Equipos usados"
         description="Recepción de equipos en parte de pago, revisión de procedencia, verificación IMEI, tasación, liberación a stock y aplicación a ventas."
         badge={`${items.length} ${items.length === 1 ? "equipo usado" : "equipos usados"}`}
+        badgeTone="neutral"
       />
 
       {feedback && (
@@ -680,8 +681,8 @@ export const TradeInsWorkspace = () => {
           icon={ShieldCheck}
           iconVariant="steel"
           label="Verificación IMEI"
-          value={`${imeiVerificados} Verificados`}
-          trend={{ text: "Control IMEI", positive: true }}
+          value={imeiVerificados}
+          trend={{ text: "Verificados", positive: true }}
           sublabel="Estado de verificación del IMEI"
         />
         <KpiCard
@@ -706,7 +707,7 @@ export const TradeInsWorkspace = () => {
               <input
                 type="text"
                 aria-label="Buscar equipos usados"
-                placeholder="Buscar por cliente, producto, IMEI o serie..."
+                placeholder="Cliente, producto, IMEI o serie…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -753,7 +754,7 @@ export const TradeInsWorkspace = () => {
                 <th>Producto</th>
                 <th>IMEI / Serie</th>
                 <th>Etapa</th>
-                <th>Valores</th>
+                <th className="num">Valores</th>
                 <th className="text-right">Acción</th>
               </tr>
             </thead>
@@ -831,13 +832,13 @@ export const TradeInsWorkspace = () => {
                       <td>
                         <span className={st.pillClass}>{st.label}</span>
                       </td>
-                      <td>
-                        <div style={{ display: "flex", flexDirection: "column" }}>
-                          <strong style={{ color: "var(--brand-primary)" }}>
+                      <td className="num">
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                          <span className="amount-val">
                             {canViewCosts
                               ? formatCurrency(item.appraised_value_base ?? item.declared_value_base, "ARS")
                               : "Restringido"}
-                          </strong>
+                          </span>
                           {canViewCosts && (
                             <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
                               Declarado: {formatCurrency(item.declared_value_base, "ARS")}
@@ -1741,21 +1742,8 @@ export const TradeInsWorkspace = () => {
             )}
           </Field>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "10px",
-              marginTop: "8px",
-              paddingTop: "12px",
-              borderTop: "1px solid var(--border-line)",
-              position: "sticky",
-              bottom: 0,
-              zIndex: 2,
-              background: "var(--surface-card)",
-            }}
-          >
-            <button type="button" className="pag-btn" onClick={closeIntakeModal} disabled={actionBusy}>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={closeIntakeModal} disabled={actionBusy}>
               Cancelar
             </button>
             <button

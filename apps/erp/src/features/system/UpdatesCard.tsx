@@ -72,8 +72,8 @@ export function UpdatesCard() {
     : versionFailed ? "Versión instalada no disponible" : "Consultando versión instalada…";
 
   return (
-    <section className="flow-card" aria-labelledby={titleId} style={{ maxWidth: 650 }}>
-      <div className="flow-card__header" style={{ flexWrap: "wrap", gap: 12, marginBottom: status ? undefined : 0 }}>
+    <section className="flow-card" aria-labelledby={titleId}>
+      <div className="flow-card__header" style={{ marginBottom: status ? undefined : 0 }}>
         <div>
           <h2 id={titleId} className="flow-card__title">Actualizaciones</h2>
           <p className="flow-card__subtitle">{subtitle}</p>
@@ -83,7 +83,7 @@ export function UpdatesCard() {
         </button>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <span role="status" aria-atomic="true">{installing ? "Reiniciando…" : statusMessage(status, version)}</span>
+        <span role="status" aria-atomic="true" style={{ fontSize: "13px", color: "var(--text-muted)" }}>{installing ? "Reiniciando…" : statusMessage(status, version)}</span>
         {kind === "downloaded" && (
           <button type="button" className="btn-primary" disabled={installing} onClick={() => void install()}>
             Reiniciar e instalar

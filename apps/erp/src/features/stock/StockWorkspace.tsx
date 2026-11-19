@@ -7,7 +7,6 @@ import {
   Printer,
   History,
   Plus,
-  Loader2,
   RefreshCw,
   Search,
   Package,
@@ -111,10 +110,11 @@ const BarcodeSvg: React.FC<{ value: string; width?: number; height?: number }> =
         x={width / 2}
         y={height - 2}
         textAnchor="middle"
-        fontSize="11"
+        fontSize={Math.min(11, Math.max(7, Math.floor((width * 1.6) / Math.max(value.length, 1))))}
         fontFamily="monospace"
         fontWeight="650"
         fill="#111827"
+        {...(value.length * 6.6 > width - 8 ? { textLength: width - 8, lengthAdjust: "spacingAndGlyphs" as const } : {})}
       >
         {value}
       </text>
@@ -503,6 +503,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
             : "Control centralizado de inventario por variante de color, ubicación y trazabilidad de movimientos."
         }
         badge={`${stockBalances.length} Variantes en Existencia`}
+        badgeTone="neutral"
       />
 
       {onSelectModule && (
@@ -513,7 +514,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         />
       )}
 
-      <label><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Ver inactivos</label>
+      <label className="filter-check"><input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} /> Ver inactivos</label>
 
       {error && (
         <FeedbackAlert
@@ -585,7 +586,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                     <Search size={15} />
                     <input
                       type="text"
-                      placeholder="Buscar por código, variante o barras..."
+                      placeholder="Código, variante o barras…"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                     />
@@ -613,31 +614,29 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
               </div>
 
               <div className="flow-table-wrapper">
-                <table className="flow-table">
+                <table className="flow-table flow-table--dense">
                   <thead>
                     <tr>
                       <th>Ubicación</th>
-                      <th>Código</th>
+                      <th>Código / Barras</th>
                       <th>Artículo / Modelo</th>
                       <th>Variante / Color</th>
-                      <th>Código de Barras</th>
-                      <th>En Mano</th>
-                      <th>Reservado</th>
-                      <th>Disponible</th>
+                      <th className="num">En Mano</th>
+                      <th className="num">Reservado</th>
+                      <th className="num">Disponible</th>
                       {hasRowActions && <th className="text-right">Acción</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={hasRowActions ? 9 : 8} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-                          <Loader2 size={24} className="animate-spin" style={{ margin: "0 auto 8px" }} />
-                          Cargando existencias…
+                        <td colSpan={hasRowActions ? 8 : 7} style={{ padding: 0 }}>
+                          <StatePanel type="loading" message="Cargando existencias…" />
                         </td>
                       </tr>
                     ) : filteredBalances.length === 0 ? (
                       <tr>
-                        <td colSpan={hasRowActions ? 9 : 8} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
+                        <td colSpan={hasRowActions ? 8 : 7} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
                           No se encontraron existencias registradas.
                         </td>
                       </tr>
@@ -654,9 +653,14 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                               </span>
                             </td>
                             <td>
-                              <span className="type-badge blue" style={{ fontFamily: "monospace", fontSize: "11px" }}>
+                              <span className="type-badge blue catalog-code" style={{ fontFamily: "monospace", fontSize: "11px" }}>
                                 {row.products?.internal_code || "—"}
                               </span>
+                              {barcode && (
+                                <span style={{ display: "block", marginTop: "4px", fontFamily: "monospace", fontSize: "11px", color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+                                  {barcode}
+                                </span>
+                              )}
                             </td>
                             <td>
                               <strong style={{ fontSize: "13px", color: "var(--text-main)" }}>
@@ -672,26 +676,17 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                                 <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Única</span>
                               )}
                             </td>
-                            <td>
-                              {barcode ? (
-                                <span style={{ fontFamily: "monospace", fontSize: "11px", color: "var(--text-main)" }}>
-                                  {barcode}
-                                </span>
-                              ) : (
-                                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>—</span>
-                              )}
-                            </td>
-                            <td>
+                            <td className="num">
                               <strong style={{ fontSize: "13px", color: Number(row.quantity_on_hand) > 0 ? "var(--text-main)" : "var(--rose-accent)" }}>
                                 {row.quantity_on_hand} u.
                               </strong>
                             </td>
-                            <td>
+                            <td className="num">
                               <span style={{ fontSize: "12px", color: Number(row.quantity_reserved) > 0 ? "var(--amber-accent)" : "var(--text-muted)" }}>
                                 {row.quantity_reserved} u.
                               </span>
                             </td>
-                            <td>
+                            <td className="num">
                               <strong
                                 style={{
                                   fontSize: "13px",
@@ -708,27 +703,33 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                             </td>
                             {hasRowActions && (
                               <td className="text-right">
+                                <div style={{ display: "inline-flex", gap: "6px", justifyContent: "flex-end" }}>
                                 {canAdjustStock && (
                                   <button
                                     type="button"
                                     className="pag-btn"
-                                    style={{ fontSize: "11px", padding: "4px 8px" }}
+                                    style={{ padding: "6px", lineHeight: 0 }}
+                                    aria-label="Ajustar"
+                                    title="Ajustar stock"
                                     onClick={() => openAdjustmentModal(row.id)}
                                   >
-                                    <Plus size={11} /> Ajustar
+                                    <Plus size={14} aria-hidden="true" />
                                   </button>
                                 )}
                                 {canTransferStock && (
                                   <button
                                     type="button"
                                     className="pag-btn"
-                                    style={{ fontSize: "11px", padding: "4px 8px", marginLeft: canAdjustStock ? "6px" : 0 }}
+                                    style={{ padding: "6px", lineHeight: 0 }}
+                                    aria-label="Transferir"
+                                    title={available <= 0 ? "Sin unidades disponibles para transferir" : "Transferir stock"}
                                     disabled={available <= 0}
                                     onClick={() => openTransferModal(row.id)}
                                   >
-                                    <ArrowRightLeft size={11} /> Transferir
+                                    <ArrowRightLeft size={14} aria-hidden="true" />
                                   </button>
                                 )}
+                                </div>
                               </td>
                             )}
                           </tr>
@@ -769,7 +770,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                     ) : (
                       recentDocs.map((doc) => (
                         <tr key={doc.id}>
-                          <td>
+                          <td className="nowrap">
                             <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
                               {formatDateTime(doc.created_at)}
                             </span>
@@ -816,7 +817,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
             <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginTop: "12px" }}>
               <div className="erp-form-group">
-                <label className="erp-form-label" htmlFor="stock-label-item">Variante / Artículo a Rotular *</label>
+                <label className="erp-form-label" htmlFor="stock-label-item">Variante / Artículo a Rotular (obligatorio)</label>
                 <select
                   id="stock-label-item"
                   value={labelTargetId}
@@ -849,7 +850,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
               </div>
 
               <div className="erp-form-group">
-                <label className="erp-form-label" htmlFor="stock-label-quantity">Copias a imprimir *</label>
+                <label className="erp-form-label" htmlFor="stock-label-quantity">Copias a imprimir (obligatorio)</label>
                 <input
                   id="stock-label-quantity"
                   type="number"
@@ -877,7 +878,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                   setLabelQty(suggestedLabelQuantity);
                 }}
               >
-                Usar sugerencia: {suggestedLabelQuantity} copias
+                Usar sugerencia: {suggestedLabelQuantity} {suggestedLabelQuantity === 1 ? "copia" : "copias"}
               </button>
 
               <button
@@ -887,7 +888,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                 disabled={!selectedLabelItem || labelQty < 1}
                 style={{ marginTop: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
               >
-                <Printer size={16} /> Imprimir {labelQty} Rótulos
+                <Printer size={16} /> Imprimir {labelQty} {labelQty === 1 ? "rótulo" : "rótulos"}
               </button>
             </div>
           </div>
@@ -938,7 +939,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
                 {/* Print Sheet Container (Repeats labelQty times for printing) */}
                 <div style={{ borderTop: "1px solid var(--border-line)", paddingTop: "16px" }}>
                   <span style={{ fontSize: "12px", color: "var(--text-muted)", display: "block", marginBottom: "12px" }}>
-                    Hoja de impresión generada ({labelQty} etiquetas listas para imprimir):
+                    Hoja de impresión generada ({labelQty} {labelQty === 1 ? "etiqueta lista" : "etiquetas listas"} para imprimir):
                   </span>
 
                   <div
@@ -1000,7 +1001,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         <form noValidate onSubmit={handleCreateAdjustment} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <FormError message={adjError} onDismiss={() => setAdjError(null)} />
           <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-adjustment-balance">Variante / Ubicación a Ajustar *</label>
+            <label className="erp-form-label" htmlFor="stock-adjustment-balance">Variante / Ubicación a Ajustar (obligatorio)</label>
             <select
               id="stock-adjustment-balance"
               value={adjRowId}
@@ -1018,7 +1019,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="stock-adjustment-direction">Sentido del Movimiento *</label>
+              <label className="erp-form-label" htmlFor="stock-adjustment-direction">Sentido del Movimiento (obligatorio)</label>
               <select
                 id="stock-adjustment-direction"
                 value={adjType}
@@ -1031,7 +1032,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
             </div>
 
             <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="stock-adjustment-quantity">Cantidad (Unidades) *</label>
+              <label className="erp-form-label" htmlFor="stock-adjustment-quantity">Cantidad (Unidades) (obligatorio)</label>
               <input
                 id="stock-adjustment-quantity"
                 type="number"
@@ -1047,7 +1048,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
 
           {adjType === "in" && (
             <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="stock-adjustment-unit-cost">Costo unitario de ingreso *</label>
+              <label className="erp-form-label" htmlFor="stock-adjustment-unit-cost">Costo unitario de ingreso (obligatorio)</label>
               <input
                 id="stock-adjustment-unit-cost"
                 type="number"
@@ -1067,7 +1068,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           )}
 
           <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-adjustment-reason">Motivo de Auditoría *</label>
+            <label className="erp-form-label" htmlFor="stock-adjustment-reason">Motivo de Auditoría (obligatorio)</label>
             <input
               id="stock-adjustment-reason"
               type="text"
@@ -1081,8 +1082,8 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
             />
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => setIsAdjModalOpen(false)}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => setIsAdjModalOpen(false)}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={submitting}>
               {submitting ? "Registrando…" : "Confirmar Movimiento"}
             </button>
@@ -1101,7 +1102,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
         <form noValidate onSubmit={handleCreateTransfer} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <FormError message={transferError} onDismiss={() => setTransferError(null)} />
           <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-transfer-source">Origen *</label>
+            <label className="erp-form-label" htmlFor="stock-transfer-source">Origen (obligatorio)</label>
             <select
               id="stock-transfer-source"
               value={transferSourceRowId}
@@ -1118,7 +1119,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           </div>
 
           <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-transfer-destination">Destino *</label>
+            <label className="erp-form-label" htmlFor="stock-transfer-destination">Destino (obligatorio)</label>
             <select
               id="stock-transfer-destination"
               value={transferDestinationLocationId}
@@ -1139,7 +1140,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           </div>
 
           <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-transfer-quantity">Cantidad (unidades) *</label>
+            <label className="erp-form-label" htmlFor="stock-transfer-quantity">Cantidad (unidades) (obligatorio)</label>
             <input
               id="stock-transfer-quantity"
               type="number"
@@ -1153,7 +1154,7 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
           </div>
 
           <div className="erp-form-group">
-            <label className="erp-form-label" htmlFor="stock-transfer-reason">Motivo de auditoría *</label>
+            <label className="erp-form-label" htmlFor="stock-transfer-reason">Motivo de auditoría (obligatorio)</label>
             <input
               id="stock-transfer-reason"
               type="text"
@@ -1167,8 +1168,8 @@ export const StockWorkspace: React.FC<StockWorkspaceProps> = ({
             />
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => setIsTransferModalOpen(false)}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => setIsTransferModalOpen(false)}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={submitting || transferDestinations.length === 0}>
               {submitting ? "Transfiriendo…" : "Confirmar transferencia"}
             </button>

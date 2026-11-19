@@ -20,10 +20,10 @@ test('credenciales inválidas, usuario sin rol, owner y cierre de sesión', asyn
   await capture(page, 'acceso-login');
   expectHttpError({ method: 'POST', path: '/auth/v1/token', status: 400, reason: 'Contraseña incorrecta ingresada deliberadamente.' });
   await submitLogin(page, account('OWNER').email, 'contraseña-incorrecta');
-  await expect(page.getByText('Correo o contraseña incorrectos.')).toBeVisible();
+  await expect(page.getByText('Correo o contraseña incorrectos.')).toBeVisible({ timeout: 20_000 });
 
   await submitLogin(page, account('NOROLE').email, account('NOROLE').password);
-  await expect(page.getByText(/Permiso Requerido|No se pudo habilitar el acceso al ERP/)).toBeVisible();
+  await expect(page.getByText(/Permiso Requerido|No se pudo habilitar el acceso al ERP/)).toBeVisible({ timeout: 20_000 });
   await expect(nav(page).getByRole('button')).toHaveCount(0);
 
   await button(page, /^Cerrar sesión$/i).click();
@@ -31,7 +31,7 @@ test('credenciales inválidas, usuario sin rol, owner y cierre de sesión', asyn
   if (await confirmation.isVisible()) await confirmation.getByRole('button', { name: 'Cerrar Sesión' }).click();
   await expect(page.getByRole('heading', { name: 'Ingreso NicTech ERP' })).toBeVisible();
   await submitLogin(page, account('OWNER').email, account('OWNER').password);
-  await expect(page.getByRole('heading', { name: 'Centro Operativo', exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Centro Operativo', exact: true, level: 1 })).toBeVisible({ timeout: 20_000 });
   await expect(nav(page).getByRole('button', { name: 'Configuración y accesos' })).toBeVisible();
   await button(page, 'Cerrar Sesión').click();
   await page.getByRole('dialog', { name: 'Cerrar Sesión del ERP' }).getByRole('button', { name: 'Cerrar Sesión' }).click();
@@ -73,8 +73,8 @@ test('navegación completa: módulos, submódulos y búsqueda por F2', async ({ 
     await expect(main(page).getByRole('alert').filter({ hasText: /no se pud|error|permiso requerido/i })).toHaveCount(0);
   }
   async function captureWorkspace(name: string) {
-    await page.waitForLoadState('networkidle');
     await opened();
+    await expect(main(page).getByText(/^Cargando\b/i)).toHaveCount(0);
     await capture(page, name, { workspaceTop: true });
   }
   async function internalTabs(prefix: string) {

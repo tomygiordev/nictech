@@ -156,13 +156,13 @@ export const MockPosInteractive: React.FC = () => {
           <Search size={13} style={{ position: "absolute", left: "9px", top: "8px", color: "var(--text-muted)" }} />
           <input
             type="text"
-            placeholder="Escanear código de barras o buscar por nombre (Enter agrega)..."
+            placeholder="Código de barras o nombre"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: "100%", padding: "6px 8px 6px 28px", borderRadius: "6px", border: "1px solid var(--border-line)", fontSize: "11px" }}
           />
         </div>
-        <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", padding: "5px 8px", borderRadius: "5px", color: "#c2410c", display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px" }}>
+        <div style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-border)", padding: "5px 8px", borderRadius: "5px", color: "var(--amber-text)", display: "flex", alignItems: "center", gap: "5px", fontSize: "10.5px" }}>
           <AlertTriangle size={12} style={{ flexShrink: 0 }} />
           <span><strong>Aviso de Escáner:</strong> El lector óptico físico USB aún no está conectado. Tipeá el nombre o código interno a mano con teclado.</span>
         </div>
@@ -485,7 +485,7 @@ export const MockRepairsInteractive: React.FC = () => {
     { key: "reparacion", label: "3. Taller" },
     { key: "control", label: "4. Control QC" },
     { key: "listo", label: "5. Listo p/ Entrega" },
-  ];
+  ] as const;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "10px", height: "100%", fontSize: "12px" }}>
@@ -562,7 +562,7 @@ export const MockRepairsInteractive: React.FC = () => {
             <button
               key={s.key}
               type="button"
-              onClick={() => setStatus(s.key as any)}
+              onClick={() => setStatus(s.key)}
               style={{
                 flex: 1,
                 padding: "5px 2px",
@@ -666,7 +666,7 @@ export const MockStockInteractive: React.FC = () => {
         </div>
       )}
 
-      <div style={{ background: "#fffbeb", border: "1px solid #fde68a", padding: "8px", borderRadius: "6px", fontSize: "10.5px", color: "#92400e", marginTop: "auto" }}>
+      <div style={{ background: "var(--amber-soft)", border: "1px solid var(--amber-border)", padding: "8px", borderRadius: "6px", fontSize: "10.5px", color: "var(--amber-text)", marginTop: "auto" }}>
         <strong>⚠️ Aclaración Operativa:</strong> Para ajustar diferencias de conteo físico en el inventario, usá siempre el botón <strong>Ajustar Stock</strong> indicando el motivo.
       </div>
     </div>
@@ -701,7 +701,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         title: "Búsqueda y Aclaración sobre el Lector de Barras",
         badge: "Paso 2: Búsqueda y Carrito",
         explanation: "Para agregar un artículo a la venta, tipeás en la barra de búsqueda el nombre, marca o código interno del producto. Si el producto tiene variantes (por ejemplo: Auricular Negro o Auricular Blanco), el sistema te desplegará los botones para que elijas el color exacto que se lleva el cliente.",
-        limitations: "En la barra de búsqueda verás el texto 'Escanear código de barras o buscar por nombre'. Tené en cuenta que la lectura automática mediante lector de código de barras físico o cámara aún NO está operativa en esta versión. El operador debe buscar escribiendo el nombre o código con el teclado.",
+        limitations: "En la barra de búsqueda verás «Código de barras o nombre». En esta versión, escribí el nombre o el código con el teclado; la lectura automática con lector o cámara no está disponible.",
         mockComponent: <MockPosInteractive />,
       },
       {
@@ -858,7 +858,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Resumen ejecutivo del día: total facturado en mostrador, cantidad de cajas abiertas, reparaciones ingresadas hoy, pedidos online pendientes de embalar y alertas de stock bajo.",
         operationalSense: "Es la pantalla de inicio del ERP. Su sentido es darte una radiografía de 5 segundos sobre cómo está funcionando el negocio hoy. Te avisa inmediatamente si hay alguna anomalía (por ejemplo, si son las 11 de la mañana y ninguna caja está abierta, o si hay un pedido web demorado).",
         explanation: "No es una pantalla de carga de datos, sino de lectura y supervisión general para dueños, encargados y operadores.",
-        mockComponent: <MockCashInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -921,7 +921,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Ficha de evaluación técnica de dispositivos usados que los clientes entregan como parte de pago para comprar uno nuevo, cálculo de valor de toma según desgaste estético y salud de batería, y envío a cuarentena técnica.",
         operationalSense: "Evita que el local acepte teléfonos con cuentas bloqueadas (iCloud / Google), celulares denunciados como robados, o equipos con fallas ocultas que después no se puedan vender.",
         explanation: "Cuando un cliente dice '¿cuánto me tomás este iPhone 11 por el 13?', abrís este módulo, hacés el checklist y el sistema te da el valor máximo que podés descontarle.",
-        mockComponent: <MockRepairsInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -963,7 +963,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Directorio de clientes particulares y empresas, historial completo de todas sus compras y reparaciones anteriores, equipos que tiene registrados y estado de su saldo deudor.",
         operationalSense: "Saber quién te está comprando. Si entra un cliente diciendo 'se me rompió de vuelta lo que me arreglaron el mes pasado', buscas su DNI o apellido acá y ves al instante qué día vino, qué técnico lo atendió y si está en garantía.",
         explanation: "Toda venta o reparación registrada en el ERP vincula automáticamente al cliente a esta base unificada.",
-        mockComponent: <MockRepairsInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -984,7 +984,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Emisión de presupuestos formales para reparaciones complejas, armados de PC o ventas corporativas, con plazo de validez estricto (ej: válido por 5 días) y exportación directa en formato PDF para enviar por WhatsApp.",
         operationalSense: "En Argentina los precios varían seguido. Un presupuesto formal fija las condiciones por unos días para que el cliente decida sin riesgo de que le cambies el precio mañana, pero vence automáticamente para proteger el margen de la empresa si el dólar se dispara.",
         explanation: "Si una empresa o un particular te pide una cotización por escrito, la generás acá.",
-        mockComponent: <MockPosInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -1005,7 +1005,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Gestión de clientes de confianza y empresas a las que se les permite retirar mercadería o retirar equipos reparados 'a cuenta', registrando entregas de dinero a cuenta, saldos pendientes y fechas límites de cobro.",
         operationalSense: "Permite 'fiar' de manera profesional y controlada. Cada peso que un cliente queda debiendo queda registrado con fecha y hora. El operador puede ver de un vistazo qué clientes están morosos y bloquearles nuevos retiros.",
         explanation: "Acá registrás cuando un cliente viene a pagar una parte de lo que debía ('te dejo $20.000 a cuenta').",
-        mockComponent: <MockCashInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -1026,7 +1026,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Asientos contables automáticos por partida doble generados por ventas, compras y pagos, libro diario de períodos mensuales y cálculo de rentabilidad neta (precio de venta menos costo real del repuesto).",
         operationalSense: "Saber si el negocio está ganando plata de verdad. Facturar mucho no siempre significa ganar: si un repuesto te costó $40.000 y lo cobraste $45.000 pero gastaste $8.000 en impuestos y flete, perdiste plata. Este módulo te muestra el margen real limpio.",
         explanation: "Módulo financiero para contadores, socios y administración.",
-        mockComponent: <MockCashInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -1048,7 +1048,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         operationalSense: "Es el archivo legal y operativo de las operaciones. Si un cliente viene a reclamar un ticket que perdió, acá lo buscas por fecha o importe y lo reimprimís al instante.",
         explanation: "Todo comprobante emitido en el POS o en Reparaciones queda guardado acá inmutablemente.",
         limitations: "Actualmente los comprobantes son de emisión local/interna garantizada en el ERP. La sincronización en línea con los webservices de AFIP/ARCA para Factura Electrónica directa está preparada en arquitectura y su activación depende de la carga de certificados fiscales en producción.",
-        mockComponent: <MockPosInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -1070,7 +1070,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         operationalSense: "Ahorra horas de trabajo humano llamando por teléfono o mandando audios uno por uno. El cliente se entera de inmediato en la aplicación que usa todo el día (WhatsApp).",
         explanation: "Si está configurada la instancia, las notificaciones se disparan solas al cambiar de estado en Reparaciones.",
         limitations: "Requiere que la instancia de Evolution API / WhatsApp del local esté conectada con el código QR. Si el celular del local está apagado o sin internet, los mensajes quedan en cola de reintento.",
-        mockComponent: <MockRepairsInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -1091,7 +1091,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Monitor técnico de eventos entrantes de Mercado Pago, webhooks de pedidos web, colas de sincronización y estado de servicios externos.",
         operationalSense: "Si un cliente dice 'pagué en la web pero me sigue diciendo pendiente', venís acá y ves si Mercado Pago mandó el aviso o si hubo un error de red.",
         explanation: "Módulo de diagnóstico técnico para resolver trabas en pagos online.",
-        mockComponent: <MockPosInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -1112,7 +1112,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Alta y baja de operadores y técnicos, asignación de roles (Vendedor, Técnico, Encargado, Administrador), permisos para ver u ocultar costos, y definición de sucursales físicas.",
         operationalSense: "Permite que cada empleado vea únicamente lo que necesita para trabajar. Por ejemplo, un vendedor de mostrador tiene acceso al POS y a Caja, pero no puede ver los costos de los proveedores ni cambiar la configuración fiscal.",
         explanation: "Solo los usuarios con rol de Administrador o Dueño tienen acceso a este módulo.",
-        mockComponent: <MockCashInteractive />,
+        mockComponent: null,
       },
     ],
   },
@@ -1133,7 +1133,7 @@ export const ERP_TUTORIALS: Record<string, ModuleTutorial> = {
         contentSummary: "Bitácora de seguridad que registra cada acción crítica: modificación de precios, borrado de productos, apertura de caja, cambios de estado en reparaciones y ajustes de stock.",
         operationalSense: "En un sistema donde trabajan varias personas, cuando 'desaparece plata' o 'se modifica un precio sin autorización', nadie suele admitir la culpa. La auditoría es la caja negra del avión: registra con nombre de usuario, fecha exacta e IP quién realizó cada modificación. No se puede borrar ni alterar.",
         explanation: "Módulo de seguridad para dueños y administradores del sistema.",
-        mockComponent: <MockStockInteractive />,
+        mockComponent: null,
       },
     ],
   },

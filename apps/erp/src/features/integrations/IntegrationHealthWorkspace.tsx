@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, RotateCcw, Inbox, CheckCircle2, AlertTriangle, ArchiveX } from "lucide-react";
-import { WorkspaceHeader, StatePanel, Modal } from "../../components/erp/WorkspaceUi";
+import { WorkspaceHeader, StatePanel, Modal, KpiCard } from "../../components/erp/WorkspaceUi";
 import { formatDateTime } from "../../lib/formatters";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
@@ -15,6 +15,10 @@ import {
   type IntegrationRetryAction,
   type IntegrationRetryRequestRow,
 } from "./api";
+
+const wrapEventKey = (key: string) => key.split(/(?<=[._])/).map((part, index) => (
+  <Fragment key={index}>{index > 0 && <wbr />}{part}</Fragment>
+));
 
 type DeliveryStatus = "delivered" | "failed" | "retry_scheduled" | "pending" | "dead_letter";
 
@@ -190,12 +194,10 @@ export const IntegrationHealthWorkspace = () => {
       <WorkspaceHeader
         title="Estado de las integraciones"
         description="Seguimiento de eventos pendientes, intentos y errores registrados."
-        badge="Integraciones"
         actions={
           <button
             type="button"
-            className="pag-btn"
-            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+            className="btn-secondary"
             onClick={() => void load()}
             disabled={loading}
           >
@@ -215,46 +217,11 @@ export const IntegrationHealthWorkspace = () => {
         />
       )}
 
-      {/* Counters Grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
-        <div className="flow-card" style={{ margin: 0, padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-            <Inbox size={18} color="#0284c7" />
-            <strong style={{ fontSize: "13px", color: "#0f172a" }}>Pendientes</strong>
-          </div>
-          <p style={{ margin: 0, fontSize: "24px", fontWeight: 800 }}>{counters.pending}</p>
-          <p style={{ margin: 0, fontSize: "11px", color: "#64748b" }}>Eventos de integración sin intentos registrados</p>
-        </div>
-        <div className="flow-card" style={{ margin: 0, padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-            <AlertTriangle size={18} color="#d97706" />
-            <strong style={{ fontSize: "13px", color: "#0f172a" }}>Reintentando</strong>
-          </div>
-          <p style={{ margin: 0, fontSize: "24px", fontWeight: 800 }}>{counters.retrying}</p>
-          <p style={{ margin: 0, fontSize: "11px", color: "#64748b" }}>{failedAttempts} intentos fallidos en total</p>
-        </div>
-        <div className="flow-card" style={{ margin: 0, padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-            <ArchiveX size={18} color="#dc2626" />
-            <strong style={{ fontSize: "13px", color: "#0f172a" }}>Revisión manual</strong>
-          </div>
-          <p style={{ margin: 0, fontSize: "24px", fontWeight: 800 }}>
-            {deadLettersAvailable ? counters.dead : "—"}
-          </p>
-          <p style={{ margin: 0, fontSize: "11px", color: "#64748b" }}>
-            {deadLettersAvailable ? "Eventos derivados tras fallos" : "Sin permiso de lectura"}
-          </p>
-        </div>
-        <div className="flow-card" style={{ margin: 0, padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-            <CheckCircle2 size={18} color="#16a34a" />
-            <strong style={{ fontSize: "13px", color: "#0f172a" }}>Entregados</strong>
-          </div>
-          <p style={{ margin: 0, fontSize: "24px", fontWeight: 800 }}>{counters.delivered}</p>
-          <p style={{ margin: 0, fontSize: "11px", color: "#64748b" }}>
-            {counters.total} eventos en ventana (100)
-          </p>
-        </div>
+      <div className="kpi-grid">
+        <KpiCard icon={Inbox} iconVariant="steel" label="Pendientes" value={counters.pending} sublabel="Eventos de integración sin intentos registrados" />
+        <KpiCard icon={AlertTriangle} iconVariant="amber" label="Reintentando" value={counters.retrying} sublabel={`${failedAttempts} intentos fallidos en total`} />
+        <KpiCard icon={ArchiveX} iconVariant="rose" label="Revisión manual" value={deadLettersAvailable ? counters.dead : "—"} sublabel={deadLettersAvailable ? "Eventos derivados tras fallos" : "Sin permiso de lectura"} />
+        <KpiCard icon={CheckCircle2} iconVariant="green" label="Entregados" value={counters.delivered} sublabel={`${counters.total} eventos en ventana (100)`} />
       </div>
 
       {/* Integration queue and manual review */}
@@ -280,7 +247,7 @@ export const IntegrationHealthWorkspace = () => {
           />
         ) : (
           <div className="flow-table-wrapper">
-            <table className="flow-table">
+            <table className="flow-table flow-table--compact">
               <thead>
                 <tr>
                   <th>ID Evento</th>
@@ -309,22 +276,22 @@ export const IntegrationHealthWorkspace = () => {
                           {row.id.slice(0, 8)}
                         </span>
                       </td>
-                      <td>
-                        <strong>{row.aggregate_type}</strong>
+                      <td style={{ overflowWrap: "anywhere" }}>
+                        <strong>{wrapEventKey(row.aggregate_type)}</strong>
                       </td>
-                      <td>
-                        <span style={{ fontSize: "12px", fontFamily: "monospace", color: "#0f172a" }}>
-                          {row.event_type}
+                      <td style={{ overflowWrap: "anywhere" }}>
+                        <span style={{ fontSize: "12px", fontFamily: "monospace", color: "var(--text-main)" }}>
+                          {wrapEventKey(row.event_type)}
                         </span>
                       </td>
-                      <td>
-                        <span style={{ fontSize: "12px", color: "#475569" }}>{payloadSummary(row)}</span>
+                      <td style={{ overflowWrap: "anywhere" }}>
+                        <span style={{ fontSize: "12px", color: "var(--neutral-text)" }}>{payloadSummary(row)}</span>
                       </td>
                       <td>
                         <span style={{ fontSize: "12px", color: "#334155" }}>{mine.length}</span>
                       </td>
-                      <td>
-                        <span style={{ fontSize: "12px", color: "#475569" }}>
+                      <td style={{ overflowWrap: "anywhere" }}>
+                        <span style={{ fontSize: "12px", color: "var(--neutral-text)" }}>
                           {lastFailed?.error_message ?? "—"}
                         </span>
                       </td>
@@ -332,10 +299,10 @@ export const IntegrationHealthWorkspace = () => {
                         {status === "delivered" && <span className="flow-status-pill completed">{statusLabel[status]}</span>}
                         {status === "failed" && <span className="flow-status-pill cancelled">{statusLabel[status]}</span>}
                         {status === "retry_scheduled" && <span className="flow-status-pill processing">{statusLabel[status]}</span>}
-                        {status === "pending" && <span className="flow-status-pill processing">{statusLabel[status]}</span>}
+                        {status === "pending" && <span className="flow-status-pill pending">{statusLabel[status]}</span>}
                         {status === "dead_letter" && <span className="flow-status-pill cancelled">{statusLabel[status]}</span>}
                       </td>
-                      <td>
+                      <td className="nowrap">
                         <span style={{ fontSize: "11px", color: "#64748b" }}>{formatDateTime(row.created_at)}</span>
                       </td>
                       <td className="text-right">
@@ -396,16 +363,17 @@ export const IntegrationHealthWorkspace = () => {
           setDeadLetterReason("");
         }}
         title="Derivar evento a revisión manual"
+        icon={ArchiveX}
         subtitle={
           deadLetterTarget
             ? `Evento ${deadLetterTarget.id.slice(0, 8)} · ${deadLetterTarget.event_type}. Requiere permiso integrations.retry y motivo.`
             : undefined
         }
         footer={
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+          <>
             <button
               type="button"
-              className="pag-btn"
+              className="btn-secondary"
               onClick={() => {
                 setDeadLetterTarget(null);
                 setDeadLetterReason("");
@@ -422,7 +390,7 @@ export const IntegrationHealthWorkspace = () => {
             >
               {movingId ? "Derivando…" : "Confirmar derivación"}
             </button>
-          </div>
+          </>
         }
       >
         <label style={{ display: "block", fontSize: "13px", color: "var(--text-muted)" }}>
@@ -444,10 +412,11 @@ export const IntegrationHealthWorkspace = () => {
           setRetryReason("");
         }}
         title={retryAction === "recover" ? "Recuperar evento derivado" : "Programar reintento"}
+        icon={RotateCcw}
         subtitle={retryTarget ? `Evento ${retryTarget.id.slice(0, 8)} · máximo 5 intentos con backoff.` : undefined}
         footer={
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-            <button type="button" className="pag-btn" onClick={() => setRetryTarget(null)} disabled={movingId !== null}>
+          <>
+            <button type="button" className="btn-secondary" onClick={() => setRetryTarget(null)} disabled={movingId !== null}>
               Cancelar
             </button>
             <button
@@ -458,7 +427,7 @@ export const IntegrationHealthWorkspace = () => {
             >
               {movingId ? "Programando…" : retryAction === "recover" ? "Confirmar recuperación" : "Confirmar reintento"}
             </button>
-          </div>
+          </>
         }
       >
         <label style={{ display: "block", fontSize: "13px", color: "var(--text-muted)" }}>

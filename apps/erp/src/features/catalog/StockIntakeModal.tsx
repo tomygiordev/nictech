@@ -391,17 +391,8 @@ export const StockIntakeModal: React.FC<StockIntakeModalProps> = ({
 
           <FormError message={error} />
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "10px",
-              marginTop: "8px",
-              paddingTop: "12px",
-              borderTop: "1px solid var(--border-line)",
-            }}
-          >
-            <button type="button" className="pag-btn" onClick={handleClose} disabled={submitting}>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={handleClose} disabled={submitting}>
               {pendingAttempt ? "Cancelar / Descartar" : "Cancelar"}
             </button>
             <button type="submit" className="btn-primary" disabled={submitting}>

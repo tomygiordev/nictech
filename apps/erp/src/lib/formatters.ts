@@ -99,6 +99,7 @@ export function formatDateTime(dateInput: string | number | Date | null | undefi
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hourCycle: "h23",
     });
   } catch {
     return String(dateInput);

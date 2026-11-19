@@ -166,7 +166,7 @@ describe("StockIntakeModal", () => {
 
     // Wait for error banner
     const alert = await within(screen.getByRole("dialog")).findByRole("alert");
-    expect(alert.getAttribute("style")).toContain("--rose-accent");
+    expect(alert.getAttribute("style")).toContain("--rose-text");
     expect(alert).toHaveTextContent("Error de red: timeout en gateway");
 
     // Verify retry button is shown and inputs are frozen

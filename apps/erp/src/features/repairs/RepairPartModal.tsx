@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { PackageMinus } from "lucide-react";
 import { Field, FormError } from "../../components/erp/FormFeedback";
 import { Modal } from "../../components/erp/WorkspaceUi";
 import { toUserMessage } from "../../lib/errors";
@@ -74,7 +75,7 @@ function RepairPartForm({
   };
 
   return (
-    <Modal isOpen onClose={requestClose} title={`Consumir repuesto: ${order.order_code}`} scrollBody>
+    <Modal isOpen onClose={requestClose} title={`Consumir repuesto: ${order.order_code}`} icon={PackageMinus} scrollBody>
       {!products ? (
         loadError ? <FormError message={loadError} /> : <p role="status">Cargando repuestos…</p>
       ) : (
@@ -108,8 +109,8 @@ function RepairPartForm({
               El stock se descontará de la ubicación elegida. Si el equipo ya pasó el control final, volvé a inspeccionarlo antes de entregarlo.
             </p>
             <FormError message={errors.root?.server?.message ?? null} />
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
-              <button type="button" className="btn-ghost" onClick={requestClose}>Cancelar</button>
+            <div className="erp-modal-footer">
+              <button type="button" className="btn-secondary" onClick={requestClose}>Cancelar</button>
               <button type="submit" className="btn-primary" disabled={isSubmitting}>
                 {isSubmitting ? "Descontando repuesto…" : "Descontar repuesto"}
               </button>

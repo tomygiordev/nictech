@@ -369,7 +369,8 @@ export const OnlineOrdersWorkspace = () => {
       <WorkspaceHeader
         title="Pedidos de la tienda online"
         description="Consulta y gestión de pedidos web: pago, preparación, despacho y cambios registrados."
-        badge={`${orders.length} Pedidos`}
+        badge={loading ? undefined : `${orders.length} ${orders.length === 1 ? "pedido" : "pedidos"}`}
+        badgeTone="neutral"
       />
 
       {feedback && (
@@ -442,7 +443,7 @@ export const OnlineOrdersWorkspace = () => {
               <Search size={15} />
               <input
                 type="text"
-                placeholder="Buscar por ID de orden, cliente o venta..."
+                placeholder="Orden, cliente o venta…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -472,10 +473,7 @@ export const OnlineOrdersWorkspace = () => {
 
         {/* Table */}
         {loading ? (
-          <div style={{ padding: "48px", textAlign: "center", color: "var(--text-muted)" }}>
-            <Loader2 size={32} className="animate-spin" style={{ margin: "0 auto 12px", color: "var(--brand-primary)" }} />
-            <p style={{ margin: 0, fontWeight: 600 }}>Cargando pedidos online…</p>
-          </div>
+          <StatePanel type="loading" message="Cargando pedidos online…" />
         ) : error ? (
           <StatePanel type="error" title="Error al cargar pedidos" message={error} />
         ) : filteredOrders.length === 0 ? (
@@ -490,7 +488,7 @@ export const OnlineOrdersWorkspace = () => {
               <thead>
                 <tr>
                   <th>ID Orden</th>
-                  <th>Total</th>
+                  <th className="num">Total</th>
                   <th>Estado pago</th>
                   <th>Despacho</th>
                   <th>Creada</th>
@@ -519,8 +517,8 @@ export const OnlineOrdersWorkspace = () => {
                         {shortId(order.id)}
                       </span>
                     </td>
-                    <td>
-                      <strong style={{ color: "var(--brand-primary)" }}>{formatCurrency(Number(order.total_amount || 0), "ARS")}</strong>
+                    <td className="num">
+                      <span className="amount-val">{formatCurrency(Number(order.total_amount || 0), "ARS")}</span>
                     </td>
                     <td>
                       {order.payment_state === "paid" ? (
@@ -548,7 +546,7 @@ export const OnlineOrdersWorkspace = () => {
                         <span className="flow-status-pill pending">{deliveryLabel(order.delivery_state)}</span>
                       )}
                     </td>
-                    <td>
+                    <td className="nowrap">
                       <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
                         {formatDateTime(order.created_at)}
                       </span>
@@ -759,7 +757,7 @@ export const OnlineOrdersWorkspace = () => {
             <FormError message={fulfillError} onDismiss={() => setFulfillError(null)} />
             <div>
               <label htmlFor="fulfill-payment-ref" style={{ fontSize: "12px", fontWeight: 700, display: "block", marginBottom: "4px" }}>
-                Referencia de pago (Mercado Pago) *
+                Referencia de pago (Mercado Pago) (obligatorio)
               </label>
               <input
                 id="fulfill-payment-ref"
@@ -801,17 +799,16 @@ export const OnlineOrdersWorkspace = () => {
               </div>
             )}
 
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-              <button type="button" className="pag-btn" onClick={closeFulfill} disabled={fulfilling}>
+            <div className="erp-modal-footer">
+              <button type="button" className="btn-secondary" onClick={closeFulfill} disabled={fulfilling}>
                 {fulfillResult ? "Cerrar" : "Cancelar"}
               </button>
               {!fulfillResult && (
                 <button
                   type="button"
-                  className="pag-btn"
+                  className="btn-primary"
                   onClick={handleFulfill}
                   disabled={fulfilling || paymentReference.trim() === ""}
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   {fulfilling && <Loader2 size={14} className="animate-spin" />}
                   Confirmar despacho
@@ -849,7 +846,7 @@ export const OnlineOrdersWorkspace = () => {
             )}
             <div>
               <label htmlFor="lifecycle-reason" style={{ fontSize: "12px", fontWeight: 700, display: "block", marginBottom: "4px" }}>
-                Motivo de la operación *
+                Motivo de la operación (obligatorio)
               </label>
               <input
                 id="lifecycle-reason"
@@ -862,14 +859,13 @@ export const OnlineOrdersWorkspace = () => {
                 style={{ width: "100%" }}
               />
             </div>
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-              <button type="button" className="pag-btn" onClick={closeLifecycleAction} disabled={lifecycleBusy}>Cancelar</button>
+            <div className="erp-modal-footer">
+              <button type="button" className="btn-secondary" onClick={closeLifecycleAction} disabled={lifecycleBusy}>Cancelar</button>
               <button
                 type="button"
-                className="pag-btn"
+                className={lifecycleAction.kind === "cancelled" || lifecycleAction.kind === "refund" ? "btn-danger" : "btn-primary"}
                 onClick={handleLifecycleAction}
                 disabled={lifecycleBusy}
-                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
                 {lifecycleBusy && <Loader2 size={14} className="animate-spin" />}
                 Confirmar acción

@@ -890,6 +890,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
             ? `Dólar: ${formatCurrency(dollarRate, "ARS")} • ${activeBranch?.name || "Sin sucursal"}`
             : `Sin cotización USD • ${activeBranch?.name || "Sin sucursal"}`
         }
+        badgeTone={dollarRate && activeBranch ? "neutral" : "warning"}
       />
 
       {feedback && (
@@ -925,7 +926,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
       )}
 
       {lastTicket && lastTicket.saleOrgId && lastTicket.saleOrgId !== organizationId && (
-        <div style={{ padding: "12px 16px", background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: "8px", color: "var(--amber-accent, #f59e0b)", fontSize: "13px", marginBottom: "16px" }}>
+        <div style={{ padding: "12px 16px", background: "var(--amber-soft)", border: "1px solid var(--amber-border)", borderRadius: "8px", color: "var(--amber-text)", fontSize: "13px", marginBottom: "16px" }}>
           El comprobante emitido ({lastTicket.info.documentNumber}) corresponde a otra organización. Volvé a la organización original para consultarlo o imprimirlo.
         </div>
       )}
@@ -950,7 +951,9 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                 <Barcode size={16} color="var(--brand-primary)" />
                 <input
                   type="text"
-                  placeholder="Escanear código de barras o buscar por nombre (Enter agrega)..."
+                  aria-label="Buscar productos por código de barras o nombre"
+                  placeholder="Código de barras o nombre"
+                  title="Presioná Enter para agregar por código de barras"
                   value={search}
                   disabled={coordinator.isCheckoutActive() || submittingSale}
                   onChange={(e) => setSearch(e.target.value)}
@@ -975,10 +978,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
 
           {/* Product Grid */}
           {loading ? (
-            <div style={{ padding: "48px", textAlign: "center", color: "var(--text-muted)" }}>
-              <Loader2 size={32} className="animate-spin" style={{ margin: "0 auto 12px", color: "var(--brand-primary)" }} />
-              <p style={{ margin: 0, fontWeight: 600 }}>Cargando catálogo ERP en tiempo real…</p>
-            </div>
+            <StatePanel type="loading" message="Cargando catálogo ERP en tiempo real…" />
           ) : filteredProducts.length === 0 ? (
             <StatePanel
               type="empty"
@@ -1329,7 +1329,7 @@ export const PosWorkspace: React.FC<PosWorkspaceProps> = ({ coordinator: externa
                   },
                 })}
               >
-                {availableLocations.length === 0 && <option value="">Sin ubicación habilitada</option>}
+                {availableLocations.length === 0 && <option value="">Sin ubicación</option>}
                 {availableLocations.map((location) => (
                   <option key={location.id} value={location.id}>{location.name}</option>
                 ))}

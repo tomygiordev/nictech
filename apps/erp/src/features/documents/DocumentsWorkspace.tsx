@@ -394,7 +394,6 @@ export const DocumentsWorkspace = () => {
       <WorkspaceHeader
         title="Documentos y facturas"
         description="Consultá ventas con comprobantes fiscales y no fiscales, pagos, reparaciones, armados y canjes."
-        badge="Prototipo comercial"
       />
 
       {!FISCAL_PROVIDER_CONNECTED && (
@@ -519,7 +518,7 @@ export const DocumentsWorkspace = () => {
                   <th>Cliente</th>
                   <th>Razón social</th>
                   <th>Tipo / proveedor</th>
-                  <th>Total</th>
+                  <th className="num">Total</th>
                   <th>Estado</th>
                 </tr>
               </thead>
@@ -584,16 +583,14 @@ export const DocumentsWorkspace = () => {
                             </span>
                           )}
                         </td>
-                        <td>
-                          <strong style={{ color: "var(--brand-primary)" }}>
-                            {formatCurrency(snapshotTotal(doc), "ARS")}
-                          </strong>
+                        <td className="num">
+                          <span className="amount-val">{formatCurrency(snapshotTotal(doc), "ARS")}</span>
                         </td>
                         <td>
                           {doc.status === "voided" ? (
-                            <span className="flow-status-pill pending">Anulado</span>
+                            <span className="flow-status-pill cancelled">Anulado</span>
                           ) : (
-                            <span className="flow-status-pill completed">Emitido</span>
+                            <span className="flow-status-pill confirmed">Emitido</span>
                           )}
                           {doc.sale_receipt?.sale_state === "cancelled" && (
                             <span className="flow-status-pill pending" style={{ display: "block", width: "fit-content", marginTop: "4px" }}>
@@ -644,7 +641,7 @@ export const DocumentsWorkspace = () => {
                 </div>
                 <div>
                   <span className="stat-label">Total Documento</span>
-                  <strong style={{ display: "block", fontSize: "14px", marginTop: "2px", color: "var(--brand-primary)" }}>
+                  <strong style={{ display: "block", fontSize: "14px", marginTop: "2px" }}>
                     {formatCurrency(snapshotTotal(selectedDoc), "ARS")}
                   </strong>
                 </div>
@@ -1021,8 +1018,8 @@ export const DocumentsWorkspace = () => {
               />
             )}
           </Field>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => { setCreateError(null); setIsModalOpen(false); }}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => { setCreateError(null); setIsModalOpen(false); }}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={saving || !canIssueDocuments}>
               {saving ? "Registrando…" : "Registrar documento"}
             </button>

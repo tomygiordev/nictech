@@ -148,6 +148,7 @@ export const PricingWorkspace: React.FC<PricingWorkspaceProps> = ({ onSelectModu
         title="Precios, monedas y tipo de cambio"
         description="Historial de tipos de cambio usados en presupuestos y ventas."
         badge={snapshots.length === 1 ? "1 registro" : `${snapshots.length} registros`}
+        badgeTone="neutral"
       />
 
       {onSelectModule && (
@@ -175,10 +176,10 @@ export const PricingWorkspace: React.FC<PricingWorkspaceProps> = ({ onSelectModu
         {canManage && (
           <form onSubmit={form.handleSubmit(handleSubmit)} style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "14px" }} noValidate>
             <label className="erp-form-group">Moneda destino<select className="erp-form-input" {...form.register("quoteCurrency")}><option value="ARS">ARS ($)</option><option value="USD">USD (Dólares)</option></select></label>
-            <label className="erp-form-group">Tipo de cambio a moneda base<input className="erp-form-input" type="number" min="0.000001" step="0.000001" readOnly={quoteCurrency === "ARS"} {...form.register("rateToBase")} />{form.formState.errors.rateToBase && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{form.formState.errors.rateToBase.message}</span>}</label>
-            <label className="erp-form-group">Fuente<input className="erp-form-input" {...form.register("source")} />{form.formState.errors.source && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{form.formState.errors.source.message}</span>}</label>
-            <label className="erp-form-group">Fecha y hora<input className="erp-form-input" type="datetime-local" {...form.register("quotedAt")} />{form.formState.errors.quotedAt && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{form.formState.errors.quotedAt.message}</span>}</label>
-            <label className="erp-form-group" style={{ gridColumn: "1 / -1" }}>Motivo<input className="erp-form-input" {...form.register("reason")} />{form.formState.errors.reason && <span role="alert" style={{ color: "var(--rose-accent)", fontSize: "11px" }}>{form.formState.errors.reason.message}</span>}</label>
+            <label className="erp-form-group">Tipo de cambio a moneda base<input className="erp-form-input" type="number" min="0.000001" step="0.000001" readOnly={quoteCurrency === "ARS"} {...form.register("rateToBase")} />{form.formState.errors.rateToBase && <span role="alert" style={{ color: "var(--rose-text)", fontSize: "12px" }}>{form.formState.errors.rateToBase.message}</span>}</label>
+            <label className="erp-form-group">Fuente<input className="erp-form-input" {...form.register("source")} />{form.formState.errors.source && <span role="alert" style={{ color: "var(--rose-text)", fontSize: "12px" }}>{form.formState.errors.source.message}</span>}</label>
+            <label className="erp-form-group">Fecha y hora<input className="erp-form-input" type="datetime-local" {...form.register("quotedAt")} />{form.formState.errors.quotedAt && <span role="alert" style={{ color: "var(--rose-text)", fontSize: "12px" }}>{form.formState.errors.quotedAt.message}</span>}</label>
+            <label className="erp-form-group" style={{ gridColumn: "1 / -1" }}>Motivo<input className="erp-form-input" {...form.register("reason")} />{form.formState.errors.reason && <span role="alert" style={{ color: "var(--rose-text)", fontSize: "12px" }}>{form.formState.errors.reason.message}</span>}</label>
             <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}><button className="btn-primary" type="submit" disabled={submitting}><Plus size={15} />{submitting ? "Registrando…" : "Registrar tipo de cambio"}</button></div>
           </form>
         )}
@@ -187,7 +188,7 @@ export const PricingWorkspace: React.FC<PricingWorkspaceProps> = ({ onSelectModu
       <div className="flow-card">
         <div className="flow-card__header"><div><h2 className="flow-card__title">Historial de tipos de cambio</h2><p className="flow-card__subtitle">Los presupuestos y ventas toman el último tipo de cambio vigente de cada moneda.</p></div></div>
         {loading ? <StatePanel type="loading" title="Cargando tipos de cambio" message="Consultando el historial del ERP…" /> : error ? <StatePanel type="error" title="Error al cargar tipos de cambio" message={error} /> : snapshots.length === 0 ? <StatePanel type="empty" title="Sin tipos de cambio registrados" message="Registrá ARS a 1,00 para habilitar presupuestos en moneda local." /> : (
-          <div className="flow-table-wrapper"><table className="flow-table"><thead><tr><th>Moneda</th><th>Tipo de cambio</th><th>Fuente</th><th>Fecha de vigencia</th><th>Registrado</th><th>Referencia</th></tr></thead><tbody>{snapshots.map((snapshot) => <tr key={snapshot.id}><td>{snapshot.quote_currency} / {snapshot.base_currency}</td><td style={{ fontWeight: 700 }}>{formatCurrency(snapshot.rate_to_base, snapshot.base_currency || "ARS")}</td><td>{snapshot.source}</td><td>{formatDateTime(snapshot.quoted_at)}</td><td>{formatDateTime(snapshot.captured_at)}</td><td style={{ fontFamily: "monospace", fontSize: "11px" }}>{snapshot.id.slice(0, 8).toUpperCase()}</td></tr>)}</tbody></table></div>
+          <div className="flow-table-wrapper"><table className="flow-table"><thead><tr><th>Moneda</th><th className="num">Tipo de cambio</th><th>Fuente</th><th>Fecha de vigencia</th><th>Registrado</th><th>Referencia</th></tr></thead><tbody>{snapshots.map((snapshot) => <tr key={snapshot.id}><td>{snapshot.quote_currency} / {snapshot.base_currency}</td><td className="num"><span className="amount-val">{formatCurrency(snapshot.rate_to_base, snapshot.base_currency || "ARS")}</span></td><td>{snapshot.source}</td><td className="nowrap">{formatDateTime(snapshot.quoted_at)}</td><td className="nowrap">{formatDateTime(snapshot.captured_at)}</td><td style={{ fontFamily: "monospace", fontSize: "11px" }}>{snapshot.id.slice(0, 8).toUpperCase()}</td></tr>)}</tbody></table></div>
         )}
       </div>
 

@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { ERP_MODULES, getVisibleErpModules } from "@nictech/domain";
 import { useErpAuth } from "../../auth/ErpAuthContext";
+import { StatePanel } from "../../components/erp/WorkspaceUi";
 import { guardarAjuste } from "./api";
 import { NAVIGATION_SETTING_KEY, navigationQueryKey, navigationSchema, useNavigationSetting, visibleFromSetting, type NavigationForm } from "./navigation";
 
@@ -32,30 +33,40 @@ export const NavigationSettings = () => {
   });
   return (
     <section className="flow-card" aria-labelledby="navigation-settings-title">
-      <h2 id="navigation-settings-title" className="flow-card__title">Módulos visibles</h2>
-      <p>El perfil de salida oculta módulos. Podés reactivarlos acá; sus permisos y datos no cambian.</p>
-      {query.isError && <p role="alert">No se pudo leer la visibilidad. Se muestran todos los módulos; reintentá antes de guardar.</p>}
-      {query.isLoading ? <p>Cargando perfil…</p> : (
+      <div className="flow-card__header">
+        <div>
+          <h2 id="navigation-settings-title" className="flow-card__title">Módulos visibles</h2>
+          <p className="flow-card__subtitle">El perfil de salida oculta módulos. Podés reactivarlos acá; sus permisos y datos no cambian.</p>
+        </div>
+      </div>
+      {query.isError && <p role="alert" style={{ color: "var(--rose-text)", fontSize: "13px" }}>No se pudo leer la visibilidad. Se muestran todos los módulos; reintentá antes de guardar.</p>}
+      {query.isLoading ? <StatePanel type="loading" message="Cargando perfil…" /> : (
         <form onSubmit={(event) => void submit(event)}>
-          <label htmlFor="module-profile">Perfil</label>{" "}
-          <select id="module-profile" className="erp-form-select" {...form.register("profile", { onChange: (event) => {
-            const next = event.target.value === "completo" ? "completo" : "salida";
-            form.setValue("visible", [...getVisibleErpModules({ profile: next })]);
-          } })} disabled={!canManage || query.isError}>
-            <option value="salida">Salida</option>
-            <option value="completo">Completo</option>
-          </select>
-          <fieldset disabled={!canManage || query.isError}>
+          <div className="erp-form-group" style={{ maxWidth: 320 }}>
+            <label className="erp-form-label" htmlFor="module-profile">Perfil</label>
+            <select id="module-profile" className="erp-form-select" {...form.register("profile", { onChange: (event) => {
+              const next = event.target.value === "completo" ? "completo" : "salida";
+              form.setValue("visible", [...getVisibleErpModules({ profile: next })]);
+            } })} disabled={!canManage || query.isError}>
+              <option value="salida">Salida</option>
+              <option value="completo">Completo</option>
+            </select>
+          </div>
+          <fieldset className="form-fieldset" disabled={!canManage || query.isError}>
             <legend>Personalizar módulos ({profile})</legend>
-            {ERP_MODULES.map((module) => (
-              <label key={module.id} style={{ display: "block", margin: "6px 0" }}>
-                <input type="checkbox" value={module.id} {...form.register("visible")} disabled={module.id === "settings" || !canManage || query.isError} /> {module.label}
-              </label>
-            ))}
+            <div className="check-grid">
+              {ERP_MODULES.map((module) => (
+                <label key={module.id}>
+                  <input type="checkbox" value={module.id} {...form.register("visible")} disabled={module.id === "settings" || !canManage || query.isError} /> {module.label}
+                </label>
+              ))}
+            </div>
           </fieldset>
-          {!canManage && <p>Necesitás permiso de administración para guardar.</p>}
-          {message && <p role="status">{message}</p>}
-          <button className="btn-primary" type="submit" disabled={!canManage || query.isError || form.formState.isSubmitting}>Guardar módulos</button>
+          {!canManage && <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>Necesitás permiso de administración para guardar.</p>}
+          {message && <p role="status" style={{ fontSize: "13px", color: "var(--text-muted)" }}>{message}</p>}
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button className="btn-primary" type="submit" disabled={!canManage || query.isError || form.formState.isSubmitting}>Guardar módulos</button>
+          </div>
         </form>
       )}
     </section>

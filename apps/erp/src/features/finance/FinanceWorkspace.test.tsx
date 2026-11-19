@@ -144,7 +144,7 @@ describe("finance workspaces", () => {
     renderWorkspace(<AccountingWorkspace />);
     fireEvent.click(screen.getByRole("button", { name: "Nuevo asiento manual" }));
     const dialog = screen.getByRole("dialog", { name: "Nuevo Asiento Contable Manual" });
-    expect(within(dialog).getByLabelText("Fecha del Asiento *")).toHaveValue("2026-11-18");
+    expect(within(dialog).getByLabelText("Fecha del asiento (obligatorio)")).toHaveValue("2026-11-18");
   });
 
   it("uses Buenos Aires for due dates and shows Spanish statuses and loaded customer names", async () => {
@@ -239,7 +239,7 @@ describe("finance workspaces", () => {
   it("requires an explicit payment method for receivable settlements", async () => {
     renderWorkspace(<AccountsWorkspace />);
 
-    expect(await screen.findByText("Medio de pago *")).toBeInTheDocument();
+    expect(await screen.findByText("Medio de pago (obligatorio)")).toBeInTheDocument();
     expect(
       receivablePaymentSchema.safeParse({
         branchId: "550e8400-e29b-41d4-a716-446655440000",

@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from "react";
+import { Package } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Field, FormError } from "../../components/erp/FormFeedback";
@@ -517,13 +518,14 @@ export const CatalogSheetModal: React.FC<Props> = ({
             ? `Código ${product.internal_code} · ${product.web_status === "published" ? "Publicado" : product.web_status === "paused" ? "Pausado" : "Borrador"}`
             : "Se crea en borrador. El código se asigna automáticamente."
         }
+        icon={Package}
         maxWidth="760px"
         scrollBody
         footer={
           <div style={{ width: "100%", display: "grid", gap: 10 }}>
             <FormError message={error} onDismiss={() => setError(null)} />
             <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 10 }}>
-              <button type="button" className="pag-btn" disabled={saving} onClick={onClose}>
+              <button type="button" className="btn-secondary" disabled={saving} onClick={onClose}>
                 Cancelar
               </button>
               <button type="submit" form={formId} className="btn-primary" disabled={saving || loading || loadFailed}>

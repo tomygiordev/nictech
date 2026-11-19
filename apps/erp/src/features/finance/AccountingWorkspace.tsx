@@ -60,6 +60,7 @@ import { OfficialCsvExportButton } from "../../components/erp/OfficialCsvExportB
 import { type ErpModuleId } from "@nictech/domain";
 import { formatCurrency, formatPosCurrency, formatDate, generateIdempotencyKey } from "../../lib/formatters";
 import { todayIsoAR } from "../../lib/dates";
+import { ACCOUNT_TYPE_LABELS, labelOf } from "../../lib/labels";
 
 // Los numeric de Postgres pueden llegar como string: normalizar con Number().
 // Devuelve null cuando no hay dato (la vista documenta NULL por falta de fuente).
@@ -233,12 +234,12 @@ const ProfitabilitySection = ({ canExport }: { canExport: boolean }) => {
               <thead>
                 <tr>
                   <th>Producto</th>
-                  <th>Cant. Vendida</th>
-                  <th>Ingresos Brutos</th>
-                  <th>Costo Prom. Unit.</th>
-                  <th>Costo Estimado</th>
-                  <th>Margen</th>
-                  <th>% Margen</th>
+                  <th className="num">Cant. Vendida</th>
+                  <th className="num">Ingresos Brutos</th>
+                  <th className="num">Costo Prom. Unit.</th>
+                  <th className="num">Costo Estimado</th>
+                  <th className="num">Margen</th>
+                  <th className="num">% Margen</th>
                 </tr>
               </thead>
               <tbody>
@@ -255,18 +256,18 @@ const ProfitabilitySection = ({ canExport }: { canExport: boolean }) => {
                           <span style={{ display: "block", fontSize: "11px", color: "var(--text-muted)" }}>{row.code}</span>
                         ) : null}
                       </td>
-                      <td>{row.quantitySold === null ? NO_SOURCE_LABEL : row.quantitySold.toLocaleString("es-AR")}</td>
-                      <td>{row.revenue === null ? NO_SOURCE_LABEL : formatCurrency(row.revenue, "ARS")}</td>
-                      <td>{row.unitCost === null ? NO_SOURCE_LABEL : formatCurrency(row.unitCost, "ARS")}</td>
-                      <td>{row.cost === null ? NO_SOURCE_LABEL : formatCurrency(row.cost, "ARS")}</td>
-                      <td>
+                      <td className="num">{row.quantitySold === null ? NO_SOURCE_LABEL : row.quantitySold.toLocaleString("es-AR")}</td>
+                      <td className="num">{row.revenue === null ? NO_SOURCE_LABEL : formatCurrency(row.revenue, "ARS")}</td>
+                      <td className="num">{row.unitCost === null ? NO_SOURCE_LABEL : formatCurrency(row.unitCost, "ARS")}</td>
+                      <td className="num">{row.cost === null ? NO_SOURCE_LABEL : formatCurrency(row.cost, "ARS")}</td>
+                      <td className="num">
                         {row.margin === null ? (
                           <span className="flow-status-pill pending">{NO_SOURCE_LABEL}</span>
                         ) : (
-                          <strong style={{ color: "var(--emerald-success)" }}>{formatCurrency(row.margin, "ARS")}</strong>
+                          <span className="amount-val">{formatCurrency(row.margin, "ARS")}</span>
                         )}
                       </td>
-                      <td>
+                      <td className="num">
                         {pct === null ? (
                           <span className="flow-status-pill pending">{NO_SOURCE_LABEL}</span>
                         ) : (
@@ -391,17 +392,17 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
       {/* Filtro por rango de fechas (aplica a IVA ventas y compras) */}
       <div className="flow-card" style={{ margin: 0, padding: "12px 16px" }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "flex-end" }}>
-          <div className="erp-form-group" style={{ minWidth: "180px" }}>
+          <div className="erp-form-group" style={{ minWidth: "180px", marginBottom: 0 }}>
             <label className="erp-form-label">Desde</label>
             <input className="erp-form-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           </div>
-          <div className="erp-form-group" style={{ minWidth: "180px" }}>
+          <div className="erp-form-group" style={{ minWidth: "180px", marginBottom: 0 }}>
             <label className="erp-form-label">Hasta</label>
             <input className="erp-form-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
           <button
             type="button"
-            className="pag-btn"
+            className="btn-secondary"
             onClick={() => {
               setFrom("");
               setTo("");
@@ -490,26 +491,26 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
             <table className="flow-table">
               <thead>
                 <tr>
-                  <th>Alícuota</th>
-                  <th>Líneas</th>
-                  <th>Base Imponible</th>
-                  <th>IVA</th>
+                  <th className="num">Alícuota</th>
+                  <th className="num">Líneas</th>
+                  <th className="num">Base Imponible</th>
+                  <th className="num">IVA</th>
                 </tr>
               </thead>
               <tbody>
                 {ventasByAlicuota.map((entry) => (
                   <tr key={entry.alicuota === null ? "null" : entry.alicuota}>
-                    <td>
+                    <td className="num">
                       {entry.alicuota === null ? (
                         <span className="flow-status-pill pending">{NO_SOURCE_LABEL}</span>
                       ) : (
                         <strong>{Number(entry.alicuota)}%</strong>
                       )}
                     </td>
-                    <td>{entry.count}</td>
-                    <td>{formatCurrency(entry.base, "ARS")}</td>
-                    <td>
-                      <strong style={{ color: "var(--brand-primary)" }}>{formatCurrency(entry.iva, "ARS")}</strong>
+                    <td className="num">{entry.count}</td>
+                    <td className="num">{formatCurrency(entry.base, "ARS")}</td>
+                    <td className="num">
+                      <span className="amount-val">{formatCurrency(entry.iva, "ARS")}</span>
                     </td>
                   </tr>
                 ))}
@@ -562,22 +563,22 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
               <thead>
                 <tr>
                   <th>Fecha</th>
-                  <th>Base Imponible</th>
-                  <th>IVA</th>
-                  <th>Alícuota</th>
+                  <th className="num">Base Imponible</th>
+                  <th className="num">IVA</th>
+                  <th className="num">Alícuota</th>
                 </tr>
               </thead>
               <tbody>
                 {comprasRows.map((row) => (
                   <tr key={row.purchaseOrderId}>
                     <td style={{ fontSize: "12px", color: "var(--text-muted)" }}>{formatDate(row.purchaseDate)}</td>
-                    <td>{row.base === null ? NO_SOURCE_LABEL : formatCurrency(row.base, "ARS")}</td>
-                    <td>
-                      <strong style={{ color: "var(--emerald-success)" }}>
+                    <td className="num">{row.base === null ? NO_SOURCE_LABEL : formatCurrency(row.base, "ARS")}</td>
+                    <td className="num">
+                      <span className="amount-val">
                         {row.iva === null ? NO_SOURCE_LABEL : formatCurrency(row.iva, "ARS")}
-                      </strong>
+                      </span>
                     </td>
-                    <td>{row.base === 0 || row.iva === 0 || row.alicuota === null ? "—" : `${row.alicuota}%`}</td>
+                    <td className="num">{row.base === 0 || row.iva === 0 || row.alicuota === null ? "—" : `${row.alicuota}%`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -626,9 +627,9 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
               <thead>
                 <tr>
                   <th>Cuenta</th>
-                  <th>Debe</th>
-                  <th>Haber</th>
-                  <th>Saldo</th>
+                  <th className="num">Debe</th>
+                  <th className="num">Haber</th>
+                  <th className="num">Saldo</th>
                 </tr>
               </thead>
               <tbody>
@@ -640,18 +641,18 @@ const ReportsSection = ({ canExport }: { canExport: boolean }) => {
                       </strong>
                       {row.name}
                     </td>
-                    <td>{formatPosCurrency(row.debit ?? 0, "ARS")}</td>
-                    <td>{formatPosCurrency(row.credit ?? 0, "ARS")}</td>
-                    <td>
+                    <td className="num">{formatPosCurrency(row.debit ?? 0, "ARS")}</td>
+                    <td className="num">{formatPosCurrency(row.credit ?? 0, "ARS")}</td>
+                    <td className="num">
                       <strong>{formatPosCurrency(row.balance ?? 0, "ARS")}</strong>
                     </td>
                   </tr>
                 ))}
                 <tr>
                   <td><strong>Totales</strong></td>
-                  <td><strong>{formatPosCurrency(totalDebit, "ARS")}</strong></td>
-                  <td><strong>{formatPosCurrency(totalCredit, "ARS")}</strong></td>
-                  <td><strong>{formatPosCurrency(totalDebit - totalCredit, "ARS")}</strong></td>
+                  <td className="num"><strong>{formatPosCurrency(totalDebit, "ARS")}</strong></td>
+                  <td className="num"><strong>{formatPosCurrency(totalCredit, "ARS")}</strong></td>
+                  <td className="num"><strong>{formatPosCurrency(totalDebit - totalCredit, "ARS")}</strong></td>
                 </tr>
               </tbody>
             </table>
@@ -873,21 +874,15 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             ? "Reportes financieros consolidados, exportaciones fiscales e indicadores de desempeño operativo."
             : "Plan de cuentas, períodos fiscales, asientos de partida doble y conciliación de saldos."
         }
-        badge={
-          activeModuleId === "profitability"
-            ? "Rentabilidad Operativa"
-            : activeModuleId === "reports"
-            ? "Centro de Reportes"
-            : `${journalEntries.length} Asientos en Libro`
-        }
+        badge={activeModuleId === "accounting" ? `${journalEntries.length} asientos` : undefined}
+        badgeTone="neutral"
         actions={
           isAccountingMode ? (
-            <div style={{ display: "flex", gap: "8px" }}>
+            <div className="workspace-header__actions">
               {hasPermission("accounting.post") && (
                 <button
                   type="button"
                   className="btn-primary"
-                  style={{ marginTop: 0, padding: "8px 16px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                   onClick={() => {
                     journalForm.setValue("operationKey", generateIdempotencyKey("jnl"));
                     setIsJournalModalOpen(true);
@@ -899,8 +894,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
               {hasPermission("accounting.view") && (
                 <button
                   type="button"
-                  className="pag-btn"
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  className="btn-secondary"
                   onClick={() => setIsReconciliationModalOpen(true)}
                 >
                   <CheckCheck size={14} /> Conciliar Cuenta
@@ -909,8 +903,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
               {hasPermission("accounting.close_period") && (
                 <button
                   type="button"
-                  className="pag-btn"
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--amber-accent)" }}
+                  className="btn-secondary"
                   onClick={() => setIsClosePeriodModalOpen(true)}
                 >
                   <Lock size={14} /> Cerrar Período
@@ -979,11 +972,8 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
           <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "20px", marginBottom: "20px" }}>
             <section className="flow-card" style={{ margin: 0 }}>
               <div className="flow-card__header">
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <BookOpen size={18} color="var(--brand-primary)" />
-                  <h3 className="flow-card__title" style={{ margin: 0 }}>Plan de Cuentas</h3>
-                </div>
-                <span className="type-badge blue">{chartAccounts.length} cuentas</span>
+                <h3 className="flow-card__title" style={{ margin: 0 }}>Plan de Cuentas</h3>
+                <span className="status-pill status-pill--navy">{chartAccounts.length} cuentas</span>
               </div>
               {chartAccounts.length === 0 ? (
                 <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -1024,7 +1014,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
                         <strong style={{ fontFamily: "monospace", color: "var(--brand-primary)", marginRight: "8px" }}>{account.code}</strong>
                         {account.name}
                       </span>
-                      <span className="type-badge green" style={{ fontSize: "10px" }}>{account.account_type || "Activo"}</span>
+                      <span className="type-badge green">{labelOf(ACCOUNT_TYPE_LABELS, account.account_type, "Activo")}</span>
                     </div>
                   ))}
                 </div>
@@ -1033,11 +1023,8 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
 
             <section className="flow-card" style={{ margin: 0 }}>
               <div className="flow-card__header">
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <Calendar size={18} color="var(--brand-primary)" />
-                  <h3 className="flow-card__title" style={{ margin: 0 }}>Períodos Fiscales</h3>
-                </div>
-                <span className="type-badge green">{accountingPeriods.length} períodos</span>
+                <h3 className="flow-card__title" style={{ margin: 0 }}>Períodos Fiscales</h3>
+                <span className="status-pill status-pill--navy">{accountingPeriods.length} {accountingPeriods.length === 1 ? "período" : "períodos"}</span>
               </div>
               {accountingPeriods.length === 0 ? (
                 <p style={{ fontSize: "13px", color: "var(--text-muted)", padding: "16px" }}>No hay períodos configurados.</p>
@@ -1163,8 +1150,8 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
                     <tr>
                       <th>Fecha</th>
                       <th>Descripción / Motivo</th>
-                      <th>Total Debe</th>
-                      <th>Total Haber</th>
+                      <th className="num">Total Debe</th>
+                      <th className="num">Total Haber</th>
                       <th>Estado</th>
                       <th className="text-right">Acción</th>
                     </tr>
@@ -1176,15 +1163,15 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
                         <td>
                           <strong>{entry.description || "Asiento contable"}</strong>
                         </td>
-                        <td>
-                          <strong style={{ color: "var(--brand-primary)" }}>
+                        <td className="num">
+                          <span className="amount-val">
                             {formatCurrency(Number(entry.total_debit), "ARS")}
-                          </strong>
+                          </span>
                         </td>
-                        <td>
-                          <strong style={{ color: "var(--emerald-success)" }}>
+                        <td className="num">
+                          <span className="amount-val">
                             {formatCurrency(Number(entry.total_credit), "ARS")}
-                          </strong>
+                          </span>
                         </td>
                         <td>
                           <span className="flow-status-pill completed">
@@ -1227,7 +1214,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
       >
         <form onSubmit={journalForm.handleSubmit(submitJournalEntry)} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
           <div className="erp-form-group">
-            <label className="erp-form-label">Sucursal *</label>
+            <label className="erp-form-label">Sucursal (obligatorio)</label>
             <select className="erp-form-select" {...journalForm.register("branchId")}>
               <option value="">Seleccioná una sucursal</option>
               {(branches.data ?? []).map((b) => (
@@ -1240,11 +1227,11 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px" }}>
             <div className="erp-form-group">
-              <label className="erp-form-label" htmlFor="journal-entry-date">Fecha del Asiento *</label>
+              <label className="erp-form-label" htmlFor="journal-entry-date">Fecha del asiento (obligatorio)</label>
               <input className="erp-form-input" id="journal-entry-date" type="date" {...journalForm.register("entryDate")} />
             </div>
             <div className="erp-form-group">
-              <label className="erp-form-label">Motivo / Concepto Obligatorio *</label>
+              <label className="erp-form-label">Motivo o concepto (obligatorio)</label>
               <input className="erp-form-input" placeholder="Ej: Ajuste de amortización o devengamiento" {...journalForm.register("reason")} />
             </div>
           </div>
@@ -1289,8 +1276,8 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             <FeedbackAlert type="error" message={journalMutation.error.message} />
           ) : null}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => setIsJournalModalOpen(false)}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => setIsJournalModalOpen(false)}>Cancelar</button>
             <button
               type="submit"
               className="btn-primary"
@@ -1313,7 +1300,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
       >
         <form onSubmit={reversalForm.handleSubmit((values) => reversalMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div className="erp-form-group">
-            <label className="erp-form-label">Asiento a Revertir *</label>
+            <label className="erp-form-label">Asiento a revertir (obligatorio)</label>
             <select className="erp-form-select" {...reversalForm.register("entryId")}>
               <option value="">Seleccioná un asiento</option>
               {journalEntries.map((e) => (
@@ -1325,12 +1312,12 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
           </div>
 
           <div className="erp-form-group">
-            <label className="erp-form-label">Fecha de Reversión *</label>
+            <label className="erp-form-label">Fecha de reversión (obligatorio)</label>
             <input className="erp-form-input" type="date" {...reversalForm.register("reversalDate")} />
           </div>
 
           <div className="erp-form-group">
-            <label className="erp-form-label">Motivo Obligatorio de Reversión *</label>
+            <label className="erp-form-label">Motivo de la reversión (obligatorio)</label>
             <input className="erp-form-input" placeholder="Ej: Error de imputación en centro de costos" {...reversalForm.register("reason")} />
           </div>
 
@@ -1338,8 +1325,8 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             <FeedbackAlert type="error" message={reversalMutation.error.message} />
           ) : null}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => setIsReversalModalOpen(false)}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => setIsReversalModalOpen(false)}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={reversalMutation.isPending}>
               {reversalMutation.isPending ? "Revirtiendo…" : "Confirmar Reversión"}
             </button>
@@ -1358,7 +1345,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
       >
         <form onSubmit={reconciliationForm.handleSubmit((values) => reconciliationMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div className="erp-form-group">
-            <label className="erp-form-label">Sucursal *</label>
+            <label className="erp-form-label">Sucursal (obligatorio)</label>
             <select className="erp-form-select" {...reconciliationForm.register("branchId")}>
               <option value="">Seleccioná una sucursal</option>
               {(branches.data ?? []).map((b) => (
@@ -1367,7 +1354,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             </select>
           </div>
           <div className="erp-form-group">
-            <label className="erp-form-label">Cuenta Contable a Conciliar *</label>
+            <label className="erp-form-label">Cuenta contable a conciliar (obligatorio)</label>
             <select className="erp-form-select" {...reconciliationForm.register("accountId")}>
               <option value="">Seleccioná una cuenta</option>
               {chartAccounts.map((a) => (
@@ -1401,8 +1388,8 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             <FeedbackAlert type="error" message={reconciliationMutation.error.message} />
           ) : null}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => setIsReconciliationModalOpen(false)}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => setIsReconciliationModalOpen(false)}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={reconciliationMutation.isPending}>
               {reconciliationMutation.isPending ? "Conciliando…" : "Registrar Conciliación"}
             </button>
@@ -1421,7 +1408,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
       >
         <form onSubmit={closeForm.handleSubmit((values) => closeMutation.mutate(values))} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div className="erp-form-group">
-            <label className="erp-form-label">Período Fiscal a Cerrar *</label>
+            <label className="erp-form-label">Período fiscal a cerrar (obligatorio)</label>
             <select className="erp-form-select" {...closeForm.register("periodId")}>
               <option value="">Seleccioná un período abierto</option>
               {accountingPeriods.filter((p) => p.status === "open").map((p) => (
@@ -1433,7 +1420,7 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
           </div>
 
           <div className="erp-form-group">
-            <label className="erp-form-label">Motivo de Cierre *</label>
+            <label className="erp-form-label">Motivo de cierre (obligatorio)</label>
             <input className="erp-form-input" placeholder="Cierre mensual de ejercicio" {...closeForm.register("reason")} />
           </div>
 
@@ -1441,8 +1428,8 @@ export const AccountingWorkspace: React.FC<AccountingWorkspaceProps> = ({
             <FeedbackAlert type="error" message={closeMutation.error.message} />
           ) : null}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px", paddingTop: "12px", borderTop: "1px solid var(--border-line)" }}>
-            <button type="button" className="pag-btn" onClick={() => setIsClosePeriodModalOpen(false)}>Cancelar</button>
+          <div className="erp-modal-footer">
+            <button type="button" className="btn-secondary" onClick={() => setIsClosePeriodModalOpen(false)}>Cancelar</button>
             <button type="submit" className="btn-primary" style={{ marginTop: 0, padding: "8px 20px", background: "var(--amber-accent)" }} disabled={closeMutation.isPending}>
               {closeMutation.isPending ? "Cerrando…" : "Confirmar Cierre Fiscal"}
             </button>

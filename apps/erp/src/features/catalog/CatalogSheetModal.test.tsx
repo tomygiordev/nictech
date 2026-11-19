@@ -43,7 +43,7 @@ describe("ficha guiada", () => {
 
     const alert = await screen.findByText("Elegí una categoría.");
     expect(alert).toHaveAttribute("role", "alert");
-    expect(alert.getAttribute("style")).toContain("--rose-accent");
+    expect(alert.getAttribute("style")).toContain("--rose-text");
     expect(select).toHaveAttribute("aria-invalid", "true");
     expect(select).toHaveAccessibleDescription("Elegí una categoría.");
     expect(mock.rpc).not.toHaveBeenCalled();
@@ -109,7 +109,7 @@ describe("ficha guiada", () => {
     fireEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
     const alert = await within(screen.getByRole("dialog")).findByRole("alert");
     expect(alert).toHaveTextContent("Error al guardar");
-    expect(alert.getAttribute("style")).toContain("--rose-accent");
+    expect(alert.getAttribute("style")).toContain("--rose-text");
     expect(mock.rpc.mock.calls[0][1].payload).not.toHaveProperty("initial_stock");
     expect(onClose).not.toHaveBeenCalled();
   });

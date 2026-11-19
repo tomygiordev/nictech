@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleDollarSign, PlusCircle, CreditCard, Users, Clock, AlertCircle } from "lucide-react";
+import { CircleDollarSign, CreditCard, Users, Clock, AlertCircle } from "lucide-react";
 import { useErpAuth } from "../../auth/ErpAuthContext";
 import {
   createFinancingContract,
@@ -246,6 +246,7 @@ export const AccountsWorkspace = () => {
         title="Cuentas Corrientes & Financiaciones"
         description="Planes de pago en cuotas, intereses pactados, seguimiento de vencimientos y cobros parciales."
         badge={`${contracts.length} Contratos Activos`}
+        badgeTone="neutral"
       />
 
       {feedback && (
@@ -385,16 +386,13 @@ export const AccountsWorkspace = () => {
           {/* Form: Crear Financiación */}
           <div className="flow-card" style={{ margin: 0 }}>
             <div className="flow-card__header">
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <PlusCircle size={18} color="var(--brand-primary)" />
-                <h3 className="flow-card__title" style={{ margin: 0 }}>Crear nueva financiación</h3>
-              </div>
+              <h3 className="flow-card__title" style={{ margin: 0 }}>Crear nueva financiación</h3>
             </div>
 
             <form onSubmit={createForm.handleSubmit(submitFinancing)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
-                  <label className="erp-form-label">Sucursal *</label>
+                  <label className="erp-form-label">Sucursal (obligatorio)</label>
                   <select className="erp-form-select" {...createForm.register("branchId")}>
                     <option value="">Seleccioná una sucursal</option>
                     {(branchesQuery.data ?? []).map((b) => (
@@ -403,7 +401,7 @@ export const AccountsWorkspace = () => {
                   </select>
                 </div>
                 <div className="erp-form-group" style={{ marginBottom: "6px" }}>
-                  <label className="erp-form-label">Cliente *</label>
+                  <label className="erp-form-label">Cliente (obligatorio)</label>
                   <select className="erp-form-select" {...createForm.register("customerId")}>
                     <option value="">Seleccioná un cliente</option>
                     {(customersQuery.data ?? []).map((c) => (
@@ -472,15 +470,12 @@ export const AccountsWorkspace = () => {
           {/* Form: Registrar Cobro Parcial */}
           <div className="flow-card" style={{ margin: 0 }}>
             <div className="flow-card__header">
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <CreditCard size={18} color="var(--emerald-success)" />
-                <h3 className="flow-card__title" style={{ margin: 0 }}>Registrar cobro parcial</h3>
-              </div>
+              <h3 className="flow-card__title" style={{ margin: 0 }}>Registrar cobro parcial</h3>
             </div>
 
             <form onSubmit={paymentForm.handleSubmit(submitPayment)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div className="erp-form-group">
-                <label className="erp-form-label">Contrato de Financiación *</label>
+                <label className="erp-form-label">Contrato de financiación (obligatorio)</label>
                 <select className="erp-form-select" {...paymentForm.register("contractId")}>
                   <option value="">Seleccioná un contrato</option>
                   {contracts.map((c) => (
@@ -497,7 +492,7 @@ export const AccountsWorkspace = () => {
                   <input className="erp-form-input" type="number" placeholder="50000" {...paymentForm.register("amount")} />
                 </div>
                 <div className="erp-form-group">
-                  <label className="erp-form-label">Sucursal de Cobro *</label>
+                  <label className="erp-form-label">Sucursal de cobro (obligatorio)</label>
                   <select className="erp-form-select" {...paymentForm.register("branchId")}>
                     <option value="">Seleccioná una sucursal</option>
                     {(branchesQuery.data ?? []).map((b) => (
@@ -509,7 +504,7 @@ export const AccountsWorkspace = () => {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                 <div className="erp-form-group">
-                  <label className="erp-form-label">Medio de pago *</label>
+                  <label className="erp-form-label">Medio de pago (obligatorio)</label>
                   <select
                     className="erp-form-select"
                     {...paymentForm.register("paymentMethodId")}
@@ -525,7 +520,7 @@ export const AccountsWorkspace = () => {
                 </div>
                 {selectedPaymentMethod?.requires_cash_session ? (
                   <div className="erp-form-group">
-                    <label className="erp-form-label">Caja abierta *</label>
+                    <label className="erp-form-label">Caja abierta (obligatorio)</label>
                     <select
                       className="erp-form-select"
                       {...paymentForm.register("cashSessionId")}

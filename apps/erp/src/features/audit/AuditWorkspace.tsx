@@ -236,7 +236,6 @@ export const AuditWorkspace = () => {
       <WorkspaceHeader
         title="Libro de Auditoría & Trazabilidad Inmutable"
         description="Registro cronológico de operaciones, cambios de stock, accesos y movimientos contables."
-        badge="Auditoría ERP"
       />
 
       {!actorColumnAvailable && !loading && (
@@ -448,7 +447,7 @@ export const AuditWorkspace = () => {
                     const log = group.entries[0];
                     return (
                       <tr key={group.key}>
-                        <td style={{ fontSize: "12px", color: "var(--text-muted)", fontFamily: "monospace" }}>
+                        <td className="nowrap" style={{ fontSize: "12px", color: "var(--text-muted)" }}>
                           {log.timestamp}
                         </td>
                         <td>
@@ -496,7 +495,7 @@ export const AuditWorkspace = () => {
                   return (
                     <Fragment key={group.key}>
                       <tr>
-                        <td style={{ fontSize: "12px", color: "var(--text-muted)", fontFamily: "monospace" }}>
+                        <td className="nowrap" style={{ fontSize: "12px", color: "var(--text-muted)" }}>
                           {lead.timestamp}
                         </td>
                         <td>
