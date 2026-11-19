@@ -1,7 +1,7 @@
 {
   "name": "@nictech/erp",
   "private": true,
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Sistema de gestión NicTech ERP",
   "author": "NicTech",
   "type": "module",
